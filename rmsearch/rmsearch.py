@@ -1,14 +1,15 @@
+import os, asyncio
 import pandas as pd
 import itertools
 from datasets import Dataset
 import torch
-
+import traceback
 from typing import Any, Dict, List
 import numpy as np
 import ray
 from packaging.version import Version
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
-from vllm import LLM, SamplingParams
+from vllm import LLM, PoolingParams, SamplingParams, AsyncEngineArgs, AsyncLLMEngine
 assert Version(ray.__version__) >= Version(
     "2.22.0"), "Ray version must be at least 2.22.0"
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForCausalLM
@@ -47,32 +48,90 @@ def scheduling_strategy_fn():
 #torch.save(advice_indices, retrieved_advice_ids_save_path)  #all_advice_indices: [len(test_problem_ids), num_retrival]
 
 
-class rmsearch:
+class Search:
 
     def __init__(
         self,
-        model_name = "llama3b-rm",
+        model_name,
         tensor_parallel_size = 1,
-        num_instances = 1,
+        pipeline_parallel_size = 1,
         llm_template = None,
     ):
 
-        self.llm = LLM(model=model_name,
-                       dtype="bfloat16",
-                       #dtype="float32",
-                       tensor_parallel_size = tensor_parallel_size,
-                       num_instances = num_instances,
-                       task="embed",
-                       override_pooler_config=pooler_config_,)
-
-        self.model_name = model_name
-        self.tensor_parallel_size = tensor_parallel_size
-        self.num_instances = num_instances
-        
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_eos_token=True, add_bos_token=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         self.tokenizer = tokenizer
+
+        self.model_unsupported = False
+
+        try:
+            '''
+            self.llm = LLM(model=model_name,
+                           dtype="bfloat16",
+                           #dtype="float32",
+                           tensor_parallel_size = tensor_parallel_size,
+                           task="embed",
+                           override_pooler_config=pooler_config_,)
+            '''
+
+            self.engine_args = AsyncEngineArgs(
+                model = model_name,
+                dtype="bfloat16",
+                tensor_parallel_size = tensor_parallel_size,
+                pipeline_parallel_size = pipeline_parallel_size,
+                distributed_executor_backend = "mp",
+                gpu_memory_utilization=0.95,
+                task="embed",
+                override_pooler_config=pooler_config_,
+            )
+            
+            self.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
+            
+        except Exception as e:
+            if "Model architectures" in f"{e}":
+                save_dir = f"RM-converted-model"
+                score_save_path = f"RM-converted-model-score.pt"
+                self.model_unsupported = True
+                if not os.path.exists(save_dir):
+                    tokenizer.save_pretrained(save_dir)
+
+                    reward_model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
+                    self.score = reward_model.score.weight.data
+                    torch.save(reward_model.score.weight.data, score_save_path)
+                    del reward_model
+                    
+                    generate_model = AutoModelForCausalLM.from_pretrained(model_name)
+                    generate_model.save_pretrained(save_dir)
+                    del generate_model
+
+                else:
+                    self.score = torch.load(score_save_path)
+                
+                model_name = save_dir
+
+                self.engine_args = AsyncEngineArgs(
+                    model = model_name,
+                    dtype="bfloat16",
+                    tensor_parallel_size = tensor_parallel_size,
+                    pipeline_parallel_size = pipeline_parallel_size,
+                    distributed_executor_backend = "mp",
+                    gpu_memory_utilization=0.95,
+                    task="embed",
+                    override_pooler_config=pooler_config_,
+                )
+                
+                self.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
+
+            else:
+                raise Exception(e)
+                
+
+        self.model_name = model_name
+        self.tensor_parallel_size = tensor_parallel_size
+        self.pipeline_parallel_size = pipeline_parallel_size
+
+        #self.PoolingParams = PoolingParams()
 
         if not llm_template:
             def llm_template_func(query, key):
@@ -101,6 +160,7 @@ class rmsearch:
 
         self.resources_kwarg = resources_kwarg
 
+    """
     
     def __call__(self, batch: Dict[str, np.ndarray]) -> Dict[str, list]:
         outputs = self.llm.embed(batch["prompt"])
@@ -113,20 +173,22 @@ class rmsearch:
         return {
             "embeddings": embeddings
         }
+    """
 
-    def search(self,
+    async def __call__(self,
                queires,
                keys,
                 k=5,
                 return_relevance=False,):
 
-        relevance = self.get_relevance(queires, keys)
+        relevance = await self.get_relevance(queires, keys)
         top_relevance, top_key_ids = torch.topk(relevance, k=k)
 
         return_dicts = []
-        for query_id, query in queires:
+        for query_id, query in enumerate(queires):
             return_dict = {"query":query, "query_id":query_id, "keys":[]}
-            for i, torch_key_id in top_key_ids:
+            for i in range(len(top_key_ids[query_id])):
+                torch_key_id = top_key_ids[query_id, i]
                 key_id = torch_key_id.item()
                 if return_relevance:
                     return_dict["keys"].append({"key_id":key_id, "key":keys[key_id], "relevance":relevance[query_id, key_id].item()})
@@ -138,13 +200,13 @@ class rmsearch:
         return return_dicts
 
 
-    def get_relevance(self,
-                      queires,
+    async def get_relevance(self,
+                      queries,
                       keys,
                      ):
         
         # Generate the Cartesian product
-        query_ids = list(range(len(queires)))
+        query_ids = list(range(len(queries)))
         combinations = list(itertools.product(query_ids, keys))
         df = pd.DataFrame(combinations, columns=['query_id', 'key'])
         df['query'] = df['query_id'].apply(lambda idx: queries[idx])
@@ -163,7 +225,13 @@ class rmsearch:
         formatted_dataset = dataset1.map(format)
         df_formatted = formatted_dataset.to_pandas()
         list_of_prompts = df_formatted[['prompt']].to_dict('records')  # [{"prompt":".."}, ...]
-        
+        """
+        prompts = []
+        for prompt_dict in list_of_prompts:
+            prompts.append(prompt_dict["prompt"])
+        """
+
+        """
         ds = ray.data.from_items(list_of_prompts)
         #ds = ray.data.read_text("s3://anonymous@air-example-data/prompts.txt")
         
@@ -186,6 +254,18 @@ class rmsearch:
         outputs = ds.take_all()  # [{"embeddings":(2d list)}, ...]
         
         #outputs = model.embed(prompts)
+        """
+
+        rewards = await asyncio.gather(
+            *[self.process(prompt_dict["prompt"], i) for i, prompt_dict in enumerate(list_of_prompts)]
+        )
+
+        relevance = torch.tensor(rewards).reshape(len(queries), len(keys))
+
+        """
+        outputs = self.llm.embed(prompts)
+
+        print(outputs)
         
         dataset1 = Dataset.from_list(outputs)
         print("Putting All Embeddings onto GPU...")
@@ -197,8 +277,42 @@ class rmsearch:
         advice_rewards = torch.matmul(all_embeddings, rm_head.transpose(0,1)).squeeze()
         relevance = advice_rewards.reshape(len(problems), len(advices))  # [len(problems), len(advices)]
         print("Obtained Relevance")
+        """
         
         return relevance
+
+    async def process(self, prompt, request_id):
+
+        if self.model_unsupported:
+            results_generator = self.engine.encode(prompt, 
+                                        PoolingParams(), 
+                                        request_id
+                                        )
+
+            final_output = None
+            async for request_output in results_generator:
+                """
+                if await request.is_disconnected():
+                    # Abort the request if the client disconnects.
+                    await engine.abort(request_id)
+                    # Return or raise an error
+                    raise Exception()
+                """
+                final_output = request_output
+
+            print(final_output)
+            #embedding = final_output.outputs.embedding
+            embedding = final_output.outputs.data
+            embedding = torch.tensor(embedding).float()
+
+            print(torch.tensor(embedding).unsqueeze(0).shape)
+            print(self.score.to(embedding.device).transpose(0,1).shape)
+            reward = torch.matmul(torch.tensor(embedding).unsqueeze(0), self.score.to(embedding.device).transpose(0,1))
+
+        else:
+            pass # for now
+        
+        return reward
     
     
         
