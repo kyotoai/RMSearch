@@ -35,7 +35,7 @@
     <img src="images/SEIMEI_overlook.png" alt="Logo" width="640" height="360">
   </a>
 
-<h3 align="center">SEIMEI</h3>
+<h3 align="center">RMSearch</h3>
 
   <p align="center">
     RMSearch
