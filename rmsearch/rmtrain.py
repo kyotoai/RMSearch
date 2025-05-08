@@ -3,6 +3,8 @@ from peft import LoraConfig, TaskType
 import accelerate
 from peft import get_peft_model
 
+import json
+import os
 import random
 import pandas as pd
 from operator import itemgetter
@@ -35,6 +37,7 @@ class RMTrainer:
              num_gpus = None,
         ):
 
+        self.num_gpus = num_gpus
         self.model_name = model_name
         
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_eos_token=True, add_bos_token=True)
@@ -47,15 +50,15 @@ class RMTrainer:
 
 
     def prepare_dataset(self,
-                        save_file,
-                        file_type = "txt",
+                        dataset_list,
+                        dataset_save_path,
+                        test_size,
+                        train_ids_save_path,
+                        test_ids_save_path,
                        ):
 
-        with open(save_file) as f:
-            json_data = json.load(f)
-
         """
-        json_data should be like
+        dataset_list should be like
         [
             {
                 “query”:[{“system”:”…”}, …],
@@ -64,11 +67,11 @@ class RMTrainer:
                 **kwargs,
             }
             ...
-        ] 
+        ]
         """
         
-        dataset1 = Dataset.from_list(json_data)
-        print(dataset1.to_pandas())
+        dataset = Dataset.from_list(dataset_list)
+        #print(dataset.to_pandas())
 
         if not os.path.exists(dataset_save_path):
             
@@ -102,8 +105,8 @@ class RMTrainer:
         
                 #chosen_reject_similarities = advice_similarities[chosen_ids][:, rejected_ids]
         
-                tokens_chosen = tokenizer.encode_plus(prompt_plus_chosen_response, **kwargs)
-                tokens_rejected = tokenizer.encode_plus(prompt_plus_rejected_response, **kwargs)
+                tokens_chosen = self.tokenizer.encode_plus(prompt_plus_chosen_response, **kwargs)
+                tokens_rejected = self.tokenizer.encode_plus(prompt_plus_rejected_response, **kwargs)
                 
                 return {
                     "input_ids_chosen": tokens_chosen["input_ids"][0], "attention_mask_chosen": tokens_chosen["attention_mask"][0],
@@ -119,7 +122,7 @@ class RMTrainer:
                 }
                 '''
         
-            formatted_dataset = dataset1.map(formatting_func)
+            formatted_dataset = dataset.map(formatting_func)
         
             if os.path.exists(train_ids_save_path) and os.path.exists(test_ids_save_path):
                 with open(train_ids_save_path) as f:
@@ -232,10 +235,10 @@ class RMTrainer:
             
             return batch
         
-        if num_gpu*batch_size_per_device != 1:
-            num_trash = len(formatted_dataset["train"])%(num_gpu*batch_size_per_device)
+        if self.num_gpus*training_args.per_device_train_batch_size != 1:
+            num_trash = len(formatted_dataset["train"])%(self.num_gpus*training_args.per_device_train_batch_size)
             formatted_dataset["train"] = formatted_dataset["train"].select(range(len(formatted_dataset["train"])-num_trash))
-            num_trash = len(formatted_dataset["test"])%(num_gpu*batch_size_per_device)
+            num_trash = len(formatted_dataset["test"])%(self.num_gpus*training_args.per_device_train_batch_size)
             formatted_dataset["test"] = formatted_dataset["test"].select(range(len(formatted_dataset["test"])-num_trash))
             
         # Loading the RewardTrainer from TRL
@@ -251,7 +254,7 @@ class RMTrainer:
         )
         
         accelerator = trainer.accelerator
-        model = model.to(accelerator.device)
+        self.model = self.model.to(accelerator.device)
         
         train_output = trainer.train()
 
