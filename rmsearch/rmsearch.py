@@ -161,10 +161,8 @@ class Search:
                queires,
                keys,
                 k=5,
-                return_relevance=False,
-                query_id = None):
+                return_relevance=False):
 
-        self.query_id = query_id
 
         relevance = await self.get_relevance(queires, keys)
         top_relevance, top_key_ids = torch.topk(relevance, k=k)
@@ -226,11 +224,11 @@ class Search:
 
         end = time.time()
 
-        print()
-        print("----------")
-        print("total number of inputs : ", len(list_of_prompts))
-        print("mean number of tokens : ", mean_num_tokens)
-        print("calculation time(s) : ", end - start)
+        #print()
+        #print("----------")
+        #print("total number of inputs : ", len(list_of_prompts))
+        #print("mean number of tokens : ", mean_num_tokens)
+        #print("calculation time(s) : ", end - start)
 
         relevance = torch.tensor(rewards).reshape(len(queries), len(keys))
         
