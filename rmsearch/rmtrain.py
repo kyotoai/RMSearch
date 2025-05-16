@@ -51,10 +51,8 @@ class RMTrainer:
 
     def prepare_dataset(self,
                         dataset_list,
-                        dataset_save_path,
+                        base_dir = "./RMSearch_exp",
                         test_size,
-                        train_ids_save_path,
-                        test_ids_save_path,
                        ):
 
         """
@@ -69,6 +67,10 @@ class RMTrainer:
             ...
         ]
         """
+
+        dataset_save_path = f"{base_dir}/dataset"
+        train_ids_save_path = f"{base_dir}/train_ids.json"
+        test_ids_save_path = f"{base_dir}/test_ids.json"
         
         dataset = Dataset.from_list(dataset_list)
         #print(dataset.to_pandas())
@@ -124,7 +126,7 @@ class RMTrainer:
         
             formatted_dataset = dataset.map(formatting_func)
         
-            if os.path.exists(train_ids_save_path) and os.path.exists(test_ids_save_path):
+            try:
                 with open(train_ids_save_path) as f:
                     train_indices = json.load(f)
                 with open(test_ids_save_path) as f:
@@ -139,7 +141,7 @@ class RMTrainer:
                     "test": formatted_dataset.select(test_indices)
                 })
         
-            else:
+            except:
                 # Get the total number of samples in the dataset
                 total_samples = len(formatted_dataset)
                 
@@ -168,6 +170,7 @@ class RMTrainer:
             #formatted_dataset = formatted_dataset.train_test_split(test_size=test_size)
             formatted_dataset.save_to_disk(dataset_save_path)
         else:
+            print(f"Existed: {dataset_save_path}")
             formatted_dataset = load_from_disk(dataset_save_path)
             
 
