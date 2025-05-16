@@ -79,28 +79,21 @@ class RMTrainer:
             
             def formatting_func(examples):
                 kwargs = {"padding": "max_length", "truncation": True, "max_length": 4000, "return_tensors": "pt", "add_special_tokens":False}
-                answer = examples['output'][:4000]
-                problem = examples['problem']
-                chosen_advice = examples['chosen_advice']
-                rejected_advice = examples['rejected_advice']
-                chosen_id = examples['chosen_advice_id']
-                rejected_id = examples['rejected_advice_id']
+                query = examples['query']
+                chosen_key = examples['chosen_key']
+                rejected_key = examples['rejected_key']
             
-        
                 message = [
-                  {'role': 'user', 'content': f"Give me an advice to the problem and answer below;\n\nProblem:{problem}\n\nAnswer:{answer}"},
-                  {'role': 'assistant', 'content': f"{chosen_advice}"}
+                  {'role': 'user', 'content': f"Give me a key to the query below;\n\nQuery:{query}"},
+                  {'role': 'assistant', 'content': f"{chosen_key}"}
                 ]
                 prompt_plus_chosen_response = self.tokenizer.apply_chat_template(message, tokenize=False)
         
-            
-        
                 message = [
-                  {'role': 'user', 'content': f"Give me an advice to the problem and answer below;\n\nProblem:{problem}\n\nAnswer:{answer}"},
-                  {'role': 'assistant', 'content': f"{rejected_advice}"}
+                  {'role': 'user', 'content': f"Give me a key to the query below;\n\nQuery:{query}"},
+                  {'role': 'assistant', 'content': f"{rejected_key}"}
                 ]
                 prompt_plus_rejected_response = self.tokenizer.apply_chat_template(message, tokenize=False)
-        
                 
                 #prompts = chosen_prompts+rejected_prompts
                 #inputs = tokenizer(prompts, **kwargs)
