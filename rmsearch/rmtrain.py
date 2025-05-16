@@ -52,7 +52,7 @@ class RMTrainer:
     def prepare_dataset(self,
                         dataset_list,
                         base_dir = "./RMSearch_exp",
-                        test_size,
+                        test_size = None,
                        ):
 
         """
@@ -142,8 +142,12 @@ class RMTrainer:
                 })
         
             except:
+                
                 # Get the total number of samples in the dataset
                 total_samples = len(formatted_dataset)
+
+                if not test_size:
+                    test_size = int(total_samples*0.1)
                 
                 # Generate random indices for the test set using PyTorch
                 test_indices = torch.randperm(total_samples)[:test_size]
