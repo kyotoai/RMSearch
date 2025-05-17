@@ -368,6 +368,51 @@ See the full code in /examples/example_train2.ipynb
     # dataset_list = [{"query":[{"role":"user", "content":"context-and-query-to-get-key"}, ...], "chosen_key":[{"role":"assistant", "content":"chosen-LLM-agent"}, ...], "rejected_key":"chosen_key":[{"role":"assistant", "content":"rejected-LLM-agent"}, **kwargs}, ...]
     ```
 
+3. Train Reward Model
+    ```py
+    from rmsearch import RMTrainer
+    from trl import RewardConfig
+    from peft import LoraConfig, TaskType
+
+    model_name = "/workspace/llama3b-rm"
+    exp_dir = "/workspace/exp1"
+    model_save_dir = f"{exp_dir}/model1"
+    test_size = 6
+    num_gpus = 1
+    batch_size_per_device = 3
+    eval_batch_size_per_device = 1
+
+    rmtrainer = RMTrainer(model_name = model_name, num_gpus = num_gpus)
+    formatted_dataset = rmtrainer.prepare_dataset(dataset_list, base_dir = exp_dir, test_size = test_size)
+
+    training_args = RewardConfig(
+        output_dir=model_save_dir,
+        per_device_train_batch_size=batch_size_per_device,
+        per_device_eval_batch_size=eval_batch_size_per_device,
+        eval_strategy="steps",
+        eval_steps=1,
+        eval_on_start=True,
+        save_steps=10,
+        logging_steps=1,
+        num_train_epochs = 50,
+        report_to=None,
+        remove_unused_columns=False,
+    )
+
+    peft_config = LoraConfig(
+        task_type=TaskType.SEQ_CLS,
+        inference_mode=False,
+        target_modules=["k_proj","q_proj","o_proj", "v_proj","down_proj","gate_proj","up_proj",],
+        layers_to_transform=[25,26,27],
+        r=16,
+        lora_alpha=16,
+        lora_dropout=0.1,
+    )
+
+    rmtrainer.train(formatted_dataset, training_args = training_args, peft_config = peft_config)
+    ```
+
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
