@@ -83,17 +83,26 @@ class RMTrainer:
                 chosen_key = examples['chosen_key']
                 rejected_key = examples['rejected_key']
             
-                message = [
-                  {'role': 'user', 'content': f"Give me a key to the query below;\n\nQuery:{query}"},
-                  {'role': 'assistant', 'content': f"{chosen_key}"}
-                ]
-                prompt_plus_chosen_response = self.tokenizer.apply_chat_template(message, tokenize=False)
-        
-                message = [
-                  {'role': 'user', 'content': f"Give me a key to the query below;\n\nQuery:{query}"},
-                  {'role': 'assistant', 'content': f"{rejected_key}"}
-                ]
-                prompt_plus_rejected_response = self.tokenizer.apply_chat_template(message, tokenize=False)
+                if type(query)==list and type(chosen_key)==list and type(rejected_key)==list:
+                    chosen_message = query + chosen_key
+                    rejected_message = query + rejected_key
+
+                elif type(query)==str and type(chosen_key)==str and type(rejected_key)==str:
+                    chosen_message = [
+                        {'role': 'user', 'content': f"Give me a key to the query below;\n\nQuery:{query}"},
+                        {'role': 'assistant', 'content': f"{chosen_key}"}
+                    ]
+
+                    rejected_message = [
+                        {'role': 'user', 'content': f"Give me a key to the query below;\n\nQuery:{query}"},
+                        {'role': 'assistant', 'content': f"{rejected_key}"}
+                    ]
+
+                else:
+                    raise Exception("query must be str or list like [{'role':'', }]")
+
+                prompt_plus_chosen_response = self.tokenizer.apply_chat_template(chosen_message, tokenize=False)
+                prompt_plus_rejected_response = self.tokenizer.apply_chat_template(rejected_message, tokenize=False)
                 
                 #prompts = chosen_prompts+rejected_prompts
                 #inputs = tokenizer(prompts, **kwargs)
