@@ -296,6 +296,76 @@ See the full code in /examples/example_train2.ipynb
     # [{"query":str, "chosen_key":str, "rejected_key":str, **kwargs}, ...]
     # or
     # [{"query":[{"role":"user", "content":"context-and-query-to-get-key"}, ...], "chosen_key":[{"role":"assistant", "content":"chosen-LLM-agent"}, ...], "rejected_key":"chosen_key":[{"role":"assistant", "content":"rejected-LLM-agent"}, **kwargs}, ...]
+
+    def get_dataset_dict(task, chosen_msg, rejected_msg):
+        if len(chosen_msg) != len(chosen_msg):
+            raise Exception("chosen_msg and rejected_msg must be same size") 
+
+        if len(chosen_msg) == 2:
+            return {
+                "query":[{'role': 'user', 'content':f"Give me a brainstorming sentence to solve the task below;\n\nTask:{task}"}],
+                "chosen_key":[{'role': 'assistant', 'content': chosen_msg[0]["content"]}],
+                "rejected_key":[{'role': 'assistant', 'content': rejected_msg[0]["content"]}],
+            }
+        elif len(chosen_msg) < 2:
+            return None
+        else:
+            return {
+                "query": chosen_msg[:-2] + [{'role': 'user', 'content':f"Give me a brainstorming sentence to solve the task below;\n\nTask:{task}"}],
+                "chosen_key": [{'role': 'assistant', 'content': chosen_msg[-2]["content"]}],
+                "rejected_key": [{'role': 'assistant', 'content': rejected_msg[-2]["content"]}],
+            }
+
+
+    dataset_list = []
+    def walk(node, depth):
+        global dataset_list
+
+        if node["children"] == []:
+            return 0
+
+        else:
+            num_novel = 0
+            updated_score = 0
+            scores = []
+            bs_msgs = []
+            for i, node_dict in enumerate(node["children"]):
+                #dataset_dict = get_dataset_dict(node_dict)
+                bs_msg = node_dict["bs_msg"]  # [{"role":}, ...]
+                task = node_dict["task"]
+                novelties = node_dict["novelties"]
+                node_ids = node_dict["node_ids"]
+
+                try:
+                    novelty = novelties[0]
+                    score = walk(node_dict, depth + 1)
+                    if novelty: score += 1
+                    updated_score += score
+    
+                    for j, other_score in enumerate(scores):
+                        #print(node_ids, score, other_score)
+                        if score < other_score:
+                            dataset_dict = get_dataset_dict(task, chosen_msg=bs_msgs[j], rejected_msg=bs_msg)
+                        elif score > other_score:
+                            dataset_dict = get_dataset_dict(task, chosen_msg=bs_msg, rejected_msg=bs_msgs[j])
+                        else:
+                            continue
+                        
+                        dataset_list.append(dataset_dict)
+                        
+                    bs_msgs.append(bs_msg)
+                    scores.append(score)
+                except:
+                    continue
+
+            updated_score = updated_score / len(node["children"])
+
+        return updated_score
+
+    for bs_agent_tree in bs_agent_trees:
+        walk(bs_agent_tree, 0)
+
+    # dataset_list = [{"query":[{"role":"user", "content":"context-and-query-to-get-key"}, ...], "chosen_key":[{"role":"assistant", "content":"chosen-LLM-agent"}, ...], "rejected_key":"chosen_key":[{"role":"assistant", "content":"rejected-LLM-agent"}, **kwargs}, ...]
     ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
