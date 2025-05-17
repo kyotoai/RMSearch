@@ -53,6 +53,7 @@ class RMTrainer:
                         dataset_list,
                         base_dir = "./RMSearch_exp",
                         test_size = None,
+                        max_length = 10000
                        ):
 
         """
@@ -78,7 +79,7 @@ class RMTrainer:
         if not os.path.exists(dataset_save_path):
             
             def formatting_func(examples):
-                kwargs = {"padding": "max_length", "truncation": True, "max_length": 4000, "return_tensors": "pt", "add_special_tokens":False}
+                kwargs = {"padding": "max_length", "truncation": True, "max_length": max_length, "return_tensors": "pt", "add_special_tokens":False}
                 query = examples['query']
                 chosen_key = examples['chosen_key']
                 rejected_key = examples['rejected_key']
