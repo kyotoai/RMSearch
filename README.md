@@ -32,25 +32,22 @@
 <br />
 <div align="center">
   <a href="https://kyotoai.org">
-    <img src="images/SEIMEI_overlook.png" alt="Logo" width="640" height="360">
+    <img src="images/RMSearch_fig.png" alt="Logo" width="640" height="360">
   </a>
 
 <h3 align="center">RMSearch</h3>
 
   <p align="center">
-    RMSearch
-  </p>
-  <p align="center">
-    RMSearch is a high intellectual search tool using reward model instead of semantic embedding model.
+    RMSearch is a high intellectual search tool using reward model instead of semantic embedding model. Agentic search is a good application and RMSearch enables step by step CoT reasoning and optimize the reasoning path!
     <br />
-    <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>Explore the docs »</strong></a>
+    <a href="https://github.com/kyotoai/RMSearch/tree/main/demo"><strong>Explore the docs »</strong></a>
     <br />
     <br />
-    <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo">View Demo</a>
+    <a href="https://github.com/kyotoai/RMSearch/tree/main/demo">View Demo</a>
     ·
-    <a href="https://github.com/kyotoai/SEIMEI/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
+    <a href="https://github.com/kyotoai/RMSearch/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     ·
-    <a href="https://github.com/kyotoai/SEIMEI/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+    <a href="https://github.com/kyotoai/RMSearch/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
   </p>
 </div>
 
@@ -173,27 +170,12 @@ SEIMEI can be applied to make these useful functions!!
 <!-- GETTING STARTED -->
 ## Getting Started
 
-This is an example of how you build SEIMEI on local gpu or rental server gpu.
-You can use it by installing seimei using `pip install` or downloading this directory into your local folder.
+This is an example of how you build RMSearch on local gpu or cloud server gpu.
+You can use it by downloading this directory into your local folder.
 
 ### Prerequisites
 
-This is an example of how to list things you need to use the software and how to install them.
-* transformers
-  ```sh
-  pip install transformers
-  ```
-* sentence_transformers
-  ```sh
-  pip install sentence_transformers
-  ```
-* vLLM
-  ```sh
-  pip install vllm
-  pip install ray
-  pip install packaging
-  pip install typing
-  ```
+This library requires cuda+torch environment with GPU. The memory of GPU should be higher than 12GB to run the sample.
 
 ### Installation
 
@@ -201,7 +183,7 @@ This is an example of how to list things you need to use the software and how to
   
 1. Install seimei (not prepared yet)
    ```sh
-   pip install seimei
+   pip install rmsearch
    ```
 
 
@@ -209,7 +191,9 @@ This is an example of how to list things you need to use the software and how to
   
 1. Download the repo
    ```sh
-   git clone https://github.com/kyotoai/SEIMEI.git
+   git clone https://github.com/kyotoai/RMSearch.git
+   cd RMSearch
+   pip install .
    ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -223,97 +207,95 @@ We are still developing this library. Please wait for it completing soon!
 
 ### Quick Start
 
-1. Prepare chunks of text
+1. Define search instance
     ```py
-    from Prepare import Prepare
-
-    # Locate your database folder in data_path below
-    data_path = "(your database path)"
-    save_path = "./processed"
-    
-    # designate all the files with 'extensions' inside 'folder_path'
-    file_info = [
-        {"folder_path":"(relative path for database you want to investigate)", "extensions":[".py"]},
-    ]
-    
-    
-    # about where the key starts to split the text
-    # index : words to be where text should be split
-    # first element(0 to 1): process_text_size * element is the start point of the key splitting. the samller the element is, the more likely it is for the key to split the text.
-    # second element(0 or 1): the first element should become   if 0: <text1><key> | <text2>,  if 1: <text1> | <key><text2>
-    rules = [
-        {
-            "class " : 1,
-        },
-    
-        {
-            "def " : 1,
-        },
-    
-        {
-            "if " : 1,
-        },
-    
-        {
-            "else " : 1,
-            "elif " : 1,
-        },
-        
-    
-        {
-            "\n\n" : 0,
-            "<0x0A><0x0A>" : 0,
-            "\x0A\x0A" : 0,
-        },
-    
-        {
-            "\n" : 0,
-            "<0x0A>" : 0,
-            "\x0A" : 0,
-        },
-    ]
-    
-    prepare = Prepare(
-        database_path = data_path,
-        save_path = save_path,
-        rules = rules, 
-        file_info=file_info, 
-        model_name = "gpt2",
-        max_tokens = 10000,
-        min_tokens = 3000,
-    )
-
-    prepare.make_chunks()
+    from rmsearch import Search
+    search = Search(model_name = "/workspace/llama3b-rm",
+            tensor_parallel_size = 1,
+            pipeline_parallel_size = 1,)
     ```
     
-2. Define seimei
+2. Search the most relevant keys
     ```py
-    from SEIMEI import SEIMEI
-    import asyncio
-    
-    processed_path = "./processed"  # input path same as save_path you used in Preparation
-    expert_class_names = ["Answer", "CheckInf", "MetaSurvey2"]
-    se_restrictions = ["MetaSurvey2"]  # search engine only hits classes in this list normally (except when adding expert_restriction in kwargs)
-    expert_module_names = ["Experts.Code.Modify"]
-    
-    seimei = SEIMEI(
-        processed_path = processed_path,
-        expert_class_names = expert_class_names,
-        expert_module_names = expert_module_names,
-        se_restrictions = se_restrictions,
-        max_inference_time = 1000,
-        tensor_parallel_size = 1,
+    queries = ["How to make LLM?", "What's the capital of Japan?"] * 5
+    keys = ["LLM is Large Language Model which can be made ..."*7, "Japanese capital is ..."*7] * 5
+    output = await search(queries, keys)
+    print(output)
+    ```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+### Train Reward Model For Your Own Tasks (For Developpers)
+
+See the full code in /examples/example_train2.ipynb
+
+1. Generate Tree Structural LLM Output
+    ```py
+    # This is an example of making agentic tree to optimize brainstorming
+    num_depth = 2
+    num_branch = 2
+    total_num_node = num_branch**(num_depth+1) - 2
+
+    bs_agent_tree = {}  
+
+    # Recursive function to make agentic tree
+    def build_bs_agent_tree(**kwargs):
+
+        # make kwargs_ from kwargs
+
+        def _grow(node, depth, **kwargs_):
+            if depth == num_depth:
+                return
+
+            for b in range(num_branch):
+                child = {
+                    "agent"   : "something",
+                    "node_ids" : node["node_ids"] + [b],
+                }
+                node["children"].append(child)
+
+                _grow(child, depth + 1, **kwargs_)
+
+        root = {"agent": "root", "node_ids": [], "children": []}
+        _grow(root, 0, **kwargs_)
+        return root
+
+    # Get output from LLM
+    def get_assistant_msg(node, **llm_kwargs):
+        output = get_output(node["agent"], **llm_kwargs)
+        return output
+
+    # Walk tree to add output
+    def populate_tree(node, **llm_kwargs):
+        if node["agent"] is not "root":         # skip dummy root
+            node["output"], node["ideas"] = get_assistant_msg(
+                node,
+                **llm_kwargs,
+            )
+
+        for child in node["children"]:
+            populate_tree(child, **llm_kwargs)
+
+    # Asign agents to each node in bs_agent_tree
+    bs_agent_tree = build_bs_agent_tree(
+        agents, num_depth=num_depth, num_branch=num_branch,
     )
+
+    # bs_agent_tree = [{"agent":"root", "node_id":[0], "children":[{"agent":"agent1", "node_id":[0, 0], "children":[...]}, ...]
+
+    # Get llm output in each node
+    populate_tree(bs_agent_tree, **kwargs)
+
+    # bs_agent_tree = [{"agent":"root", "node_id":[0], "children":[{"agent":"agent1", "output":"...", "node_id":[0, 0], "children":[...]}, ...]
     ```
     
-3. Get answer by seimei
+2. Make dataset_list
     ```py
-    original_question = "Give me the whole structure of this code file?"
-    final_answer = await seimei.get_answer(query = original_question) # return final answer
-    
-    print()
-    print()
-    print(final_answer)
+    # dataset_list should be 
+    # [{"query":str, "chosen_key":str, "rejected_key":str, **kwargs}, ...]
+    # or
+    # [{"query":[{"role":"user", "content":"context-and-query-to-get-key"}, ...], "chosen_key":[{"role":"assistant", "content":"chosen-LLM-agent"}, ...], "rejected_key":"chosen_key":[{"role":"assistant", "content":"rejected-LLM-agent"}, **kwargs}, ...]
     ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -323,10 +305,13 @@ We are still developing this library. Please wait for it completing soon!
 <!-- ROADMAP -->
 ## Roadmap
 
-- [ ] Search Integration Mechanism for Experts
-  - [ ] Permanent Expert
-- [ ] Auto Log System in Jupyter Notebook
-- [ ] High Precision Code & Textbook RAG
+### Search
+- [ ] Async vLLM
+  - [ ] Automatic Compatibility Solver
+
+### Train
+- [ ] Reward Trainer
+- [ ] Examples of Making MCTS
 
 See the [open issues](https://github.com/github_username/repo_name/issues) for a full list of proposed features (and known issues).
 
@@ -371,11 +356,11 @@ Distributed under the Apache-2.0 License. See `LICENSE.txt` for more information
 <!-- CONTACT --><!-- [@twitter_handle](https://twitter.com/twitter_handle) -->
 ## Contact
 
-* Kentaro Seki - seki.kentaro@kyotoai.org
+* KyotoAI Inc. - office@kyotoai.org
 
 KyotoAI homepage: [https://kyotoai.org](https://kyotoai.org)
 
-Project Link: [https://github.com/kyotoai/SEIMEI](https://github.com/kyotoai/SEIMEI)
+Project Link: [https://github.com/kyotoai/RMSearch](https://github.com/kyotoai/RMSearch)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -398,19 +383,19 @@ Project Link: [https://github.com/kyotoai/SEIMEI](https://github.com/kyotoai/SEI
 [vllm-url]: https://docs.vllm.ai/en/latest/
 [huggingface.co]: https://img.shields.io/badge/huggingface-yellow
 [huggingface-url]: https://huggingface.co
-[contributors-shield]: https://img.shields.io/github/contributors/kyotoai/SEIMEI.svg?style=for-the-badge
-[contributors-url]: https://github.com/kyotoai/SEIMEI/graphs/contributors
-[license-shield]: https://img.shields.io/github/license/kyotoai/SEIMEI.svg?style=for-the-badge
-[license-url]: https://github.com/kyotoai/SEIMEI/LICENSE.txt
+[contributors-shield]: https://img.shields.io/github/contributors/kyotoai/RMSearch.svg?style=for-the-badge
+[contributors-url]: https://github.com/kyotoai/RMSearch/graphs/contributors
+[license-shield]: https://img.shields.io/github/license/kyotoai/RMSearch.svg?style=for-the-badge
+[license-url]: https://github.com/kyotoai/RMSearch/LICENSE.txt
 
-[forks-shield]: https://img.shields.io/github/forks/github_username/repo_name.svg?style=for-the-badge
-[forks-url]: https://github.com/github_username/repo_name/network/members
-[stars-shield]: https://img.shields.io/github/stars/github_username/repo_name.svg?style=for-the-badge
-[stars-url]: https://github.com/github_username/repo_name/stargazers
-[issues-shield]: https://img.shields.io/github/issues/github_username/repo_name.svg?style=for-the-badge
-[issues-url]: https://github.com/github_username/repo_name/issues
+[forks-shield]: https://img.shields.io/github/forks/kyotoai/RMSearch.svg?style=for-the-badge
+[forks-url]: https://github.com/kyotoai/RMSearch/network/members
+[stars-shield]: https://img.shields.io/github/stars/kyotoai/RMSearch.svg?style=for-the-badge
+[stars-url]: https://github.com/kyotoai/RMSearch/stargazers
+[issues-shield]: https://img.shields.io/github/issues/kyotoai/RMSearch.svg?style=for-the-badge
+[issues-url]: https://github.com/kyotoai/RMSearch/issues
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
-[linkedin-url]: https://linkedin.com/in/linkedin_username
+[linkedin-url]: https://linkedin.com/in/kentaro-seki-b12000339
 [product-screenshot]: images/screenshot.png
 
 [Next.js]: https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white
