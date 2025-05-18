@@ -259,6 +259,7 @@ See the full code in /examples/example_train2.ipynb
 
         root = {"agent": "root", "node_ids": [], "children": []}
         _grow(root, 0, **kwargs_)
+        
         return root
 
     # Get output from LLM
