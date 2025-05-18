@@ -263,31 +263,43 @@ See the full code in /examples/example_train2.ipynb
 
     # Get output from LLM
     def get_assistant_msg(node, **llm_kwargs):
-        output = get_output(node["agent"], **llm_kwargs)
+        output = get_output(node["agent"], **llm_kwargs)  # LLM function
         return output
 
     # Walk tree to add output
     def populate_tree(node, **llm_kwargs):
         if node["agent"] is not "root":         # skip dummy root
-            node["output"], node["ideas"] = get_assistant_msg(
+            node["output"] = get_assistant_msg(
                 node,
                 **llm_kwargs,
             )
 
         for child in node["children"]:
             populate_tree(child, **llm_kwargs)
+    
+    def check(output):
+        # some function to check its novelty
+        return evaluation
+
+    # Walk tree to add evaluation towards each node's output
+    def add_eval_to_tree(node, depth):
+
+        if not node["output"] != None:
+            if node["eval"] == []:
+                node["eval"] = check(node["output"])
+
+        for child in node["children"]:
+            add_eval_to_tree(child, depth + 1)
+            
 
     # Asign agents to each node in bs_agent_tree
-    bs_agent_tree = build_bs_agent_tree(
-        agents, num_depth=num_depth, num_branch=num_branch,
-    )
-
-    # bs_agent_tree = [{"agent":"root", "node_id":[0], "children":[{"agent":"agent1", "node_id":[0, 0], "children":[...]}, ...]
+    bs_agent_tree = build_bs_agent_tree(agents, num_depth=num_depth, num_branch=num_branch)  # bs_agent_tree : [{"agent":"root", "node_id":[0], "children":[{"agent":"agent1", "node_id":[0, 0], "children":[...]}, ...]
 
     # Get llm output in each node
-    populate_tree(bs_agent_tree, **kwargs)
+    populate_tree(bs_agent_tree, **kwargs)  # bs_agent_tree = [{"agent":"root", "node_id":[0], "children":[{"agent":"agent1", "output":"...", "node_id":[0, 0], "children":[...]}, ...]
 
-    # bs_agent_tree = [{"agent":"root", "node_id":[0], "children":[{"agent":"agent1", "output":"...", "node_id":[0, 0], "children":[...]}, ...]
+    # Get evaluation of output in each node
+    add_eval_to_tree(bs_agent_tree, 0)  # bs_agent_tree = [{"agent":"root", "node_id":[0], "children":[{"agent":"agent1", "output":"...", "eval":"...", "node_id":[0, 0], "children":[...]}, ...]
     ```
     
 2. Make dataset_list
