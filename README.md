@@ -259,7 +259,7 @@ See the full code in /examples/example_train2.ipynb
 
         root = {"agent": "root", "node_ids": [], "children": []}
         _grow(root, 0, **kwargs_)
-        
+
         return root
 
     # Get output from LLM
@@ -343,11 +343,8 @@ See the full code in /examples/example_train2.ipynb
             scores = []
             bs_msgs = []
             for i, node_dict in enumerate(node["children"]):
-                #dataset_dict = get_dataset_dict(node_dict)
-                bs_msg = node_dict["bs_msg"]  # [{"role":}, ...]
                 task = node_dict["task"]
-                novelties = node_dict["novelties"]
-                node_ids = node_dict["node_ids"]
+                evaluation = node_dict["eval"]
 
                 try:
                     novelty = novelties[0]
