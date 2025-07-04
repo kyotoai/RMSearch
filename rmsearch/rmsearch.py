@@ -84,25 +84,47 @@ class Search:
         else:
             self.llm_template = llm_template
 
+        self.model_supported = True
         
         try:
-            
-            self.engine_args = AsyncEngineArgs(
-                model = model_name,
-                dtype="bfloat16",
-                tensor_parallel_size = tensor_parallel_size,
-                pipeline_parallel_size = pipeline_parallel_size,
-                distributed_executor_backend = "mp",
-                gpu_memory_utilization=0.95,
-                task="embed",
-                override_pooler_config=pooler_config_,
-            )
+            if os.path.exists(model_name):
+                
+                self.engine_args = AsyncEngineArgs(
+                    model = model_name,
+                    dtype="bfloat16",
+                    tensor_parallel_size = tensor_parallel_size,
+                    pipeline_parallel_size = pipeline_parallel_size,
+                    distributed_executor_backend = "mp",
+                    gpu_memory_utilization=0.95,
+                    task="embed",
+                    override_pooler_config=pooler_config_,
+                )
 
-            if "engine" not in dir(Search):
-                Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
+                if "engine" not in dir(Search):
+                    Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
+                    if os.path.exists(f"{model_name}/score.pt"):
+                        self.model_supported = False
+                        Search.score = torch.load(f"{model_name}/score.pt")
+                    
+            else:
+                self.engine_args = AsyncEngineArgs(
+                    model = model_name,
+                    dtype="bfloat16",
+                    tensor_parallel_size = tensor_parallel_size,
+                    pipeline_parallel_size = pipeline_parallel_size,
+                    distributed_executor_backend = "mp",
+                    gpu_memory_utilization=0.95,
+                    task="embed",
+                    override_pooler_config=pooler_config_,
+                )
+
+                if "engine" not in dir(Search):
+                    Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
             
         except Exception as e:
             if "Model architectures" in f"{e}":
+                raise Exception(f"{e}\n\nplease try to convert your model to by utils.convert_model")
+                '''
                 save_dir = f"{model_name}-converted-model"
                 score_save_path = f"{model_name}-converted-score.pt"
                 self.model_unsupported = True
@@ -136,7 +158,7 @@ class Search:
 
                 if "engine" not in dir(Search):
                     Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
-
+                '''
             else:
                 raise Exception(e)
 
@@ -207,7 +229,7 @@ class Search:
         
         formatted_dataset = dataset1.map(format)
         df_formatted = formatted_dataset.to_pandas()
-        list_of_prompts = df_formatted[['prompt']].to_dict('records')  # [{"prompt":".."}, ...]
+        #list_of_prompts = df_formatted[['prompt']].to_dict('records')  # [{"prompt":".."}, ...]
 
         total_num_tokens = 0
         for prompt_dict in list_of_prompts:
@@ -230,38 +252,37 @@ class Search:
         #print("mean number of tokens : ", mean_num_tokens)
         #print("calculation time(s) : ", end - start)
 
-        relevance = torch.tensor(rewards).reshape(len(queries), len(keys))
+        relevance = torch.stack(rewards).reshape(len(queries), len(keys))
         
         return relevance
 
     async def process(self, prompt, request_id):
 
-        if self.model_unsupported:
+        results_generator = Search.engine.encode(prompt, 
+                                    PoolingParams(), 
+                                    request_id
+                                    )
 
-            results_generator = self.engine.encode(prompt, 
-                                        PoolingParams(), 
-                                        request_id
-                                        )
+        final_output = None
+        async for request_output in results_generator:
+            """
+            if await request.is_disconnected():
+                # Abort the request if the client disconnects.
+                await engine.abort(request_id)
+                # Return or raise an error
+                raise Exception()
+            """
+            final_output = request_output
 
-            final_output = None
-            async for request_output in results_generator:
-                """
-                if await request.is_disconnected():
-                    # Abort the request if the client disconnects.
-                    await engine.abort(request_id)
-                    # Return or raise an error
-                    raise Exception()
-                """
-                final_output = request_output
+        if not self.model_supported:
 
             #embedding = final_output.outputs.embedding
             embedding = final_output.outputs.data
             embedding = torch.tensor(embedding).float()
-
+    
             reward = torch.matmul(torch.tensor(embedding).unsqueeze(0), self.score.to(embedding.device).transpose(0,1))
-
         else:
-            reward = torch.ones(1,1)  # for now
+            reward = torch.tensor(final_output.outputs.data).float()
         
         return reward
     

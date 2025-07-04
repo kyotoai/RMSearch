@@ -43,7 +43,7 @@ class RMTrainer:
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_eos_token=True, add_bos_token=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-            config.pad_token_id = config.eos_token_id
+            #config.pad_token_id = config.eos_token_id
         self.tokenizer = tokenizer
         
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
@@ -53,7 +53,8 @@ class RMTrainer:
                         dataset_list,
                         base_dir = "./RMSearch_exp",
                         test_size = None,
-                        max_length = 10000
+                        max_length = 10000,
+                        formatting_func = None,
                        ):
 
         """
@@ -77,55 +78,56 @@ class RMTrainer:
         #print(dataset.to_pandas())
 
         if not os.path.exists(dataset_save_path):
-            
-            def formatting_func(examples):
-                kwargs = {"padding": "max_length", "truncation": True, "max_length": max_length, "return_tensors": "pt", "add_special_tokens":False}
-                query = examples['query']
-                chosen_key = examples['chosen_key']
-                rejected_key = examples['rejected_key']
-            
-                if type(query)==list and type(chosen_key)==list and type(rejected_key)==list:
-                    chosen_message = query + chosen_key
-                    rejected_message = query + rejected_key
 
-                elif type(query)==str and type(chosen_key)==str and type(rejected_key)==str:
-                    chosen_message = [
-                        {'role': 'user', 'content': f"Give me a key to the query below;\n\nQuery:{query}"},
-                        {'role': 'assistant', 'content': f"{chosen_key}"}
-                    ]
-
-                    rejected_message = [
-                        {'role': 'user', 'content': f"Give me a key to the query below;\n\nQuery:{query}"},
-                        {'role': 'assistant', 'content': f"{rejected_key}"}
-                    ]
-
-                else:
-                    raise Exception("query must be str or list like [{'role':'', }]")
-
-                prompt_plus_chosen_response = self.tokenizer.apply_chat_template(chosen_message, tokenize=False)
-                prompt_plus_rejected_response = self.tokenizer.apply_chat_template(rejected_message, tokenize=False)
+            if not formatting_func:
+                def formatting_func(examples):
+                    kwargs = {"padding": "max_length", "truncation": True, "max_length": max_length, "return_tensors": "pt", "add_special_tokens":False}
+                    query = examples['query']
+                    chosen_key = examples['chosen_key']
+                    rejected_key = examples['rejected_key']
                 
-                #prompts = chosen_prompts+rejected_prompts
-                #inputs = tokenizer(prompts, **kwargs)
-        
-                #chosen_reject_similarities = advice_similarities[chosen_ids][:, rejected_ids]
-        
-                tokens_chosen = self.tokenizer.encode_plus(prompt_plus_chosen_response, **kwargs)
-                tokens_rejected = self.tokenizer.encode_plus(prompt_plus_rejected_response, **kwargs)
-                
-                return {
-                    "input_ids_chosen": tokens_chosen["input_ids"][0], "attention_mask_chosen": tokens_chosen["attention_mask"][0],
-                    "input_ids_rejected": tokens_rejected["input_ids"][0], "attention_mask_rejected": tokens_rejected["attention_mask"][0]
-                }
-        
-                '''
-                return {
-                    "num_chosen":len(chosen_prompts), "num_rejected":len(rejected_prompts),
-                    "input_ids":inputs["input_ids"], "attention_mask":inputs["attention_mask"],
+                    if type(query)==list and type(chosen_key)==list and type(rejected_key)==list:
+                        chosen_message = query + chosen_key
+                        rejected_message = query + rejected_key
+    
+                    elif type(query)==str and type(chosen_key)==str and type(rejected_key)==str:
+                        chosen_message = [
+                            {'role': 'user', 'content': f"Give me a key to the query below;\n\nQuery:{query}"},
+                            {'role': 'assistant', 'content': f"{chosen_key}"}
+                        ]
+    
+                        rejected_message = [
+                            {'role': 'user', 'content': f"Give me a key to the query below;\n\nQuery:{query}"},
+                            {'role': 'assistant', 'content': f"{rejected_key}"}
+                        ]
+    
+                    else:
+                        raise Exception("query must be str or list like [{'role':'', }]")
+    
+                    prompt_plus_chosen_response = self.tokenizer.apply_chat_template(chosen_message, tokenize=False)
+                    prompt_plus_rejected_response = self.tokenizer.apply_chat_template(rejected_message, tokenize=False)
                     
-                    #"chosen_reject_similarities":chosen_reject_similarities,
-                }
-                '''
+                    #prompts = chosen_prompts+rejected_prompts
+                    #inputs = tokenizer(prompts, **kwargs)
+            
+                    #chosen_reject_similarities = advice_similarities[chosen_ids][:, rejected_ids]
+            
+                    tokens_chosen = self.tokenizer.encode_plus(prompt_plus_chosen_response, **kwargs)
+                    tokens_rejected = self.tokenizer.encode_plus(prompt_plus_rejected_response, **kwargs)
+                    
+                    return {
+                        "input_ids_chosen": tokens_chosen["input_ids"][0], "attention_mask_chosen": tokens_chosen["attention_mask"][0],
+                        "input_ids_rejected": tokens_rejected["input_ids"][0], "attention_mask_rejected": tokens_rejected["attention_mask"][0]
+                    }
+            
+                    '''
+                    return {
+                        "num_chosen":len(chosen_prompts), "num_rejected":len(rejected_prompts),
+                        "input_ids":inputs["input_ids"], "attention_mask":inputs["attention_mask"],
+                        
+                        #"chosen_reject_similarities":chosen_reject_similarities,
+                    }
+                    '''
         
             formatted_dataset = dataset.map(formatting_func)
         
