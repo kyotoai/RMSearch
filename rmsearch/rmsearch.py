@@ -229,7 +229,7 @@ class Search:
         
         formatted_dataset = dataset1.map(format)
         df_formatted = formatted_dataset.to_pandas()
-        #list_of_prompts = df_formatted[['prompt']].to_dict('records')  # [{"prompt":".."}, ...]
+        list_of_prompts = df_formatted[['prompt']].to_dict('records')  # [{"prompt":".."}, ...]
 
         total_num_tokens = 0
         for prompt_dict in list_of_prompts:
