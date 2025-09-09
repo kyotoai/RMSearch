@@ -16,7 +16,7 @@ kenta
 - [ ] Tag Graph Dataset 10h
 - [ ] Scalability 5h
 
-mingk
+mingkwan
 - [ ] Evaluation 2 days
   - [ ] MAP@10
   - [ ] nDCG@10
