@@ -1,6 +1,6 @@
-RMSearch paper TODO
+# RMSearch paper TODO
 
-* Sep 9 2025
+## Sep 9 2025
 
 Experiment. 2 weeks
 2-3 times
