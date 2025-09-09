@@ -2,7 +2,10 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Auto
 import time, os
 import torch
 
+# You should custom the following function depending on your model
 
+# step 1. See score name in the model
+# step 2. 
 def convert_model(model_name, keep_original_model=False):
     
     tokenizer = tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_eos_token=True, add_bos_token=True)

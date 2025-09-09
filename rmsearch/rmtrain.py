@@ -39,6 +39,7 @@ class RMTrainer:
 
         self.num_gpus = num_gpus
         self.model_name = model_name
+
         
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_eos_token=True, add_bos_token=True)
         if tokenizer.pad_token is None:
@@ -53,6 +54,7 @@ class RMTrainer:
                         dataset_list,
                         base_dir = "./RMSearch_exp",
                         test_size = None,
+                        test_ratio = None, 
                         max_length = 10000,
                         formatting_func = None,
                        ):
@@ -152,7 +154,10 @@ class RMTrainer:
                 total_samples = len(formatted_dataset)
 
                 if not test_size:
-                    test_size = int(total_samples*0.1)
+                    if test_ratio:
+                        test_size = int(total_samples*test_ratio)
+                    else:
+                        test_size = int(total_samples*0.1)
                 
                 # Generate random indices for the test set using PyTorch
                 test_indices = torch.randperm(total_samples)[:test_size]
@@ -190,6 +195,8 @@ class RMTrainer:
               formatted_dataset,
               training_args = None,
               peft_config = None,
+              trainer_cls = None,
+              data_collator = None, 
              ):
 
         # Configuring the training arguments
@@ -253,18 +260,29 @@ class RMTrainer:
             num_trash = len(formatted_dataset["test"])%(self.num_gpus*training_args.per_device_train_batch_size)
             formatted_dataset["test"] = formatted_dataset["test"].select(range(len(formatted_dataset["test"])-num_trash))
             
-        # Loading the RewardTrainer from TRL
-        trainer = CustomRewardTrainer(
-        #trainer = RewardTrainer(
-            model=self.model,
-            args=training_args,
-            tokenizer=self.tokenizer,
-            train_dataset=formatted_dataset["train"],
-            eval_dataset=formatted_dataset["test"],
-            #data_collator=custom_data_collator,
-            #peft_config=peft_config,
-        )
-        
+        if trainer_cls:
+            trainer = trainer_cls(
+                model=self.model,
+                args=training_args,
+                tokenizer=self.tokenizer,
+                train_dataset=formatted_dataset["train"],
+                eval_dataset=formatted_dataset["test"],
+                data_collator=data_collator,
+                #peft_config=peft_config,
+            )
+        else:
+            # Loading the RewardTrainer from TRL
+            trainer = CustomRewardTrainer(
+            #trainer = RewardTrainer(
+                model=self.model,
+                args=training_args,
+                tokenizer=self.tokenizer,
+                train_dataset=formatted_dataset["train"],
+                eval_dataset=formatted_dataset["test"],
+                #data_collator=custom_data_collator,
+                #peft_config=peft_config,
+            )
+            
         accelerator = trainer.accelerator
         self.model = self.model.to(accelerator.device)
         
