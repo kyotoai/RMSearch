@@ -44,7 +44,7 @@ def _worker_main(
                     #print(outputs)
                     embeds = torch.stack([out.outputs.data for out in outputs])
                     #print(score, embeds)
-                    rewards = torch.matmul(score, embeds.transpose(0,1))
+                    rewards = torch.matmul(score, embeds.transpose(0,1))[0]
                     #print(rewards)
                     result_q.put((job_id, item_idx, {"outputs": rewards}))
                 elif kind == "reward":  # Not Implemented Yet
@@ -84,6 +84,7 @@ class LLMWorkerPool:
         ]
         self.procs: List[mp.Process] = []
         self._rr = 0
+        self.requests = []
 
         for wid, devs in enumerate(device_groups):
             p = self.ctx.Process(
