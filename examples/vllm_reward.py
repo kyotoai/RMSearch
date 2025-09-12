@@ -186,7 +186,7 @@ class LLMWorker:
         for item_idx, chunk in enumerate(chunks):
             _, batch_prompts = zip(*chunk)
             payload = {"prompts": list(batch_prompts), "pooling_params": pooling_params}
-            self._next_queue().put((job_id, item_idx, "reward", payload))
+            #self._next_queue().put((job_id, item_idx, "reward", payload))
             wid, q = self._next_queue()
             assigned_worker[item_idx] = wid
             assigned_counts[wid] += 1
@@ -273,7 +273,7 @@ def build_llm(
 def embed_with_model(model: LLMWorker, prompts: List[str], **gen_kwargs) -> List[str]:
     return model.encode(prompts, **gen_kwargs)
 
-def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, **gen_kwargs) -> List[str]:
+def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, topk = 10, **gen_kwargs) -> List[str]:
     
     # requests = [{"query": "...", "keys": ["k1","k2", ...]}, ...]
     df = pd.DataFrame(requests)
@@ -342,15 +342,14 @@ def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, **gen
     )
 
     rewards = model.encode(df["prompt"], **gen_kwargs)
-    relevance = torch.stack(rewards).reshape(len(queries), len(keys))
 
-    topn = 2  # choose how many rows per group
+    df["relevance"] = rewards.numpy()
 
     # Sort and pick topn per request
     df = (
-        df.sort_values(["query_id", "reward"], ascending=[True, False])
+        df.sort_values(["query_id", "relevance"], ascending=[True, False])
                 .groupby("query_id")
-                .head(topn)
+                .head(topk)
     )
 
     '''
@@ -366,7 +365,7 @@ def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, **gen
         .apply(lambda g: {
             "query_id": g.name,
             "query": g["query"].unique()[0], #.tolist(),
-            "keys": g[["key", "key_id", "reward"]].to_dict("records")
+            "keys": g[["key", "key_id", "relevance"]].to_dict("records")
         })
         .tolist()
     )
