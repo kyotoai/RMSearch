@@ -3,14 +3,16 @@
 ## Sep 9 2025
 
 - [x] Finish baseline of evaluation
-    - [x] Debug vllm_pool.py: enable data_parallel for reward model
+    - [x] Debug vllm_reward.py: enable data_parallel for reward model
     - [x] Implement search_key function in Evaluation in train_en.ipynb
     - [x] Rename functions and comment out
     - [x] Debug
 
 ## Sep 12
 
+- [x] Add progress_bar in vllm_reward.py
+- [ ] Implement data parallel in assigning tags
 - [ ] Make relevance_dict.json with evaluation code
-- [ ] Design Tag Dataset
+- [ ] Design tag graph system and its dataset
 
 

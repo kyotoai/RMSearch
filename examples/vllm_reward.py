@@ -46,6 +46,7 @@ from transformers import AutoTokenizer
 import torch
 from datasets import Dataset
 import pandas as pd
+from tqdm import tqdm
 
 def _worker_main(
     worker_id: int,
@@ -58,7 +59,10 @@ def _worker_main(
     try:
         os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in device_ids)
         os.environ.setdefault("OMP_NUM_THREADS", "1")
-        llm = LLM(model=model, tensor_parallel_size=len(device_ids), **llm_kwargs)
+
+        llm = LLM(model=model, tensor_parallel_size=len(device_ids), disable_log_stats=True, **llm_kwargs)
+        llm.llm_engine.log_requests = False
+
         if os.path.exists(f"{model}/score.pt"):
             score = torch.load(f"{model}/score.pt", weights_only = True)
         else:
@@ -87,20 +91,28 @@ def _worker_main(
                     #print(score, embeds)
                     rewards = torch.matmul(score, embeds.transpose(0,1))[0]
                     #print(rewards)
-                    result_q.put((job_id, item_idx, {"outputs": rewards}))
+                    #result_q.put((job_id, item_idx, {"outputs": rewards}))
+                    result_q.put((job_id, item_idx, worker_id, {"outputs": rewards}))
+
                 else:  # Not Implemented Yet
                     prompts = payload["prompts"]
                     outputs = llm.reward(prompts)
-                    result_q.put((job_id, item_idx, {"outputs": outputs}))
+                    #result_q.put((job_id, item_idx, {"outputs": outputs}))
+                    result_q.put((job_id, item_idx, worker_id, {"outputs": outputs}))
+
             except Exception as e:
-                result_q.put((job_id, item_idx, {"error": f"{type(e).__name__}: {e}"}))
+                #result_q.put((job_id, item_idx, {"error": f"{type(e).__name__}: {e}"}))
+                result_q.put((job_id, item_idx, worker_id, {"error": f"{type(e).__name__}: {e}"}))
+
 
     except KeyboardInterrupt:
         pass
     except Exception:
         tb = traceback.format_exc()
         try:
-            result_q.put(("__init__", -1, {"fatal_error": tb}))
+            #result_q.put(("__init__", -1, {"fatal_error": tb}))
+            result_q.put(("__init__", -1, worker_id, {"fatal_error": tb}))
+
         except Exception:
             pass
         raise
@@ -138,10 +150,18 @@ class LLMWorker:
             p.start()
             self.procs.append(p)
 
+    '''
     def _next_queue(self) -> mp.Queue:
         q = self.task_queues[self._rr]
         self._rr = (self._rr + 1) % len(self.task_queues)
         return q
+    '''
+
+    def _next_queue(self) -> Tuple[int, mp.Queue]:
+        wid = self._rr
+        q = self.task_queues[wid]
+        self._rr = (self._rr + 1) % len(self.task_queues)
+        return wid, q
 
     def encode(
         self,
@@ -160,10 +180,23 @@ class LLMWorker:
         ]
         pending = len(chunks)
 
+        assigned_counts = {wid: 0 for wid in range(len(self.task_queues))}
+        assigned_worker: Dict[int, int] = {}
+
         for item_idx, chunk in enumerate(chunks):
             _, batch_prompts = zip(*chunk)
             payload = {"prompts": list(batch_prompts), "pooling_params": pooling_params}
             self._next_queue().put((job_id, item_idx, "reward", payload))
+            wid, q = self._next_queue()
+            assigned_worker[item_idx] = wid
+            assigned_counts[wid] += 1
+            q.put((job_id, item_idx, "reward", payload))
+
+        # One tqdm bar per worker/process
+        bars = {
+            wid: tqdm(total=cnt, position=wid, desc=f"Worker {wid}", leave=False)
+            for wid, cnt in assigned_counts.items() if cnt > 0
+        }
 
         chunk_results: Dict[int, List[str]] = {}
         deadline = time.time() + timeout_s if timeout_s else None
@@ -171,7 +204,8 @@ class LLMWorker:
         while pending > 0:
             remaining = max(0.0, (deadline - time.time())) if deadline else None
             try:
-                rid, item_idx, payload = self.result_q.get(timeout=remaining)
+                #rid, item_idx, payload = self.result_q.get(timeout=remaining)
+                rid, item_idx, wid, payload = self.result_q.get(timeout=remaining)
             except queue.Empty:
                 raise TimeoutError("Timed out waiting for worker results.")
             if rid == "__init__" and "fatal_error" in payload:
@@ -180,8 +214,16 @@ class LLMWorker:
                 continue
             if "error" in payload:
                 raise RuntimeError(f"Worker error in batch {item_idx}: {payload['error']}")
+            
+            # Update the corresponding worker's progress bar
+            if wid in bars:
+                bars[wid].update(1)
+
             chunk_results[item_idx] = payload["outputs"]
             pending -= 1
+
+        for b in bars.values():
+            b.close()
 
         outputs: List[Optional[str]] = [None] * len(prompts)
         for item_idx, chunk in enumerate(chunks):
@@ -232,8 +274,7 @@ def embed_with_model(model: LLMWorker, prompts: List[str], **gen_kwargs) -> List
     return model.encode(prompts, **gen_kwargs)
 
 def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, **gen_kwargs) -> List[str]:
-    # requests: [{"query":"", "keys":["", ...], }, ...]
-
+    
     # requests = [{"query": "...", "keys": ["k1","k2", ...]}, ...]
     df = pd.DataFrame(requests)
     df["query_id"] = range(len(df))
