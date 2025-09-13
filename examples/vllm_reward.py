@@ -61,7 +61,7 @@ def _worker_main(
         os.environ.setdefault("OMP_NUM_THREADS", "1")
 
         llm = LLM(model=model, tensor_parallel_size=len(device_ids), disable_log_stats=True, **llm_kwargs)
-        llm.llm_engine.log_requests = False
+        llm.llm_engine.log_stats = False
 
         if os.path.exists(f"{model}/score.pt"):
             score = torch.load(f"{model}/score.pt", weights_only = True)
@@ -79,7 +79,7 @@ def _worker_main(
                     pp = payload["pooling_params"]
                     # If pickling SamplingParams ever bites, reconstruct:
                     # if isinstance(sp, dict): sp = SamplingParams(**sp)
-                    outputs = llm.encode(prompts, pooling_task="embed")
+                    outputs = llm.encode(prompts, pooling_task="embed", use_tqdm=False)
                     
                     #print(outputs)
                     embeds = torch.stack([out.outputs.data for out in outputs])
@@ -340,6 +340,9 @@ def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, topk 
         df.apply(lambda row: llm_template(row), axis=1)
                     .apply(strip_prefix)
     )
+
+    #print(len(df["prompt"]))
+    #print(df["prompt"].tolist()[:10])
 
     rewards = model.encode(df["prompt"], **gen_kwargs)
 

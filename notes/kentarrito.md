@@ -11,8 +11,10 @@
 ## Sep 12
 
 - [x] Add progress_bar in vllm_reward.py
-- [ ] Implement data parallel in assigning tags
+- [x] Implement data parallel in assigning tags
 - [ ] Make relevance_dict.json with evaluation code
 - [ ] Design tag graph system and its dataset
 
+## Sep 13
 
+- [x] Debug graph search code in train_en.ipynb
