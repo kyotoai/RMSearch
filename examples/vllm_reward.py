@@ -68,6 +68,8 @@ def _worker_main(
         else:
             score = None
 
+        start = time.time()
+        n_finished_item = 0
         while True:
             task = task_q.get()
             if task is None:
@@ -79,7 +81,7 @@ def _worker_main(
                     pp = payload["pooling_params"]
                     # If pickling SamplingParams ever bites, reconstruct:
                     # if isinstance(sp, dict): sp = SamplingParams(**sp)
-                    outputs = llm.encode(prompts, pooling_task="embed", use_tqdm=False)
+                    outputs = llm.encode(prompts, pooling_task="embed") #, use_tqdm=False)
                     
                     #print(outputs)
                     embeds = torch.stack([out.outputs.data for out in outputs])
@@ -93,6 +95,10 @@ def _worker_main(
                     #print(rewards)
                     #result_q.put((job_id, item_idx, {"outputs": rewards}))
                     result_q.put((job_id, item_idx, worker_id, {"outputs": rewards}))
+                    n_finished_item += 1
+                    if n_finished_item % 10 == 0:
+                        wrap = time.time()
+                        print(f"worker_id: {worker_id},  n_finished_item: {n_finished_item},  wrap: {wrap-start} s")
 
                 else:  # Not Implemented Yet
                     prompts = payload["prompts"]
@@ -183,6 +189,8 @@ class LLMWorker:
         assigned_counts = {wid: 0 for wid in range(len(self.task_queues))}
         assigned_worker: Dict[int, int] = {}
 
+        print("3")
+
         for item_idx, chunk in enumerate(chunks):
             _, batch_prompts = zip(*chunk)
             payload = {"prompts": list(batch_prompts), "pooling_params": pooling_params}
@@ -218,6 +226,7 @@ class LLMWorker:
             # Update the corresponding worker's progress bar
             if wid in bars:
                 bars[wid].update(1)
+                print(f"wid:{wid}, item_idx:{item_idx}")
 
             chunk_results[item_idx] = payload["outputs"]
             pending -= 1
@@ -288,61 +297,26 @@ def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, topk 
     # reorder columns
     df = df[["query_id", "query", "key_id", "key"]]
 
-    '''
-    # Step 1. Put into DataFrame
-    df = pd.DataFrame(requests).reset_index(names="request_id")
+    #PREFIX = "<|begin_of_text|>"
     
-    # Step 2. Explode queries
-    qdf = df[["request_id", "queries"]].explode("queries").reset_index(drop=True)
-    qdf["query_id"] = qdf.groupby("request_id").cumcount()
-    qdf = qdf.rename(columns={"queries": "query"})
-    
-    # Step 3. Explode keys
-    kdf = df[["request_id", "keys"]].explode("keys").reset_index(drop=True)
-    kdf["key_id"] = kdf.groupby("request_id").cumcount()
-    kdf = kdf.rename(columns={"keys": "key"})
-    
-    # Step 4. Cross join everything
-    cross = qdf.merge(kdf, how="cross")
-    
-    # Step 5. Filter so that only rows with same request_id remain
-    df = cross[cross["request_id_x"] == cross["request_id_y"]] \
-        .drop(columns=["request_id_y"]) \
-        .rename(columns={"request_id_x": "request_id"})
-    '''
+    #def strip_prefix(s: str, prefix: str = PREFIX) -> str:
+    #    return s[len(prefix):] if isinstance(s, str) and s.startswith(prefix) else s
 
-    '''
-    example:
-    requests = [
-        {"queries":["q1","q2"], "keys":["k1","k2"]},
-        {"queries":["q3"], "keys":["k3","k4","k5"]}
-    ]
-    
-    df =
-        request_id query  query_id key  key_id
-    0            0    q1         0  k1       0
-    1            0    q1         0  k2       1
-    5            0    q2         1  k1       0
-    6            0    q2         1  k2       1
-    12           1    q3         0  k3       0
-    13           1    q3         0  k4       1
-    14           1    q3         0  k5       2
-    '''
-    
+    dataset1 = Dataset.from_pandas(df)
 
-    PREFIX = "<|begin_of_text|>"
+    def format(row):
+        prompt = llm_template(row)
+        prompt = prompt[17:]  # to eliminate <|begin_of_text|> because vllm automatically add it to prompt  ####### need to be modified accordingly
+        row["prompt"] = prompt
+        return row
     
-    def strip_prefix(s: str, prefix: str = PREFIX) -> str:
-        return s[len(prefix):] if isinstance(s, str) and s.startswith(prefix) else s
+    formatted_dataset = dataset1.map(format)
+    df = formatted_dataset.to_pandas()
+    
+    #list_of_prompts = df_formatted[['prompt']].to_dict('records')  # [{"prompt":".."}, ...]
     
     # Build prompts and strip the prefix (like your `prompt[17:]`)
-    df["prompt"] = (
-        df.apply(lambda row: llm_template(row), axis=1)
-                    .apply(strip_prefix)
-    )
-
-    #print(len(df["prompt"]))
-    #print(df["prompt"].tolist()[:10])
+    #df["prompt"] = df.apply(lambda row: llm_template(row)[17:], axis=1)
 
     rewards = model.encode(df["prompt"], **gen_kwargs)
 
@@ -355,14 +329,6 @@ def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, topk 
                 .head(topk)
     )
 
-    '''
-    # Collapse into result list per request
-    df = (
-        df.groupby("request_id")
-        .apply(lambda g: g[["key", "key_id", "reward"]].to_dict("records"))
-        .reset_index(name="result")
-    )'''
-
     result = (
         df.groupby("query_id")
         .apply(lambda g: {
@@ -372,93 +338,5 @@ def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, topk 
         })
         .tolist()
     )
-
-    
-    '''
-    example:
-    result = 
-    [
-      {"request_id": 0,
-       "keys": [
-           {"key": "k3", "key_id": 2, "reward": 0.9},
-           {"key": "k1", "key_id": 0, "reward": 0.8}
-       ]},
-      {"request_id": 1,
-       "keys": [
-           {"key": "k4", "key_id": 0, "reward": 0.7},
-           {"key": "k6", "key_id": 2, "reward": 0.6}
-       ]}
-    ]
-    '''
-    
-
-    '''
-    dataset1 = Dataset.from_pandas(final_df)
-
-    def format(row):
-        prompt = llm_template(row)
-        prompt = prompt[17:]  # to eliminate <|begin_of_text|> because vllm automatically add it to prompt  ####### need to be modified accordingly
-        row["prompt"] = prompt
-        return row
-    
-    formatted_dataset = dataset1.map(format)
-    df_formatted = formatted_dataset.to_pandas()
-    list_of_prompts = df_formatted[['prompt']].to_dict('records')  # [{"prompt":".."}, ...]
-    
-
-    #total_num_tokens = 0
-    #for prompt_dict in list_of_prompts:
-    #    inputs = Search.tokenizer(prompt_dict["prompt"], return_tensors = "pt")
-    #    total_num_tokens += len(inputs["input_ids"][0])
-
-    #mean_num_tokens = total_num_tokens/len(list_of_prompts)
-
-    start = time.time()
-
-    if disable_log:
-        rewards = await asyncio.gather(
-            *[self.process(prompt_dict["prompt"], i, progress_bar) 
-              for i, prompt_dict in enumerate(list_of_prompts)]
-        )
-
-    else:
-        rewards = await tqdm_asyncio.gather(
-            *[self.process(prompt_dict["prompt"], i, progress_bar) 
-              for i, prompt_dict in enumerate(list_of_prompts)],
-            desc="Searching: "
-        )
-    
-    #rewards = await asyncio.gather(
-    #    *[self.process(prompt_dict["prompt"], i) for i, prompt_dict in enumerate(tqdm(list_of_prompts, desc="Searching"))]
-    #)
-
-    end = time.time()
-    
-
-    #print()
-    #print("----------")
-    #print("total number of inputs : ", len(list_of_prompts))
-    #print("mean number of tokens : ", mean_num_tokens)
-    #print("calculation time(s) : ", end - start)
-
-    relevance = torch.stack(rewards).reshape(len(queries), len(keys))
-
-
-    relevance = await self.get_relevance(queires, keys, disable_log, progress_bar)
-    top_relevance, top_key_ids = torch.topk(relevance, k=k)
-
-    return_dicts = []
-    for query_id, query in enumerate(queires):
-        return_dict = {"query":query, "query_id":query_id, "keys":[]}
-        for i in range(len(top_key_ids[query_id])):
-            torch_key_id = top_key_ids[query_id, i]
-            key_id = torch_key_id.item()
-            if return_relevance:
-                return_dict["keys"].append({"key_id":key_id, "key":keys[key_id], "relevance":relevance[query_id, key_id].item()})
-            else:
-                return_dict["keys"].append({"key_id":key_id, "key":keys[key_id]})
-                
-        return_dicts.append(return_dict)
-    '''
 
     return result

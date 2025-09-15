@@ -18,3 +18,23 @@
 ## Sep 13
 
 - [x] Debug graph search code in train_en.ipynb
+- [ ] Make better log system of search_key
+- [ ] Comment out more
+
+## Sep 14
+
+- [x] Debug
+
+## Sep 15
+
+- [x] Debug code to generate relevance_dict.json
+- [x] Comment out common error and how to fix them
+
+- Realized it takes so much time to calculate last step of search_keys with 2 tag layers. \
+  1000 keys * 5000 queries -> 8GPUS * 10h \
+  we should definitely generate deeper tag graph \
+
+## Sep 16
+
+- [ ] Generate Deeper Tags
+
