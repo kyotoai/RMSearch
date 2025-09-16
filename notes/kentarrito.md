@@ -36,5 +36,5 @@
 
 ## Sep 16
 
-- [ ] Generate Deeper Tags
-
+- [ ] Design tag graph generation
+    Get tag from each key using LLM -> Embed tags -> Use k-means to get 1000, 100, 10 weight points -> Get representative tag using LLM
