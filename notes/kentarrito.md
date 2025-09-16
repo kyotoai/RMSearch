@@ -12,13 +12,11 @@
 
 - [x] Add progress_bar in vllm_reward.py
 - [x] Implement data parallel in assigning tags
-- [ ] Make relevance_dict.json with evaluation code
-- [ ] Design tag graph system and its dataset
+- [ ] Make relevance_dict.json with evaluation code.   Canceled because vllm_reward takes much time without more tags 
 
 ## Sep 13
 
 - [x] Debug graph search code in train_en.ipynb
-- [ ] Make better log system of search_key
 - [ ] Comment out more
 
 ## Sep 14
@@ -36,5 +34,11 @@
 
 ## Sep 16
 
-- [ ] Design tag graph generation
+- [x] Design tag graph generation
     Get tag from each key using LLM -> Embed tags -> Use k-means to get 1000, 100, 10 weight points -> Get representative tag using LLM
+- [x] Add vllm_generation.py and its test
+- [x] Make better log system (vllm_reward2.py)
+
+## Sep 17
+
+- [ ] Code tag graph
