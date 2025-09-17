@@ -18,9 +18,8 @@ kenta
 
 mingkwan
 - [ ] Evaluation 2 days
-  - [ ] MAP@10
   - [ ] nDCG@10
-  - [ ] Recall@50
+- [ ] Implement Deepspeed
 
 ### Code RMSearch Github  1 week
 - [ ] Data Parallel 1h

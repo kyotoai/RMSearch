@@ -38,7 +38,7 @@ finally:
 """
 
 
-import os, time, uuid, signal, traceback, queue
+import os, time, uuid, signal, traceback, queue, sys, threading
 import multiprocessing as mp
 from typing import List, Tuple, Dict, Any, Optional
 from vllm import LLM, SamplingParams, PoolingParams
@@ -46,7 +46,40 @@ from transformers import AutoTokenizer
 import torch
 from datasets import Dataset
 import pandas as pd
-from tqdm import tqdm
+from tqdm import tqdm  # kept (not used in the new log system, but left to avoid breaking imports)
+
+# ---------------------------- Jupyter log board ----------------------------
+class _NotebookBoard:
+    """
+    Keeps one line per worker and reprints the board in-place in notebooks.
+    Falls back to simple prints elsewhere.
+    """
+    def __init__(self, num_workers: int):
+        self.state = ["initializing…" for _ in range(num_workers)]
+        self._have_clear = False
+        try:
+            from IPython.display import clear_output  # type: ignore
+            self._clear_output = clear_output
+            self._have_clear = True
+        except Exception:
+            self._have_clear = False
+
+    def update(self, wid: int, text: str):
+        if 0 <= wid < len(self.state):
+            self.state[wid] = text
+        self.render()
+
+    def render(self):
+        if self._have_clear:
+            try:
+                self._clear_output(wait=True)
+            except Exception:
+                pass
+        print("== Worker logs ==")
+        for i, line in enumerate(self.state):
+            print(f"[Worker {i}] {line}")
+        sys.stdout.flush()
+
 
 def _worker_main(
     worker_id: int,
@@ -56,72 +89,135 @@ def _worker_main(
     task_q: mp.Queue,
     result_q: mp.Queue,
 ):
+    """
+    Worker with heartbeat logging. Sends logs as 4-tuples:
+    ('__log__', -1, worker_id, {'msg': ...})
+    Results are 4-tuples:
+    (job_id, item_idx, worker_id, {'outputs': ... | 'error': ...})
+    """
+    total_batches = 0
+    done = 0
+    phase = "starting"
+    start_time = None
+    stop_evt = threading.Event()
+
+    def send_log(msg: str):
+        try:
+            result_q.put(("__log__", -1, worker_id, {"msg": msg}), block=False)
+        except Exception:
+            # last resort
+            print(f"[Worker {worker_id}] {msg}", flush=True)
+
+    def heartbeat():
+        last = None
+        while not stop_evt.is_set():
+            elapsed = (time.time() - start_time) if start_time else 0.0
+            rate = (done / elapsed) if elapsed > 0 else 0.0
+            pct = (100.0 * done / total_batches) if total_batches else 0.0
+            rem = max(total_batches - done, 0)
+            eta = (rem / rate) if (rate > 0 and total_batches) else 0.0
+            msg = f"{phase}: {done}/{total_batches} ({pct:4.1f}%) · {rate:0.2f} batch/s · ETA {eta:0.1f}s"
+            if msg != last:
+                send_log(msg)
+                last = msg
+            stop_evt.wait(1.0)
+
     try:
         os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in device_ids)
         os.environ.setdefault("OMP_NUM_THREADS", "1")
+        os.environ.setdefault("PYTHONUNBUFFERED", "1")
 
+        phase = "loading model"
+        send_log("loading model…")
         llm = LLM(model=model, tensor_parallel_size=len(device_ids), disable_log_stats=True, **llm_kwargs)
         llm.llm_engine.log_stats = False
+        phase = "idle"
+        send_log("model ready")
 
+        # score.pt is optional
         if os.path.exists(f"{model}/score.pt"):
-            score = torch.load(f"{model}/score.pt", weights_only = True)
+            score = torch.load(f"{model}/score.pt", weights_only=True)
         else:
             score = None
 
+        start_time = time.time()
+        threading.Thread(target=heartbeat, daemon=True).start()
+
         start = time.time()
         n_finished_item = 0
+
         while True:
             task = task_q.get()
             if task is None:
+                phase = "stopping"
+                send_log("shutting down…")
                 break
+
             job_id, item_idx, kind, payload = task
             try:
-                if score != None:
+                if kind == "init":
+                    total_batches = int(payload.get("total_batches", 0))
+                    done = 0
+                    start_time = time.time()
+                    phase = "idle"
+                    send_log(f"initialized: 0/{total_batches} (0.0%)")
+                    # ack (keep 4-tuple shape)
+                    result_q.put((job_id, item_idx, worker_id, {"ok": True}), block=False)
+                    continue
+
+                if score is not None:
+                    # Embedding + reward path
                     prompts = payload["prompts"]
-                    pp = payload["pooling_params"]
-                    # If pickling SamplingParams ever bites, reconstruct:
-                    # if isinstance(sp, dict): sp = SamplingParams(**sp)
-                    outputs = llm.encode(prompts, pooling_task="embed") #, use_tqdm=False)
-                    
-                    #print(outputs)
+                    pp = payload.get("pooling_params", None)  # kept for compatibility
+                    phase = "generating"
+                    outputs = llm.encode(prompts, pooling_task="embed", use_tqdm=False)
+
                     embeds = torch.stack([out.outputs.data for out in outputs])
                     common_dtype = torch.float32
-                    common_device = embeds.device  # or torch.device("cuda") if you prefer
+                    common_device = embeds.device
                     embeds = embeds.to(dtype=common_dtype, device=common_device)
-                    score  = score.to(dtype=common_dtype, device=common_device)
-                    
-                    #print(score, embeds)
-                    rewards = torch.matmul(score, embeds.transpose(0,1))[0]
-                    #print(rewards)
-                    #result_q.put((job_id, item_idx, {"outputs": rewards}))
+                    score_device = common_device
+                    score_dtype = common_dtype
+                    score_local = score.to(dtype=score_dtype, device=score_device)
+
+                    rewards = torch.matmul(score_local, embeds.transpose(0, 1))[0]
                     result_q.put((job_id, item_idx, worker_id, {"outputs": rewards}))
                     n_finished_item += 1
+                    done += 1
+                    # keep original periodic print (unchanged) + heartbeat will also update
                     if n_finished_item % 10 == 0:
                         wrap = time.time()
                         print(f"worker_id: {worker_id},  n_finished_item: {n_finished_item},  wrap: {wrap-start} s")
 
-                else:  # Not Implemented Yet
+                    phase = "idle"
+
+                else:
+                    # Reward API path (not implemented previously for tqdm; keep semantics)
                     prompts = payload["prompts"]
+                    phase = "generating"
                     outputs = llm.reward(prompts)
-                    #result_q.put((job_id, item_idx, {"outputs": outputs}))
                     result_q.put((job_id, item_idx, worker_id, {"outputs": outputs}))
+                    done += 1
+                    phase = "idle"
 
             except Exception as e:
-                #result_q.put((job_id, item_idx, {"error": f"{type(e).__name__}: {e}"}))
                 result_q.put((job_id, item_idx, worker_id, {"error": f"{type(e).__name__}: {e}"}))
-
+                phase = "error"
+                send_log(f"error on batch {item_idx}: {type(e).__name__}: {e}")
 
     except KeyboardInterrupt:
-        pass
+        phase = "interrupted"
+        send_log("keyboard interrupt")
     except Exception:
         tb = traceback.format_exc()
         try:
-            #result_q.put(("__init__", -1, {"fatal_error": tb}))
             result_q.put(("__init__", -1, worker_id, {"fatal_error": tb}))
-
         except Exception:
             pass
         raise
+    finally:
+        stop_evt.set()
+
 
 class LLMWorker:
     def __init__(
@@ -186,54 +282,90 @@ class LLMWorker:
         ]
         pending = len(chunks)
 
-        assigned_counts = {wid: 0 for wid in range(len(self.task_queues))}
-        assigned_worker: Dict[int, int] = {}
+        # Precompute per-worker totals for 'init' (round-robin)
+        W = len(self.task_queues)
+        per_worker_totals = [0] * W
+        for i in range(pending):
+            per_worker_totals[i % W] += 1
 
-        print("3")
+        # Send 'init' to each worker with its total batch count (non-blocking if possible)
+        init_job_id = f"init-{uuid.uuid4().hex}"
+        for wid, q in enumerate(self.task_queues):
+            payload = {"total_batches": per_worker_totals[wid]}
+            q.put((init_job_id, wid, "init", payload))
 
-        for item_idx, chunk in enumerate(chunks):
-            _, batch_prompts = zip(*chunk)
-            payload = {"prompts": list(batch_prompts), "pooling_params": pooling_params}
-            #self._next_queue().put((job_id, item_idx, "reward", payload))
-            wid, q = self._next_queue()
-            assigned_worker[item_idx] = wid
-            assigned_counts[wid] += 1
-            q.put((job_id, item_idx, "reward", payload))
+        # Board to render logs in Jupyter; prints elsewhere
+        board = _NotebookBoard(num_workers=W)
+        board.render()
 
-        # One tqdm bar per worker/process
-        bars = {
-            wid: tqdm(total=cnt, position=wid, desc=f"Worker {wid}", leave=False)
-            for wid, cnt in assigned_counts.items() if cnt > 0
-        }
-
+        # Non-blocking dispatch + interleaved log polling
+        to_submit = list(range(pending))  # chunk indices not yet submitted
+        rr = 0  # independent round-robin pointer for submission
         chunk_results: Dict[int, List[str]] = {}
         deadline = time.time() + timeout_s if timeout_s else None
+        poll = 0.2  # seconds
 
-        while pending > 0:
-            remaining = max(0.0, (deadline - time.time())) if deadline else None
+        print("3")  # keep original debug print
+
+        def try_submit(next_idx: int) -> bool:
+            nonlocal rr
+            wid = rr
+            q = self.task_queues[wid]
+            _, batch_prompts = zip(*chunks[next_idx])
+            payload = {"prompts": list(batch_prompts), "pooling_params": pooling_params}
+            msg = (job_id, next_idx, "reward", payload)
             try:
-                #rid, item_idx, payload = self.result_q.get(timeout=remaining)
-                rid, item_idx, wid, payload = self.result_q.get(timeout=remaining)
+                q.put_nowait(msg)
+                rr = (rr + 1) % W
+                return True
+            except queue.Full:
+                return False
+
+        while len(chunk_results) < pending:
+            # 1) Submit without blocking as much as possible
+            progressed = False
+            while to_submit:
+                idx = to_submit[0]
+                if try_submit(idx):
+                    to_submit.pop(0)
+                    progressed = True
+                else:
+                    break  # some queues are full; go poll logs/results
+
+            # 2) Poll logs/results briefly so UI doesn't stall
+            if deadline:
+                remaining = max(0.0, deadline - time.time())
+                tmo = min(poll, remaining)
+                if remaining <= 0:
+                    raise TimeoutError("Timed out waiting for worker results.")
+            else:
+                tmo = poll
+
+            try:
+                rid, item_idx, wid, payload = self.result_q.get(timeout=tmo)
             except queue.Empty:
-                raise TimeoutError("Timed out waiting for worker results.")
+                # no messages this tick; refresh board to keep it alive
+                board.render()
+                continue
+
             if rid == "__init__" and "fatal_error" in payload:
                 raise RuntimeError(f"Worker failed to initialize:\n{payload['fatal_error']}")
-            if rid != job_id:
+
+            if rid == "__log__":
+                board.update(wid, payload.get("msg", ""))
                 continue
+
+            if rid != job_id:
+                # ignore non-job messages (e.g., init acks)
+                continue
+
             if "error" in payload:
                 raise RuntimeError(f"Worker error in batch {item_idx}: {payload['error']}")
-            
-            # Update the corresponding worker's progress bar
-            if wid in bars:
-                bars[wid].update(1)
-                print(f"wid:{wid}, item_idx:{item_idx}")
 
+            # normal batch result
             chunk_results[item_idx] = payload["outputs"]
-            pending -= 1
 
-        for b in bars.values():
-            b.close()
-
+        # Reconstruct outputs in original order
         outputs: List[Optional[str]] = [None] * len(prompts)
         for item_idx, chunk in enumerate(chunks):
             idxs, _ = zip(*chunk)
@@ -242,7 +374,6 @@ class LLMWorker:
                 outputs[i] = t
 
         outputs = torch.stack(outputs)  # torch.tensor([reward1, reward2, ... ])
-        
         return outputs  # type: ignore
 
     def close(self, kill: bool = False):
@@ -255,6 +386,7 @@ class LLMWorker:
                 except Exception: pass
             else:
                 p.join(timeout=15)
+
 
 def build_llm(
     model_name: str,
@@ -279,8 +411,10 @@ def build_llm(
         ]
     return LLMWorker(model=model_name, device_groups=device_groups, **llm_kwargs)
 
+
 def embed_with_model(model: LLMWorker, prompts: List[str], **gen_kwargs) -> List[str]:
     return model.encode(prompts, **gen_kwargs)
+
 
 def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, topk = 10, **gen_kwargs) -> List[str]:
     
@@ -297,43 +431,32 @@ def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, topk 
     # reorder columns
     df = df[["query_id", "query", "key_id", "key"]]
 
-    #PREFIX = "<|begin_of_text|>"
-    
-    #def strip_prefix(s: str, prefix: str = PREFIX) -> str:
-    #    return s[len(prefix):] if isinstance(s, str) and s.startswith(prefix) else s
-
     dataset1 = Dataset.from_pandas(df)
 
     def format(row):
         prompt = llm_template(row)
-        prompt = prompt[17:]  # to eliminate <|begin_of_text|> because vllm automatically add it to prompt  ####### need to be modified accordingly
+        prompt = prompt[17:]  # to eliminate <|begin_of_text|> because vllm automatically add it to prompt
         row["prompt"] = prompt
         return row
     
     formatted_dataset = dataset1.map(format)
     df = formatted_dataset.to_pandas()
-    
-    #list_of_prompts = df_formatted[['prompt']].to_dict('records')  # [{"prompt":".."}, ...]
-    
-    # Build prompts and strip the prefix (like your `prompt[17:]`)
-    #df["prompt"] = df.apply(lambda row: llm_template(row)[17:], axis=1)
 
     rewards = model.encode(df["prompt"], **gen_kwargs)
-
     df["relevance"] = rewards.numpy()
 
     # Sort and pick topn per request
     df = (
         df.sort_values(["query_id", "relevance"], ascending=[True, False])
-                .groupby("query_id")
-                .head(topk)
+          .groupby("query_id")
+          .head(topk)
     )
 
     result = (
         df.groupby("query_id")
         .apply(lambda g: {
             "query_id": g.name,
-            "query": g["query"].unique()[0], #.tolist(),
+            "query": g["query"].unique()[0],
             "keys": g[["key", "key_id", "relevance"]].to_dict("records")
         })
         .tolist()

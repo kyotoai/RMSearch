@@ -22,3 +22,25 @@ kenta -> mingk
     To derive evaluation metrics, all you need is correct_id and key_id. Comparing these two, you can obtain the metrics
 
 
+## Sep 16
+
+kentarrito -> mingk
+
+- [ ] We need to implement deepspeed to train_en so that we can train more parameters in models, which makes the model much better!! \
+    ToDo
+    - [ ] Read docs about deepspeed
+
+        Refs about the concept:
+            https://huggingface.co/docs/transformers/en/perf_train_gpu_many
+            https://huggingface.co/docs/transformers/en/deepspeed
+
+        Code:
+            https://www.deepspeed.ai/getting-started/
+            https://github.com/kyotoai/RMSearch/blob/develop/notes/deepspeed.md (note when I once tried to implement it on runpod)
+        
+    ↑ If you understand the basics of this, I will tell you how to implement this.
+
+    - [ ] Try to implement it on runpod with /examples/deepspeed_test2.py (this code is the most stable one. need a bit more debug)
+    -> I'm gonna tell you how to use it face to face
+
+
