@@ -41,4 +41,9 @@
 
 ## Sep 17
 
-- [ ] Code tag graph
+- [x] Add generate_tag_graph.py
+
+## Sep 19
+
+- [ ] Debug generate_tag_graph.py
+
