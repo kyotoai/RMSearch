@@ -45,5 +45,11 @@
 
 ## Sep 19
 
-- [ ] Debug generate_tag_graph.py
+- [x] Debug generate_tag_graph.py
+
+## Sep 23
+
+- [ ] Make dataset with debugged generate_tag_graph.py
+- [ ] Implement vllm_generate.py functions in generate_tag_graph.py
+- [ ] Make vllm_embed.py and optimize embedding in train_en.py
 

@@ -107,7 +107,7 @@ def _load_tensor(path: str) -> torch.Tensor:
 # ----------------------------- #
 # 1) Generate tags with vLLM
 # ----------------------------- #
-def generate_tag(keys: List[str], model_name: str) -> List[Dict[str, Any]]:
+def generate_tag(keys: List[str], model_name: str, batch_size = 1000) -> List[Dict[str, Any]]:
     if not keys:
         return []
     llm = _build_llm(model_name)
@@ -123,7 +123,7 @@ def generate_tag(keys: List[str], model_name: str) -> List[Dict[str, Any]]:
 
     prompts = [prompt_for(k) for k in keys]
     tag_lists = []
-    for batch in _batched(prompts, bs=64):
+    for batch in _batched(prompts, bs=batch_size):
         tag_lists.extend(_completion_json_list(llm, batch))
 
     tag_records = []
