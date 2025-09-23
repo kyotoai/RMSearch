@@ -50,6 +50,6 @@
 ## Sep 23
 
 - [ ] Make dataset with debugged generate_tag_graph.py
-- [ ] Implement vllm_generate.py functions in generate_tag_graph.py
-- [ ] Make vllm_embed.py and optimize embedding in train_en.py
+- [x] Implement vllm_generate.py functions in generate_tag_graph.py(generate_tag_graph2.py)
+- [x] Make vllm_embed.py and optimize embedding in train_en.py
 
