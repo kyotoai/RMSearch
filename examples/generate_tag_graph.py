@@ -343,10 +343,13 @@ def get_tag_group(
     seen_per_group = [set() for _ in range(n_group)]
     for (kid, tidx), g in zip(flat_meta, assign.tolist()):
         t = tag_records[kid]["tags"][tidx]
+        ''' # to avoid overlapping, but in this case tags and tag_ids should correspond each other, so it shouldn't be avoided
         low = t.lower().strip()
         if low not in seen_per_group[g]:
             seen_per_group[g].add(low)
             groups[g]["tags"].append(t)
+        '''
+        groups[g]["tags"].append(t)
         groups[g]["tag_ids"].append((kid, tidx))
 
     return tag_records, centroids, groups

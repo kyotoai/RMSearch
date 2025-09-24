@@ -57,9 +57,13 @@
 
 - [x] Debug vllm_embed.py
 - [x] Debug generate_tag_graph2.py
-- [ ] Make dataset with generate_tag_graph2.py
+- [x] Make dataset with generate_tag_graph2.py
   - [x] Run until the end
-  - [ ] Debug that something wrong with final group_recs
+  - [x] Debug that something wrong with final group_recs
 - [ ] Setup runpod vscode
 - [ ] Make .py files of train_en.ipynb for LLM debugging
 - [ ] In vllm_embed and vllm_generate5, it should show an error if it encountes
+
+- [ ] Make tag_dict from tag_recs, group_recs
+
+

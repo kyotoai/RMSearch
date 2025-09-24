@@ -454,11 +454,14 @@ def get_tag_group(
     groups: List[Dict[str, Any]] = [{"group_id": idx, "tags": [], "tag_ids": []} for idx in range(n_group)]
     seen_per_group = [set() for _ in range(n_group)]
     for (key_id, tag_idx), group_id in zip(flat_meta, assign.tolist()):
-        tag = tag_records[key_id]["tags"][tag_idx]
-        key = tag.lower().strip()
-        if key not in seen_per_group[group_id]:
-            seen_per_group[group_id].add(key)
-            groups[group_id]["tags"].append(tag)
+        t = tag_records[key_id]["tags"][tag_idx]
+        ''' # to avoid overlapping, but in this case tags and tag_ids should correspond each other, so it shouldn't be avoided
+        low = t.lower().strip()
+        if low not in seen_per_group[g]:
+            seen_per_group[g].add(low)
+            groups[g]["tags"].append(t)
+        '''
+        groups[group_id]["tags"].append(t)
         groups[group_id]["tag_ids"].append((key_id, tag_idx))
 
     return tag_records, centroids, groups
