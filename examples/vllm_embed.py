@@ -65,7 +65,10 @@ def _worker_main(
         phase = "loading model"
         send_log("loading model…")
         local_kwargs = dict(llm_kwargs)
-        local_kwargs.setdefault("embedding", True)
+        local_kwargs["task"] = "embed"
+        local_kwargs["enforce_eager"] = True
+        #local_kwargs.setdefault(task, "embed")
+        #local_kwargs.setdefault(enforce_eager, True)
         tensor_parallel = local_kwargs.pop("tensor_parallel_size", len(device_ids))
         llm = LLM(model=model, tensor_parallel_size=tensor_parallel, **local_kwargs)
         phase = "idle"
@@ -95,10 +98,14 @@ def _worker_main(
                 if kind == "embed":
                     phase = "embedding"
                     inputs = payload["inputs"]
-                    outputs = llm.get_embeddings(inputs)
-                    vectors = _normalize_embedding_output(outputs)
+                    outputs = llm.embed(inputs)
+                    embeds_list = []
+                    for output in outputs:
+                        embeds = output.outputs.embedding
+                        embeds_list.append(embeds)
+                    #vectors = _normalize_embedding_output(outputs)
                     result_q.put(
-                        (job_id, item_idx, {"embeddings": vectors, "wid": worker_id}),
+                        (job_id, item_idx, {"embeddings": embeds_list, "wid": worker_id}),
                         block=False,
                     )
                     done += 1
@@ -150,6 +157,7 @@ class _NotebookBoard:
 
     def render(self) -> None:
         try:
+            pass
             clear_output(wait=True)
         except Exception:
             pass

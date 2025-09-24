@@ -11,7 +11,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import torch
 from vllm import SamplingParams
 
-from vllm_generate import LLMWorkerPool, build_llm as _build_llm_pool
+from vllm_generate5 import LLMWorkerModel, build_llm as _build_llm_pool
+from vllm_generate5 import build_llm
 from vllm_embed import EmbeddingWorkerModel, build_embedding_model as _build_embed_pool, embed as _embed_with_model
 from sentence_transformers.quantization import quantize_embeddings
 
@@ -148,7 +149,7 @@ def _extract_pool_settings(args: argparse.Namespace, prefix: Optional[str] = Non
 
 
 @contextmanager
-def _llm_pool_context(model_name: str, *, tensor_parallel_size: int, num_instances: int, device_groups: Optional[List[List[int]]] = None, llm_kwargs: Optional[Dict[str, Any]] = None) -> Iterable[LLMWorkerPool]:
+def _llm_pool_context(model_name: str, *, tensor_parallel_size: int, num_instances: int, device_groups: Optional[List[List[int]]] = None, llm_kwargs: Optional[Dict[str, Any]] = None) -> Iterable[LLMWorkerModel]:
     _ensure_cuda()
     _ensure_spawn()
     pool = _build_llm_pool(
@@ -194,7 +195,7 @@ def generate_tag(
     keys: List[str],
     model_name: str,
     *,
-    pool: Optional[LLMWorkerPool] = None,
+    pool: Optional[LLMWorkerModel] = None,
     pool_settings: Optional[Dict[str, Any]] = None,
     sampling_params: Optional[SamplingParams] = None,
     worker_batch_size: int = 8,
@@ -253,7 +254,7 @@ def generate_tag(
     return [{"key": k, "key_id": idx, "tags": tags} for idx, (k, tags) in enumerate(zip(keys, all_tags))]
 
 
-def _make_llm_pool_from_settings(model_name: str, settings: Dict[str, Any]) -> LLMWorkerPool:
+def _make_llm_pool_from_settings(model_name: str, settings: Dict[str, Any]) -> LLMWorkerModel:
     llm_kwargs = dict(settings.get("llm_kwargs") or {})
     _ensure_cuda()
     _ensure_spawn()
@@ -283,6 +284,9 @@ def embed_tags(
     worker_batch_size: int = 32,
     timeout_s: Optional[float] = None,
 ) -> torch.Tensor:
+
+    print("1")
+    
     if not tag_records:
         tag_emb = torch.empty(0, 0)
         if save_path_tags:
@@ -298,12 +302,16 @@ def embed_tags(
             flat_tags.append(tag)
             tag_meta.append((rec["key_id"], idx))
 
+    print("2")
+
     owns_pool = False
     if pool is None:
         if pool_settings is None:
             raise ValueError("Either an embedding pool or pool_settings must be provided.")
         pool = _make_embed_pool_from_settings(embed_model_name, pool_settings)
         owns_pool = True
+
+    print("3")
 
     try:
         vectors = _embed_with_model(
@@ -312,6 +320,9 @@ def embed_tags(
             batch_size=worker_batch_size,
             timeout_s=timeout_s,
         )
+
+        print("4")
+        
     finally:
         if owns_pool and pool is not None:
             pool.close()
@@ -461,9 +472,11 @@ def generate_representative_tag(
     group_records: List[Dict[str, Any]],
     *,
     model_name: str,
-    pool: Optional[LLMWorkerPool] = None,
-    pool_settings: Optional[Dict[str, Any]] = None,
+    #pool: Optional[LLMWorkerModel] = None,
+    #pool_settings: Optional[Dict[str, Any]] = None,
     sampling_params: Optional[SamplingParams] = None,
+    tensor_parallel_size: int = 1,
+    num_instances: int = 1,
     worker_batch_size: int = 8,
     timeout_s: Optional[float] = None,
     n_tag_sample: int,
@@ -485,23 +498,35 @@ def generate_representative_tag(
 
     sampling = _ensure_sampling(sampling_params, temperature=0.4, top_p=0.9, max_tokens=16)
 
-    owns_pool = False
-    if pool is None:
-        if pool_settings is None:
-            raise ValueError("Either an LLM pool or pool_settings must be provided.")
-        pool = _make_llm_pool_from_settings(model_name, pool_settings)
-        owns_pool = True
+    device_groups = []
+    device_id = 0
+    for dp in range(num_instances):
+        device_group = []
+        for tp in range(tensor_parallel_size):
+            device_group.append(device_id)
+            device_id += 1
+    
+        device_groups.append(device_group)
+    
+    model = build_llm(
+        model_name=model_name,
+        tensor_parallel_size=len(device_groups[0]),
+        num_instances=len(device_groups),
+        device_groups=device_groups,
+        max_model_len=2500,
+        max_num_seqs=64,
+        gpu_memory_utilization=0.90,
+    )
 
     try:
-        outputs = pool.generate(
+        outputs = model.generate(
             prompts,
             sampling_params=sampling,
             batch_size=worker_batch_size,
             timeout_s=timeout_s,
         )
     finally:
-        if owns_pool and pool is not None:
-            pool.close()
+        model.close()
 
     for record, text in zip(group_records, outputs):
         cleaned = re.sub(r"[\n\r\"'`]+", " ", text or "").strip()

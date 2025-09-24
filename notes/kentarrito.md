@@ -53,3 +53,13 @@
 - [x] Implement vllm_generate.py functions in generate_tag_graph.py(generate_tag_graph2.py)
 - [x] Make vllm_embed.py and optimize embedding in train_en.py
 
+## Sep 24
+
+- [x] Debug vllm_embed.py
+- [x] Debug generate_tag_graph2.py
+- [ ] Make dataset with generate_tag_graph2.py
+  - [x] Run until the end
+  - [ ] Debug that something wrong with final group_recs
+- [ ] Setup runpod vscode
+- [ ] Make .py files of train_en.ipynb for LLM debugging
+- [ ] In vllm_embed and vllm_generate5, it should show an error if it encountes
