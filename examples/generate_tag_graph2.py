@@ -545,7 +545,6 @@ def generate_tag_tree(
     tree_struc: List[int],
     n_tag_sample: int,
     *,
-    # LLM params for representative-tag generation at each level:
     model_name: str = "Qwen2.5-3B-Instruct",
     sampling_params: Optional[SamplingParams] = None,
     tensor_parallel_size: int = 1,
@@ -558,48 +557,22 @@ def generate_tag_tree(
 ) -> List[Dict[str, Any]]:
     """
     Build a hierarchical tag tree by repeatedly clustering existing centroids.
-
-    Args:
-        group_records: leaf-level groups produced by get_tag_group() (may or may not
-            already include "representative_tag").
-        centroids: tensor of shape [N_leaf, D] from get_tag_group().
-        tree_struc: e.g. [500, 50, 10]; we will cluster N_leaf -> 500 -> 50 -> 10.
-        n_tag_sample: how many child tags to sample for producing each parent tag.
-        model_name / sampling_params / tensor_parallel_size / num_instances / worker_batch_size / timeout_s:
-            forwarded to generate_representative_tag for naming each parent.
-        n_init, max_iters, seed: k-means controls per level.
-
-    Returns:
-        tag_tree_recs: List[Dict] at the top level. Each node is:
-            { "tag": <representative tag>, "children": [ ...same structure... ] }
+    This version avoids OOM by:
+      - building the LLM once,
+      - doing all representative-tag generations via a single reused model,
+      - never calling generate_representative_tag.
     """
-    # ---- helpers ----
-    def _ensure_leaf_representative_tags():
-        need = any("representative_tag" not in rec or not rec["representative_tag"] for rec in group_records)
-        if not need:
-            return
-        # Use the existing per-group tags to get leaf representative tags
-        _ = generate_representative_tag(
-            tag_records=[],  # not used internally
-            group_records=group_records,
-            model_name=model_name,
-            sampling_params=sampling_params,
-            tensor_parallel_size=tensor_parallel_size,
-            num_instances=num_instances,
-            worker_batch_size=worker_batch_size,
-            timeout_s=timeout_s,
-            n_tag_sample=min(n_tag_sample,  max(1, max(len(rec.get("tags", [])) for rec in group_records) or 1)),
-        )
-
+    # ---------- small helpers (local, no external changes) ----------
     def _normalize_rows(x: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
         return x / (x.norm(dim=-1, keepdim=True) + eps)
 
     def _kmeans(X: torch.Tensor, K: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Return (assignments [N], centroids [K,D]) using same style as get_tag_group()."""
+        """Return (assignments [N], centroids [K,D]) similar to get_tag_group()."""
         torch.manual_seed(seed)
         N, D = X.shape
         K = max(1, min(K, N))
-        # k-means++ init (same idea as in get_tag_group)
+
+        # k-means++ init
         cents = torch.empty(K, D, device=X.device, dtype=X.dtype)
         idx0 = torch.randint(0, N, (1,), device=X.device)
         cents[0] = X[idx0]
@@ -608,14 +581,13 @@ def generate_tag_tree(
             probs = (closest_dist_sq / closest_dist_sq.sum()).clamp_min(1e-12)
             choice = torch.multinomial(probs, 1)
             cents[c] = X[choice]
-            dist_sq = torch.cdist(X, cents[c : c + 1]).squeeze(-1) ** 2
+            dist_sq = torch.cdist(X, cents[c:c+1]).squeeze(-1) ** 2
             closest_dist_sq = torch.minimum(closest_dist_sq, dist_sq)
 
         best_inertia = float("inf")
         best_assign, best_cents = None, None
 
         for _ in range(n_init):
-            # Lloyd iterations
             prev_assign = torch.full((N,), -1, device=X.device, dtype=torch.long)
             cur_cents = cents.clone()
             for _it in range(max_iters):
@@ -638,91 +610,127 @@ def generate_tag_tree(
         assert best_assign is not None and best_cents is not None
         return best_assign, _normalize_rows(best_cents)
 
-    # ---- input checks ----
+    def _mk_prompts_from_tag_lists(tag_lists: List[List[str]]) -> List[str]:
+        prompts: List[str] = []
+        for tags in tag_lists:
+            sample = tags if len(tags) <= n_tag_sample else random.sample(tags, n_tag_sample)
+            if not sample:
+                sample = ["general"]
+            lines = "\n".join(f"- {t}" for t in sample)
+            prompts.append(
+                "You are a taxonomy expert. Given the following sample tags from one cluster, "
+                "produce ONE concise representative tag (≤ 6 words) that best describes them all.\n"
+                "Do NOT include punctuation at the end. Output ONLY the tag text, nothing else.\n\n"
+                f"Sample tags:\n{lines}\n\nRepresentative tag:"
+            )
+        return prompts
+
+    def _clean_rep_text(x: str) -> str:
+        cleaned = re.sub(r"[\n\r\"'`]+", " ", x or "").strip()
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned[:60] if cleaned else "General"
+
+    # ---------- input checks ----------
     if not isinstance(tree_struc, list) or not tree_struc:
         raise ValueError("tree_struc must be a non-empty list of integers.")
     if centroids is None or centroids.numel() == 0:
-        # no leaves → empty tree
         return []
     if len(group_records) != centroids.shape[0]:
         raise ValueError(
             f"Length mismatch: {len(group_records)} group_records vs centroids {tuple(centroids.shape)}"
         )
 
-    # ---- ensure leaves have representative_tag ----
-    _ensure_leaf_representative_tags()
+    # ---------- build LLM ONCE ----------
+    sampling = _ensure_sampling(sampling_params, temperature=0.4, top_p=0.9, max_tokens=16)
 
-    # Build leaf nodes (these are the children for the first clustering step)
-    leaf_nodes: List[Dict[str, Any]] = [
-        {"tag": rec.get("representative_tag", "General"), "children": []}
-        for rec in group_records
-    ]
+    device_groups = []
+    device_id = 0
+    for _dp in range(num_instances):
+        group = []
+        for _tp in range(tensor_parallel_size):
+            group.append(device_id)
+            device_id += 1
+        device_groups.append(group)
 
-    # Current level state
-    cur_nodes = leaf_nodes
-    X = centroids.detach()  # [N_leaf, D]
-    X = _normalize_rows(X)
+    model = build_llm(
+        model_name=model_name,
+        tensor_parallel_size=len(device_groups[0]),
+        num_instances=len(device_groups),
+        device_groups=device_groups,
+        max_model_len=2500,
+        max_num_seqs=64,
+        gpu_memory_utilization=0.90,
+    )
 
-    # Iterate each level target in tree_struc
-    for level_target in tree_struc:
-        if len(cur_nodes) <= level_target:
-            # If already <= target, just treat this as a no-op level and repackage nodes upward.
-            # We still need to generate parent tags by grouping a 1:1 mapping (each node its own parent).
-            # But to keep tree depth consistent, we compress only if strictly needed:
-            # Do a degenerate "clustering" that maps every node to itself (parents==children).
-            parent_nodes = cur_nodes  # no change
-            # No tag recomputation needed—keep current tags.
-            # Move to next level
-            continue
-
-        # 1) Cluster current centroids to the desired number at this level
-        assign, cents = _kmeans(X, int(level_target))  # [N_cur], [K,D]
-        K = cents.shape[0]
-
-        # 2) Build parent clusters (collect child indices)
-        clusters: List[List[int]] = [[] for _ in range(K)]
-        for i, a in enumerate(assign.tolist()):
-            clusters[a].append(i)
-
-        # 3) For each new parent cluster, create a parent group record with "tags"
-        #    collected from its children's node tags (sampled up to n_tag_sample).
-        parent_group_recs: List[Dict[str, Any]] = []
-        for child_idxs in clusters:
-            sample_tags = [cur_nodes[i]["tag"] for i in child_idxs]
-            if len(sample_tags) > n_tag_sample:
-                sample_tags = random.sample(sample_tags, n_tag_sample)
-            parent_group_recs.append({"group_id": -1, "tags": sample_tags, "tag_ids": []})
-
-        # 4) Generate representative tag for each parent cluster (LLM)
-        _ = generate_representative_tag(
-            tag_records=[],  # not used internally
-            group_records=parent_group_recs,
-            model_name=model_name,
-            sampling_params=sampling_params,
-            tensor_parallel_size=tensor_parallel_size,
-            num_instances=num_instances,
-            worker_batch_size=worker_batch_size,
-            timeout_s=timeout_s,
-            n_tag_sample=n_tag_sample,
-        )
-
-        # 5) Build parent nodes with children attached
-        parent_nodes: List[Dict[str, Any]] = []
-        for parent_rec, child_idxs in zip(parent_group_recs, clusters):
-            parent_nodes.append(
-                {
-                    "tag": parent_rec.get("representative_tag", "General"),
-                    "children": [cur_nodes[i] for i in child_idxs],
-                }
+    try:
+        # ---------- ensure leaf representative tags (using single model instance) ----------
+        need_leaf = any("representative_tag" not in rec or not rec["representative_tag"] for rec in group_records)
+        if need_leaf:
+            leaf_tag_lists = [rec.get("tags", []) for rec in group_records]
+            leaf_prompts = _mk_prompts_from_tag_lists(leaf_tag_lists)
+            leaf_out = model.generate(
+                leaf_prompts,
+                sampling_params=sampling,
+                batch_size=worker_batch_size,
+                timeout_s=timeout_s,
             )
+            for rec, text in zip(group_records, leaf_out):
+                rec["representative_tag"] = _clean_rep_text(text)
 
-        # 6) Prepare for next level
-        cur_nodes = parent_nodes
-        X = cents  # next round clusters the newly formed centroids
+        # build initial leaf nodes
+        cur_nodes: List[Dict[str, Any]] = [
+            {"tag": rec.get("representative_tag", "General"), "children": []}
+            for rec in group_records
+        ]
+        X = _normalize_rows(centroids.detach())
 
-    # After all levels, cur_nodes is the top level
-    return cur_nodes
+        # ---------- hierarchical levels ----------
+        for level_target in tree_struc:
+            if len(cur_nodes) <= level_target:
+                # no clustering needed; keep nodes as-is, but still a "level" structurally
+                # (no new representative tags to compute)
+                continue
 
+            # cluster to level_target
+            assign, cents = _kmeans(X, int(level_target))
+            K = cents.shape[0]
+
+            # gather children per parent cluster
+            clusters: List[List[int]] = [[] for _ in range(K)]
+            for i, a in enumerate(assign.tolist()):
+                clusters[a].append(i)
+
+            # prepare prompts for parent representative tags (from child node tags)
+            parent_tag_lists: List[List[str]] = [[cur_nodes[i]["tag"] for i in child_idxs] for child_idxs in clusters]
+            parent_prompts = _mk_prompts_from_tag_lists(parent_tag_lists)
+
+            parent_out = model.generate(
+                parent_prompts,
+                sampling_params=sampling,
+                batch_size=worker_batch_size,
+                timeout_s=timeout_s,
+            )
+            parent_tags = [_clean_rep_text(t) for t in parent_out]
+
+            # assemble parent nodes
+            parent_nodes: List[Dict[str, Any]] = []
+            for ptag, child_idxs in zip(parent_tags, clusters):
+                parent_nodes.append(
+                    {
+                        "tag": ptag,
+                        "children": [cur_nodes[i] for i in child_idxs],
+                    }
+                )
+
+            # move up one level
+            cur_nodes = parent_nodes
+            X = cents
+
+        # cur_nodes is the top level
+        return cur_nodes
+
+    finally:
+        model.close()
 
 
 # ----------------------------- #

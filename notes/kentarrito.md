@@ -64,6 +64,7 @@
 - [ ] Make .py files of train_en.ipynb for LLM debugging
 - [ ] In vllm_embed and vllm_generate5, it should show an error if it encountes
 
-- [ ] Make tag_dict from tag_recs, group_recs
-
+- [x] Make tag_dict from tag_recs, group_recs
+  - [x] Add generate_tag_tree function to generate_tag_graph2.py
+  - [x] Debug generate_tag_tree function
 
