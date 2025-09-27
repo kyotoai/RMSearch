@@ -71,7 +71,7 @@
 
 ## Sep 27
 
-- [x] Debug
+- [x] Debug search_tag
 - [x] rmsearch.py backup
 
 
