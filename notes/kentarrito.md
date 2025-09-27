@@ -67,4 +67,11 @@
 - [x] Make tag_dict from tag_recs, group_recs
   - [x] Add generate_tag_tree function to generate_tag_graph2.py
   - [x] Debug generate_tag_tree function
+  - [x] Somehow, it only generates empty query2tag_ids
+
+## Sep 27
+
+- [x] Debug
+- [x] rmsearch.py backup
+
 
