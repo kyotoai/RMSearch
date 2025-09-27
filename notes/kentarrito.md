@@ -73,5 +73,20 @@
 
 - [x] Debug search_tag
 - [x] rmsearch.py backup
+- [ ] vllm_reward.py often get an error when search function is used twice in a row
+- [ ] Get evaluation result of llama3b-generate
+- [ ] Debug search_key
+  - [ ] In the final search, the cpu memory gets full even with 200GB
+
+* there are still more than 1000 keys in a final node. it's because
+1. one key have multiple tags
+2. tags are overlapped. this should be fixed because same tag can have different keys
+3. each node doesn't have expected numbers of children
+
+
+
+
+
+
 
 
