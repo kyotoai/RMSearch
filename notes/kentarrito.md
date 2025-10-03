@@ -94,8 +94,26 @@
 
 ## Oct 3
 
-- [ ] Debug hierarchical_kmeans.py
-- [ ] Get new tree
+- [x] Debug hierarchical_kmeans.py and its usage in Generate Tag Graph2 in train_en.ipynb
+- [x] Get tag_tree_recs.json from the code above
+- [ ] Assign keys into the tag_tree_recs and get tag2query
+- [ ] Get evaluation of llama3b-generate
+
+- [x] Rewrite train_en.ipynb functions into train_en.py
+- [ ] Debug train_en.py
+
+- [ ] Rewrite train_en.ipynb functions into rmsearch directory
+- [ ] Comment out more
+- [ ] Make README.md about train_en.ipynb
+
+- [ ] Write paper baseline
+
+- [ ] Code to train rm for tag search
+
+
+
+
+
 
 
 
