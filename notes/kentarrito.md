@@ -74,14 +74,30 @@
 - [x] Debug search_tag
 - [x] rmsearch.py backup
 - [ ] vllm_reward.py often get an error when search function is used twice in a row
-- [ ] Get evaluation result of llama3b-generate
+- [x] Get evaluation result of llama3b-generate -> with this mechanism it takes so much time in the last search
 - [ ] Debug search_key
   - [ ] In the final search, the cpu memory gets full even with 200GB
 
 * there are still more than 1000 keys in a final node. it's because
 1. one key have multiple tags
-2. tags are overlapped. this should be fixed because same tag can have different keys
-3. each node doesn't have expected numbers of children
+2. each node doesn't have expected numbers of children
+-> Fix this by adding more nodes, and use advanced k-means
+
+* Issue to be fixed
+1. tags are overlapped. this should be fixed because same tag can have different keys
+
+## Sep 28
+
+- [x] Pick what k-means method to use
+- [ ] Make generate_tag_graph3.py with that k-means method
+- [ ] Degenerate overlapped tags
+
+## Oct 3
+
+- [ ] Debug hierarchical_kmeans.py
+- [ ] Get new tree
+
+
 
 
 

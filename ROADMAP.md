@@ -38,14 +38,14 @@ mingkwan
 ## Sep 30
 
 TODO for Minimal Experiment to write the paper
-- [ ] Train the model with dataset smoll (exp3) \
+- [ ] 1. Train the model with dataset smoll (exp3) \
     -> Confirm that the accuracy goes up with training dataset(smoll-corpus) \
     -> Confirm that the accuracy goes up with evaluation dataset(arguana) \
     *If it doesn't, probably improving the llm-generated queries would be a good start
-- [ ] Generate Tag Graph with hierarchical k-means method
-- [ ] Do Evaluation based on tag graph
-- [ ] Compare the evaluation result with Embedding one
-- [ ] Repeat this until we get good result on benchmark
+- [ ] 2. Generate Tag Graph with hierarchical k-means method
+- [ ] 3. Do Evaluation based on tag graph
+- [ ] 4. Compare the evaluation result with Embedding one
+- [ ] 5. Repeat this until we get good result on benchmark
 
 TODO for Better benchmark result
 - [ ] GPU parallel for training with deepspeed
