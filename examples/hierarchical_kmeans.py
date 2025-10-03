@@ -44,7 +44,7 @@ class HierarchicalKMeans:
         self.n_features_in_ = None
 
     def fit(self, X):
-        X = np.asarray(X)
+        X = np.asarray(X.detach().cpu())
         if X.ndim != 2:
             raise ValueError("X must be 2D (n_samples, n_features)")
         n_samples, n_features = X.shape
