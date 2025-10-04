@@ -116,17 +116,16 @@
   -> just fixed make_leaf_tag_recs function by adding tag_meta and tag_recs in its argument
 - [x] Improve prompt to get representative_tag
 - [x] Fix a bug in search_key and search_tag (This was a fatal error, which can collapse all the result from tag_tree_recs with different branch sizes(not all branches are the same length). You shouldn't belive the output of search_tag and search_key before fixing this.)
-- [x] Assign keys into the tag_tree_recs and get tag2query
-- [ ] Get evaluation of llama3b-generate
 
-
-- [ ] First Evaluation for untrained reward model
-  - [ ] Assign keys into the tag_tree_recs and get tag2query
-  - [ ] Get evaluation of llama3b-generate
+- [x] First Evaluation for untrained reward model
+  - [x] Assign keys into the tag_tree_recs and get tag2query
+  - [x] Get evaluation of llama3b-generate
+* -> Ended up with 0.05 nDCG. Probably it can be improved by making more accurate tag_graph. Also need to implement more dataset.
 
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
   - [ ] Rewrite and debug train_en.py
   - [ ] Comment out more
+  - [ ] Think how to scatter functions inside rmsearch directory and do it
   - [ ] Make README.md about tag_graph and train
 
 - [ ] Train reward model
