@@ -122,8 +122,11 @@
   - [ ] Make README.md about tag_graph and train
 
 - [ ] Train reward model
-  - [ ] Make evaluation dataset
-  - [ ] (Optional) Code to train rm for tag search
+  - [ ] (Mingk) Make system to set aruguana as test dataset
+  - [ ] Code to train rm for tag search
+  - [ ] Add more dataset
+  - [ ] Advanced DPO batching
+  - [ ] GPU parallel for training with deepspeed
 
 
 

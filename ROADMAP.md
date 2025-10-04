@@ -52,7 +52,7 @@ TODO for Better benchmark result
 - [ ] Collect more dataset
 - [ ] Make more various queries (which is necessary for stable training)
 - [ ] Advanced DPO batch (ask kentarrito about this)
-- [ ] Train the model for tag graoh search too
+- [ ] Train the model for tag graph search too
 
 TODO for better paper
 - [ ] Collect same proportion of mteb benchmark
