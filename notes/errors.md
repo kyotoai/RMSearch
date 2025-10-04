@@ -97,7 +97,7 @@ In search_tag function in "Reward Model Gets TopN-Relevant Sentences and LLM Jud
 (EngineCore_0 pid=2159)               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^
 (EngineCore_0 pid=2159) KeyError: None
 ```
--> maybe batch_size problem
+-> maybe batch_size problem or input length problem
 
 
 
@@ -304,5 +304,5 @@ RuntimeError: Worker error in batch 0: EngineDeadError: EngineCore encountered a
 (EngineCore_0 pid=715)     raise RuntimeError(
 (EngineCore_0 pid=715) RuntimeError: Worker failed with error 'None', please check the stack trace above for the root cause
 ```
-
+-> when input is quite long
 
