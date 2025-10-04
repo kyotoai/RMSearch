@@ -284,8 +284,6 @@ def embed_tags(
     worker_batch_size: int = 32,
     timeout_s: Optional[float] = None,
 ) -> torch.Tensor:
-
-    print("1")
     
     if not tag_records:
         tag_emb = torch.empty(0, 0)
@@ -302,16 +300,12 @@ def embed_tags(
             flat_tags.append(tag)
             tag_meta.append((rec["key_id"], idx))
 
-    print("2")
-
     owns_pool = False
     if pool is None:
         if pool_settings is None:
             raise ValueError("Either an embedding pool or pool_settings must be provided.")
         pool = _make_embed_pool_from_settings(embed_model_name, pool_settings)
         owns_pool = True
-
-    print("3")
 
     try:
         vectors = _embed_with_model(
@@ -321,8 +315,6 @@ def embed_tags(
             timeout_s=timeout_s,
         )
 
-        print("4")
-        
     finally:
         if owns_pool and pool is not None:
             pool.close()
@@ -349,7 +341,7 @@ def embed_tags(
     if save_path_tagmeta:
         _save_json(tag_meta, save_path_tagmeta)
 
-    return tag_emb
+    return tag_emb, tag_meta
 
 
 def _make_embed_pool_from_settings(model_name: str, settings: Dict[str, Any]) -> EmbeddingWorkerModel:

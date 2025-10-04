@@ -112,6 +112,11 @@
 
 ## Oct 4
 
+- [x] Fix a bug (tag_recs have tag inside each key_id so tag_id is not defined well.)
+  -> just fixed make_leaf_tag_recs function by adding tag_meta and tag_recs in its argument
+- [x] Improve prompt to get representative_tag
+
+
 - [ ] First Solid Evaluation
   - [ ] Assign keys into the tag_tree_recs and get tag2query
   - [ ] Get evaluation of llama3b-generate
@@ -127,8 +132,6 @@
   - [ ] Add more dataset
   - [ ] Advanced DPO batching
   - [ ] GPU parallel for training with deepspeed
-
-
 
 
 
