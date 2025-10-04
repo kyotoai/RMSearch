@@ -41,4 +41,86 @@
 
 ## Sep 17
 
-- [ ] Code tag graph
+- [x] Add generate_tag_graph.py
+
+## Sep 19
+
+- [x] Debug generate_tag_graph.py
+
+## Sep 23
+
+- [ ] Make dataset with debugged generate_tag_graph.py
+- [x] Implement vllm_generate.py functions in generate_tag_graph.py(generate_tag_graph2.py)
+- [x] Make vllm_embed.py and optimize embedding in train_en.py
+
+## Sep 24
+
+- [x] Debug vllm_embed.py
+- [x] Debug generate_tag_graph2.py
+- [x] Make dataset with generate_tag_graph2.py
+  - [x] Run until the end
+  - [x] Debug that something wrong with final group_recs
+- [ ] Setup runpod vscode
+- [ ] Make .py files of train_en.ipynb for LLM debugging
+- [ ] In vllm_embed and vllm_generate5, it should show an error if it encountes
+
+- [x] Make tag_dict from tag_recs, group_recs
+  - [x] Add generate_tag_tree function to generate_tag_graph2.py
+  - [x] Debug generate_tag_tree function
+  - [x] Somehow, it only generates empty query2tag_ids
+
+## Sep 27
+
+- [x] Debug search_tag
+- [x] rmsearch.py backup
+- [ ] vllm_reward.py often get an error when search function is used twice in a row
+- [x] Get evaluation result of llama3b-generate -> with this mechanism it takes so much time in the last search
+- [ ] Debug search_key
+  - [ ] In the final search, the cpu memory gets full even with 200GB
+
+* there are still more than 1000 keys in a final node. it's because
+1. one key have multiple tags
+2. each node doesn't have expected numbers of children
+-> Fix this by adding more nodes, and use advanced k-means
+
+* Issue to be fixed
+1. tags are overlapped. this should be fixed because same tag can have different keys
+
+## Sep 28
+
+- [x] Pick what k-means method to use
+- [ ] Make generate_tag_graph3.py with that k-means method
+- [ ] Degenerate overlapped tags
+
+## Oct 3
+
+- [x] Debug hierarchical_kmeans.py and its usage in Generate Tag Graph2 in train_en.ipynb
+- [x] Get tag_tree_recs.json from the code above
+- [ ] Assign keys into the tag_tree_recs and get tag2query
+- [ ] Get evaluation of llama3b-generate
+
+- [x] Rewrite train_en.ipynb functions into train_en.py
+- [ ] Debug train_en.py
+
+- [ ] Rewrite train_en.ipynb functions into rmsearch directory
+- [ ] Comment out more
+- [ ] Make README.md about train_en.ipynb
+
+- [ ] Write paper baseline
+
+- [ ] Code to train rm for tag search
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

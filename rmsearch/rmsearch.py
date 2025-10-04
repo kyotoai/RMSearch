@@ -1,4 +1,4 @@
-import os, asyncio
+import os, asyncio, json
 import pandas as pd
 import itertools
 from datasets import Dataset
@@ -58,7 +58,9 @@ class Search:
         model_name,
         tensor_parallel_size = 1,
         pipeline_parallel_size = 1,
+        data_parallel = 1,
         llm_template = None,
+        max_request = None,
     ):
 
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_eos_token=True, add_bos_token=True)
@@ -67,10 +69,20 @@ class Search:
         Search.tokenizer = tokenizer
 
         self.model_unsupported = False
+        self.progress_bar = None
+        self.max_request = max_request
+
+        if max_request:
+            self.requests = []
+            self.request_ids = []
+            self.results = []
+            self.results_dict = {}
+            self.finished_ids = []
 
         self.model_name = model_name
         self.tensor_parallel_size = tensor_parallel_size
         self.pipeline_parallel_size = pipeline_parallel_size
+        self.data_parallel_size = data_parallel_size
 
         if not llm_template:
             def llm_template_func(query, key):
@@ -87,89 +99,116 @@ class Search:
             self.llm_template = llm_template
 
         self.model_supported = True
-        
-        try:
-            if os.path.exists(model_name):
-                
-                self.engine_args = AsyncEngineArgs(
-                    model = model_name,
-                    dtype="bfloat16",
-                    tensor_parallel_size = tensor_parallel_size,
-                    pipeline_parallel_size = pipeline_parallel_size,
-                    distributed_executor_backend = "mp",
-                    gpu_memory_utilization=0.95,
-                    task="embed",
-                    override_pooler_config=pooler_config_,
-                    disable_log_stats=True,
-                )
 
-                if "engine" not in dir(Search):
-                    Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
-                    Search.engine.log_requests = False
-                    if os.path.exists(f"{model_name}/score.pt"):
-                        self.model_supported = False
-                        Search.score = torch.load(f"{model_name}/score.pt")
+        if self.data_parallel_size == 1:
+            try:
+                if os.path.exists(model_name):
                     
-            else:
-                self.engine_args = AsyncEngineArgs(
-                    model = model_name,
-                    dtype="bfloat16",
-                    tensor_parallel_size = tensor_parallel_size,
-                    pipeline_parallel_size = pipeline_parallel_size,
-                    distributed_executor_backend = "mp",
-                    gpu_memory_utilization=0.95,
-                    task="embed",
-                    override_pooler_config=pooler_config_,
-                    disable_log_stats=True,
-                )
-
-                if "engine" not in dir(Search):
-                    Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
-                    Search.engine.log_requests = False
-            
-        except Exception as e:
-            if "Model architectures" in f"{e}":
-                raise Exception(f"{e}\n\nplease try to convert your model to by utils.convert_model")
-                '''
-                save_dir = f"{model_name}-converted-model"
-                score_save_path = f"{model_name}-converted-score.pt"
-                self.model_unsupported = True
-                if not os.path.exists(save_dir):
-                    tokenizer.save_pretrained(save_dir)
-
-                    reward_model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
-                    self.score = reward_model.score.weight.data
-                    torch.save(reward_model.score.weight.data, score_save_path)
-                    del reward_model
-                    
-                    generate_model = AutoModelForCausalLM.from_pretrained(model_name)
-                    generate_model.save_pretrained(save_dir)
-                    del generate_model
-
+                    self.engine_args = AsyncEngineArgs(
+                        model = model_name,
+                        dtype="bfloat16",
+                        tensor_parallel_size = tensor_parallel_size,
+                        pipeline_parallel_size = pipeline_parallel_size,
+                        distributed_executor_backend = "mp",
+                        gpu_memory_utilization=0.95,
+                        task="embed",
+                        override_pooler_config=pooler_config_,
+                        disable_log_stats=True,
+                    )
+    
+                    if "engine" not in dir(Search):
+                        Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
+                        Search.engine.log_requests = False
+                        if os.path.exists(f"{model_name}/score.pt"):
+                            self.model_supported = False
+                            Search.score = torch.load(f"{model_name}/score.pt")
+                        
                 else:
-                    self.score = torch.load(score_save_path)
+                    self.engine_args = AsyncEngineArgs(
+                        model = model_name,
+                        dtype="bfloat16",
+                        tensor_parallel_size = tensor_parallel_size,
+                        pipeline_parallel_size = pipeline_parallel_size,
+                        distributed_executor_backend = "mp",
+                        gpu_memory_utilization=0.95,
+                        task="embed",
+                        override_pooler_config=pooler_config_,
+                        disable_log_stats=True,
+                    )
+    
+                    if "engine" not in dir(Search):
+                        Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
+                        Search.engine.log_requests = False
                 
-                model_name = save_dir
+            except Exception as e:
+                if "Model architectures" in f"{e}":
+                    raise Exception(f"{e}\n\nplease try to convert your model to by utils.convert_model")
+                    '''
+                    save_dir = f"{model_name}-converted-model"
+                    score_save_path = f"{model_name}-converted-score.pt"
+                    self.model_unsupported = True
+                    if not os.path.exists(save_dir):
+                        tokenizer.save_pretrained(save_dir)
+    
+                        reward_model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
+                        self.score = reward_model.score.weight.data
+                        torch.save(reward_model.score.weight.data, score_save_path)
+                        del reward_model
+                        
+                        generate_model = AutoModelForCausalLM.from_pretrained(model_name)
+                        generate_model.save_pretrained(save_dir)
+                        del generate_model
+    
+                    else:
+                        self.score = torch.load(score_save_path)
+                    
+                    model_name = save_dir
+    
+                    self.engine_args = AsyncEngineArgs(
+                        model = model_name,
+                        dtype="bfloat16",
+                        tensor_parallel_size = tensor_parallel_size,
+                        pipeline_parallel_size = pipeline_parallel_size,
+                        distributed_executor_backend = "mp",
+                        gpu_memory_utilization=0.95,
+                        task="embed",
+                        override_pooler_config=pooler_config_,
+                    )
+    
+                    if "engine" not in dir(Search):
+                        Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
+                    '''
+                else:
+                    traceback.print_exc()
+                    raise Exception(e)
+    
+            #self.PoolingParams = PoolingParams()
 
-                self.engine_args = AsyncEngineArgs(
-                    model = model_name,
-                    dtype="bfloat16",
-                    tensor_parallel_size = tensor_parallel_size,
-                    pipeline_parallel_size = pipeline_parallel_size,
-                    distributed_executor_backend = "mp",
-                    gpu_memory_utilization=0.95,
-                    task="embed",
-                    override_pooler_config=pooler_config_,
-                )
+        else:
+            #Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
 
-                if "engine" not in dir(Search):
-                    Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
-                '''
-            else:
-                raise Exception(e)
+            self.device_groups = []
+            device_id = 0
+            for dp in range(self.data_parallel_size):
+                device_group = []
+                for tp in range(self.tensor_parallel_size):
+                    device_group.append(device_id)
+                    device_id += 1
 
-        #self.PoolingParams = PoolingParams()
+                self.device_groups.append(device_group)
 
+            Search.llm = build_llm(
+                model_name=self.model_name,
+                tensor_parallel_size=len(self.device_groups[0]),
+                num_instances=len(self.device_groups),
+                device_groups=self.device_groups,
+                max_model_len=2500,
+                max_num_seqs=64,
+                gpu_memory_utilization=0.90,
+            )
+            
+
+        '''
         resources_kwarg: Dict[str, Any] = {}
         if tensor_parallel_size == 1:
             # For tensor_parallel_size == 1, we simply set num_gpus=1.
@@ -182,6 +221,7 @@ class Search:
             resources_kwarg["ray_remote_args_fn"] = scheduling_strategy_fn
 
         self.resources_kwarg = resources_kwarg
+        '''
 
     async def __call__(self,
                 queires,
@@ -218,13 +258,14 @@ class Search:
             topk_with_group=False,  # When this is true, topk keys are taken from each group. The row of df must have "group" and "k"
             disable_log=False,  # disable log of searching
             progress_bar=None,
+            progress_save_dir = "progress_search_log",
     ):
         
         if topk_with_group:
             if (not "group" in df) or (not "k" in df):
                 raise Exception("df must have both columns named group and k")
         
-        df = await self.get_relevance_by_df(df, disable_log, progress_bar)
+        df = await self.get_relevance_by_df(df, disable_log, progress_bar, progress_save_dir)
 
         if topk_with_group:
             # df.columns: ["relevance", "group", "k", **kwargs]
@@ -269,6 +310,7 @@ class Search:
                       df,
                       disable_log=False,
                       progress_bar=None,
+                      progress_save_dir=None
                      ):
 
         #from datasets.utils.logging import disable_progress_bar, set_verbosity_error
@@ -298,7 +340,33 @@ class Search:
 
         start = time.time()
 
-        if disable_log:
+        if self.max_request:
+            
+            self.requests = []
+            self.request_ids = []
+            self.results_dict = {}
+            
+            for request_id, prompt_dict in enumerate(list_of_prompts):
+                prompt_dict["request_id"] = request_id
+                self.requests.append(prompt_dict)
+                self.request_ids.append(request_id)
+
+            #task_save_result = asyncio.create_task(self.save_results(progress_save_dir))
+
+            tasks = [self.process_n_requests() for _ in range(self.max_request)]+[self.save_results(progress_save_dir)]
+            await asyncio.gather(
+                *tasks
+            )
+            
+            #await task_save_result
+
+            rewards = []
+            for request_id in range(len(list_of_prompts)):
+                result_dict = self.results_dict[request_id]
+                reward = result_dict["reward"]
+                rewards.append(reward)
+
+        elif disable_log:
             rewards = await asyncio.gather(
                 *[self.process(prompt_dict["prompt"], i, progress_bar) 
                   for i, prompt_dict in enumerate(list_of_prompts)]
@@ -425,6 +493,9 @@ class Search:
             """
             final_output = request_output
 
+
+        print(f"Finished request_id: {request_id}")
+
         if not self.model_supported:
 
             #embedding = final_output.outputs.embedding
@@ -438,6 +509,74 @@ class Search:
         #if not progress_bar: progress_bar.update(1)
         
         return reward
+
+
+    async def save_results(self, save_dir):
+
+        while True:
+
+            if len(self.requests) == 0:
+                break
+            else:
+                await asyncio.sleep(60)
+
+            with open(f"{save_dir}/results_dict.json", "w") as f:
+                json.dump(self.results_dict, f)
+            with open(f"{save_dir}/results.json", "w") as f:
+                json.dump(self.results, f)
+            with open(f"{save_dir}/finished_ids.json", "w") as f:
+                json.dump(self.finished_ids, f)
+        
+    
+    async def process_n_requests(self):
+
+        while len(self.requests) != 0:
+            
+            request_dict = self.requests.pop(0)
+            request_id = self.request_ids.pop(0)
+
+            prompt = request_dict["prompt"]
+            
+            results_generator = Search.engine.encode(prompt, 
+                                    PoolingParams(), 
+                                    request_id
+                                )
+            
+            try:
+
+                final_output = None
+                async for request_output in results_generator:
+                    """
+                    if await request.is_disconnected():
+                        # Abort the request if the client disconnects.
+                        await engine.abort(request_id)
+                        # Return or raise an error
+                        raise Exception()
+                    """
+                    final_output = request_output
+
+            except Exception as e:
+                print(e)
+
+
+            if not self.model_supported:
+    
+                #embedding = final_output.outputs.embedding
+                embedding = final_output.outputs.data
+                embedding = torch.tensor(embedding).float()
+        
+                reward = torch.matmul(torch.tensor(embedding).unsqueeze(0), self.score.to(embedding.device).transpose(0,1)).item()
+            else:
+                reward = torch.tensor(final_output.outputs.data).float().item()
+
+
+            request_dict["reward"] = reward
+
+            self.results_dict[request_id] = request_dict
+            self.results.append(request_dict)
+            self.finished_ids.append(request_id)
+    
+            if self.progress_bar: self.progress_bar.update(1)
     
     
         

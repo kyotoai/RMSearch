@@ -34,3 +34,26 @@ mingkwan
 - [ ] Evaluation 3h
 - [ ] Others 3h
 
+
+## Sep 30
+
+TODO for Minimal Experiment to write the paper
+- [ ] 1. Train the model with dataset smoll (exp3) \
+    -> Confirm that the accuracy goes up with training dataset(smoll-corpus) \
+    -> Confirm that the accuracy goes up with evaluation dataset(arguana) \
+    *If it doesn't, probably improving the llm-generated queries would be a good start
+- [ ] 2. Generate Tag Graph with hierarchical k-means method
+- [ ] 3. Do Evaluation based on tag graph
+- [ ] 4. Compare the evaluation result with Embedding one
+- [ ] 5. Repeat this until we get good result on benchmark
+
+TODO for Better benchmark result
+- [ ] GPU parallel for training with deepspeed
+- [ ] Collect more dataset
+- [ ] Make more various queries (which is necessary for stable training)
+- [ ] Advanced DPO batch (ask kentarrito about this)
+- [ ] Train the model for tag graoh search too
+
+TODO for better paper
+- [ ] Collect same proportion of mteb benchmark
+
