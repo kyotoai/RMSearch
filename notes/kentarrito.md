@@ -106,10 +106,24 @@
 - [ ] Comment out more
 - [ ] Make README.md about train_en.ipynb
 
-- [ ] Write paper baseline
+- [x] Write paper baseline
 
 - [ ] Code to train rm for tag search
 
+## Oct 4
+
+- [ ] First Solid Evaluation
+  - [ ] Assign keys into the tag_tree_recs and get tag2query
+  - [ ] Get evaluation of llama3b-generate
+
+- [ ] Rewrite train_en.ipynb functions into rmsearch directory
+  - [ ] Debug train_en.py
+  - [ ] Comment out more
+  - [ ] Make README.md about tag_graph and train
+
+- [ ] Train reward model
+  - [ ] Make evaluation dataset
+  - [ ] (Optional) Code to train rm for tag search
 
 
 
