@@ -115,14 +115,17 @@
 - [x] Fix a bug (tag_recs have tag inside each key_id so tag_id is not defined well.)
   -> just fixed make_leaf_tag_recs function by adding tag_meta and tag_recs in its argument
 - [x] Improve prompt to get representative_tag
+- [x] Fix a bug in search_key and search_tag (This was a fatal error, which can collapse all the result from tag_tree_recs with different branch sizes(not all branches are the same length). You shouldn't belive the output of search_tag and search_key before fixing this.)
+- [x] Assign keys into the tag_tree_recs and get tag2query
+- [ ] Get evaluation of llama3b-generate
 
 
-- [ ] First Solid Evaluation
+- [ ] First Evaluation for untrained reward model
   - [ ] Assign keys into the tag_tree_recs and get tag2query
   - [ ] Get evaluation of llama3b-generate
 
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
-  - [ ] Debug train_en.py
+  - [ ] Rewrite and debug train_en.py
   - [ ] Comment out more
   - [ ] Make README.md about tag_graph and train
 
