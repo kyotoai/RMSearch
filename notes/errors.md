@@ -306,3 +306,22 @@ RuntimeError: Worker error in batch 0: EngineDeadError: EngineCore encountered a
 ```
 -> when input is quite long
 
+
+
+```
+def get_tag_dict(tag_ids, tag_dict):
+    if tag_ids == []: return None
+
+    for tag_id in tag_ids[:-1]:
+        if "children" not in tag_dict[tag_id]:
+            return None
+        else:
+            tag_dict = tag_dict[tag_id]["children"]
+    
+    return tag_dict[tag_ids[-1]]
+```
+->
+```
+index out of error at `return tag_dict[tag_ids[-1]]`
+```
+-> output is already saved in the directory but you changed the input files. You can fix this by deleting the saved output
