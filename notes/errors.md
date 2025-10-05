@@ -325,3 +325,32 @@ def get_tag_dict(tag_ids, tag_dict):
 index out of error at `return tag_dict[tag_ids[-1]]`
 ```
 -> output is already saved in the directory but you changed the input files. You can fix this by deleting the saved output
+
+
+
+
+## Oct 5
+
+
+### cpu memory error
+cpu memory error -> when I input request like (1 query, 1000 keys) * 5000 but batch size was 1.
+not still sure why this happens even though the batch_size was quite small
+
+-> it's probably because theres 5M of prompt is on cpu memory. I need to do query batch too to avoid the error
+
+
+### jupyter notebook message send limit
+
+```
+IOPub message rate exceeded.
+The Jupyter server will temporarily stop sending output
+to the client in order to avoid crashing it.
+To change this limit, set the config variable
+`--ServerApp.iopub_msg_rate_limit`.
+
+Current values:
+ServerApp.iopub_msg_rate_limit=1000.0 (msgs/sec)
+ServerApp.rate_limit_window=3.0 (secs)
+```
+
+

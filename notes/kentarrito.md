@@ -127,18 +127,16 @@
 
 - [ ] Figure out why it ended up with low nDCG score.(which is the cause, graph or model itself?)
   - [x] Make code for evaluation without tag graph
-  - [x] Debug it
+  - [x] Debug it and get relevance_dict_without_graph
   - [x] Make code for evaluation of embedding model
-  - [ ] Debug it
+  - [ ] Debug it and get relevance_dict_with_embedding
     - [x] In vllm_embed.py, output embedding should be detach to cpu to avoid cuda oom
- 
 
-- [ ] Make query batch in search function in vllm_reward2.py to avoid cpu oom
-  - [x] Code it
-  - [ ] Debug it
 
 - [ ] Improve vllm_reward, embed, generate
-  - [ ] If it encounters an error, 
+  - [x] Make query batch in search function in vllm_reward2.py to avoid cpu oom
+  - [ ] If it encounters an error, stop generating output and clearing notebook output, and show the error message
+  - [ ] add an argument checkpoint_path and save output at the end of every batch
 
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
   - [ ] Rewrite and debug train_en.py
