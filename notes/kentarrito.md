@@ -126,14 +126,18 @@
 ## Oct 5
 
 - [ ] Figure out why it ended up with low nDCG score. (which is the cause, graph or model itself?)
-  - [ ] Make code for evaluation without tag graph
-   
+  - [x] Make code for evaluation without tag graph
+  - [x] Debug it
+  - [x] Make code for evaluation of embedding model
+  - [ ] 
+
+- [ ] Make query batch in search function in vllm_reward2.py to avoid cpu oom
 
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
   - [ ] Rewrite and debug train_en.py
   - [ ] Comment out more
   - [ ] Think how to scatter functions inside rmsearch directory and do it
-    * process_data -> rmsearch/utils
+    * process_data -> rmsearch/process_data
     * generate_tag_graph -> rmsearch/tag_graph_generation
     * make_dataset -> rmsearch/train
     
