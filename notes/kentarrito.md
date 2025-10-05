@@ -125,11 +125,13 @@
 
 ## Oct 5
 
-- [ ] Figure out why it ended up with low nDCG score. (which is the cause, graph or model itself?)
+- [ ] Figure out why it ended up with low nDCG score.(which is the cause, graph or model itself?)
   - [x] Make code for evaluation without tag graph
   - [x] Debug it
   - [x] Make code for evaluation of embedding model
-  - [ ] 
+  - [ ] Debug it
+    - [x] In vllm_embed.py, output embedding should be detach to cpu to avoid cuda oom
+ 
 
 - [ ] Make query batch in search function in vllm_reward2.py to avoid cpu oom
 

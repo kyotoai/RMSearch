@@ -22,6 +22,22 @@ from vllm import LLM
 
 # ---------------- Worker ----------------------------------------------------
 
+def _ensure_cpu_list(vector: Any) -> List[float]:
+    """Return a CPU list regardless of tensor/array implementation."""
+    try:
+        if hasattr(vector, "detach"):
+            vector = vector.detach()
+        if hasattr(vector, "cpu"):
+            vector = vector.cpu()
+        elif hasattr(vector, "to"):
+            vector = vector.to("cpu")
+        if hasattr(vector, "tolist"):
+            return list(vector.tolist())
+    except Exception:
+        pass
+    return [float(x) for x in vector]
+
+
 def _worker_main(
     worker_id: int,
     device_ids: List[int],
@@ -29,6 +45,7 @@ def _worker_main(
     llm_kwargs: Dict[str, Any],
     task_q: mp.Queue,
     result_q: mp.Queue,
+    output_to_cpu: bool,
 ) -> None:
     total_batches = 0
     done = 0
@@ -102,6 +119,8 @@ def _worker_main(
                     embeds_list = []
                     for output in outputs:
                         embeds = output.outputs.embedding
+                        if output_to_cpu:
+                            embeds = _ensure_cpu_list(embeds)
                         embeds_list.append(embeds)
                     #vectors = _normalize_embedding_output(outputs)
                     result_q.put(
@@ -172,12 +191,15 @@ class EmbeddingWorkerModel:
         model: str,
         device_groups: List[List[int]],
         max_request_per_worker: int = 16,
+        *,
+        output_to_cpu: bool = False,
         **llm_kwargs: Any,
     ) -> None:
         self.ctx = mp.get_context("spawn")
         self.model = model
         self.device_groups = device_groups
         self.llm_kwargs = llm_kwargs
+        self.output_to_cpu = output_to_cpu
         self.result_q: mp.Queue = self.ctx.Queue()
         self.task_queues: List[mp.Queue] = [
             self.ctx.Queue(maxsize=max_request_per_worker) for _ in device_groups
@@ -188,7 +210,15 @@ class EmbeddingWorkerModel:
         for wid, devs in enumerate(device_groups):
             process = self.ctx.Process(
                 target=_worker_main,
-                args=(wid, devs, model, llm_kwargs, self.task_queues[wid], self.result_q),
+                args=(
+                    wid,
+                    devs,
+                    model,
+                    llm_kwargs,
+                    self.task_queues[wid],
+                    self.result_q,
+                    self.output_to_cpu,
+                ),
                 daemon=False,
             )
             process.start()
@@ -312,6 +342,8 @@ def build_embedding_model(
     tensor_parallel_size: int,
     num_instances: int,
     device_groups: Optional[List[List[int]]] = None,
+    *,
+    output_to_cpu: bool = False,
     **llm_kwargs: Any,
 ) -> EmbeddingWorkerModel:
     if device_groups is None:
@@ -333,6 +365,7 @@ def build_embedding_model(
         model=model_name,
         device_groups=device_groups,
         tensor_parallel_size=tensor_parallel_size,
+        output_to_cpu=output_to_cpu,
         **llm_kwargs,
     )
 
