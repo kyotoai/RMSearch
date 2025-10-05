@@ -12,13 +12,13 @@
 ### Coding for Experiment
 kenta
 - [x] Data Parallel
-- [ ] Evaluation Baseline 2h
+- [x] Evaluation Baseline 2h
 - [ ] Tag Graph Dataset 10h
 - [ ] Scalability 5h
 
 mingkwan
-- [ ] Evaluation 2 days
-  - [ ] nDCG@10
+- [x] Evaluation 2 days
+  - [x] nDCG@10
 - [ ] Implement Deepspeed
 
 ### Code RMSearch Github  1 week
@@ -28,7 +28,7 @@ mingkwan
 - [ ] Graph 2h
 
 ### Paper writing. 1 week
-- [ ] Introduction (paper, similar work) 10h 
+- [x] Introduction (paper, similar work) 10h 
 - [ ] Experimental setup 3h
 - [ ] Result 3h 
 - [ ] Evaluation 3h
@@ -42,7 +42,7 @@ TODO for Minimal Experiment to write the paper
     -> Confirm that the accuracy goes up with training dataset(smoll-corpus) \
     -> Confirm that the accuracy goes up with evaluation dataset(arguana) \
     *If it doesn't, probably improving the llm-generated queries would be a good start
-- [ ] 2. Generate Tag Graph with hierarchical k-means method
+- [x] 2. Generate Tag Graph with hierarchical k-means method
 - [ ] 3. Do Evaluation based on tag graph
 - [ ] 4. Compare the evaluation result with Embedding one
 - [ ] 5. Repeat this until we get good result on benchmark
@@ -52,7 +52,7 @@ TODO for Better benchmark result
 - [ ] Collect more dataset
 - [ ] Make more various queries (which is necessary for stable training)
 - [ ] Advanced DPO batch (ask kentarrito about this)
-- [ ] Train the model for tag graoh search too
+- [ ] Train the model for tag graph search too
 
 TODO for better paper
 - [ ] Collect same proportion of mteb benchmark
