@@ -126,6 +126,8 @@
 ## Oct 5
 
 - [ ] Figure out why it ended up with low nDCG score. (which is the cause, graph or model itself?)
+  - [ ] Make code for evaluation without tag graph
+   
 
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
   - [ ] Rewrite and debug train_en.py
