@@ -122,10 +122,19 @@
   - [x] Get evaluation of llama3b-generate
 * -> Ended up with 0.05 nDCG. Probably it can be improved by making more accurate tag_graph. Also need to implement more dataset.
 
+
+## Oct 5
+
+- [ ] Figure out why it ended up with low nDCG score. (which is the cause, graph or model itself?)
+
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
   - [ ] Rewrite and debug train_en.py
   - [ ] Comment out more
   - [ ] Think how to scatter functions inside rmsearch directory and do it
+    * process_data -> rmsearch/utils
+    * generate_tag_graph -> rmsearch/tag_graph_generation
+    * make_dataset -> rmsearch/train
+    
   - [ ] Make README.md about tag_graph and train
 
 - [ ] Train reward model

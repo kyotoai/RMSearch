@@ -336,10 +336,13 @@ def embed_tags(
         W = Vh[:reduce_to_dim, :].T
         tag_emb = _normalize(X @ W)
 
-    if save_path_tags:
-        _save_tensor(tag_emb, save_path_tags)
-    if save_path_tagmeta:
-        _save_json(tag_meta, save_path_tagmeta)
+    #if save_path_tags:
+    #    _save_tensor(tag_emb, save_path_tags)
+    #if save_path_tagmeta:
+    #    _save_json(tag_meta, save_path_tagmeta)
+
+    # tag_emb = torch.tensor([[...], ...])
+    # tag_meta = [(key_id, tag_id), ...]
 
     return tag_emb, tag_meta
 

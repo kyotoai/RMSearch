@@ -15,6 +15,7 @@ kenta
 - [x] Evaluation Baseline 2h
 - [ ] Tag Graph Dataset 10h
 - [ ] Scalability 5h
+  * Get relationship among k_key, k_tag ...
 
 mingkwan
 - [x] Evaluation 2 days
