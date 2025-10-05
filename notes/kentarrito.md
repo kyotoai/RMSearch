@@ -131,15 +131,13 @@
   - [x] Make code for evaluation of embedding model
   - [x] Debug it and get relevance_dict_with_embedding
     - [x] In vllm_embed.py, output embedding should be detach to cpu to avoid cuda oom
-
-
+* -> So the bottom line is nDCG(embedding)=0.78, nDCG(rm with graph)=0.05, nDCG(rm without graph)=0.61. I need to enhance the graph and make the drop by graph less than 0.10. 
 
 - [ ] Improve vllm_reward, embed, generate
   - [x] Make query batch in search function in vllm_reward2.py to avoid cpu oom
   - [x] If it encounters an error, stop generating output and clearing notebook output, and show the error message
   - [x] add an argument checkpoint_path and save output at the end of every batch
-  - [ ] Debug them
-
+  - [ ] Make vllm_test.ipynb in examples to test it and debug them
 
 - [ ] Improve tag_graph step by step
   - [ ] Think about how it works
