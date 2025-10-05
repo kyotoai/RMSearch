@@ -416,8 +416,15 @@ def embed_with_model(model: LLMWorker, prompts: List[str], **gen_kwargs) -> List
     return model.encode(prompts, **gen_kwargs)
 
 
-def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, topk = 10, **gen_kwargs) -> List[str]:
-    
+def search(
+    model: LLMWorker,
+    requests: List[Dict[str, Any]],
+    llm_template,
+    topk: int = 10,
+    query_batch_size: int = 128,
+    **gen_kwargs,
+) -> List[str]:
+
     # requests = [{"query": "...", "keys": ["k1","k2", ...]}, ...]
     df = pd.DataFrame(requests)
     df["query_id"] = range(len(df))
@@ -438,12 +445,45 @@ def search(model: LLMWorker, requests: List[Dict[str, Any]], llm_template, topk 
         prompt = prompt[17:]  # to eliminate <|begin_of_text|> because vllm automatically add it to prompt
         row["prompt"] = prompt
         return row
-    
-    formatted_dataset = dataset1.map(format)
-    df = formatted_dataset.to_pandas()
 
-    rewards = model.encode(df["prompt"], **gen_kwargs)
-    df["relevance"] = rewards.numpy()
+    if query_batch_size <= 0:
+        raise ValueError("query_batch_size must be positive")
+
+    records: List[Dict[str, Any]] = []
+    num_rows = len(dataset1)
+
+    for start in range(0, num_rows, query_batch_size):
+        end = min(start + query_batch_size, num_rows)
+        batch_indices = list(range(start, end))
+        formatted_batch = dataset1.select(batch_indices).map(format)
+        prompts = formatted_batch["prompt"]
+
+        batch_rewards = model.encode(prompts, **gen_kwargs)
+        if isinstance(batch_rewards, torch.Tensor):
+            batch_scores = batch_rewards.detach().cpu().numpy()
+        else:
+            batch_scores = batch_rewards
+
+        for idx in range(len(formatted_batch)):
+            row = formatted_batch[idx]
+            score = batch_scores[idx]
+            records.append(
+                {
+                    "query_id": row["query_id"],
+                    "query": row["query"],
+                    "key_id": row["key_id"],
+                    "key": row["key"],
+                    "relevance": float(score.item() if hasattr(score, "item") else score),
+                }
+            )
+
+    if not records:
+        return []
+
+    df = pd.DataFrame.from_records(
+        records,
+        columns=["query_id", "query", "key_id", "key", "relevance"],
+    )
 
     # Sort and pick topn per request
     df = (

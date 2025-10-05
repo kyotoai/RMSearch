@@ -134,6 +134,11 @@
  
 
 - [ ] Make query batch in search function in vllm_reward2.py to avoid cpu oom
+  - [x] Code it
+  - [ ] Debug it
+
+- [ ] Improve vllm_reward, embed, generate
+  - [ ] If it encounters an error, 
 
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
   - [ ] Rewrite and debug train_en.py
