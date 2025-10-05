@@ -6,6 +6,7 @@ This module mirrors the batching/worker orchestration from
 https://docs.vllm.ai/en/latest/usage/embeddings.html.
 """
 
+import json
 import os
 import signal
 import threading
@@ -18,6 +19,17 @@ import queue as _q  # keep non-blocking put semantics clear
 
 from IPython.display import clear_output
 from vllm import LLM
+
+
+def _append_checkpoint(path: Optional[str], record: Dict[str, Any]) -> None:
+    """Append batch outputs to a JSONL checkpoint file."""
+    if not path:
+        return
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record) + "\n")
 
 
 # ---------------- Worker ----------------------------------------------------
@@ -168,21 +180,35 @@ def _normalize_embedding_output(
 class _NotebookBoard:
     def __init__(self, num_workers: int):
         self.state = ["initializing…" for _ in range(num_workers)]
+        self._suppress_clear = False
+        self._error_message: Optional[str] = None
 
     def update(self, wid: int, text: str) -> None:
         if 0 <= wid < len(self.state):
             self.state[wid] = text
         self.render()
 
+    def disable_clear(self) -> None:
+        self._suppress_clear = True
+
+    def set_error(self, message: str) -> None:
+        self._error_message = message
+        self.disable_clear()
+        self.render()
+
     def render(self) -> None:
-        try:
-            pass
-            clear_output(wait=True)
-        except Exception:
-            pass
-        print("== Worker logs ==")
-        for idx, line in enumerate(self.state):
-            print(f"[Worker {idx}] {line}")
+        if not self._suppress_clear:
+            try:
+                clear_output(wait=True)
+            except Exception:
+                pass
+        if self._error_message is not None:
+            print("== Worker error ==")
+            print(self._error_message)
+        else:
+            print("== Worker logs ==")
+            for idx, line in enumerate(self.state):
+                print(f"[Worker {idx}] {line}")
 
 
 class EmbeddingWorkerModel:
@@ -243,6 +269,7 @@ class EmbeddingWorkerModel:
         inputs: List[str],
         batch_size: int = 8,
         timeout_s: Optional[float] = None,
+        checkpoint_path: Optional[str] = None,
     ) -> List[List[float]]:
         job_id = f"job-{uuid.uuid4().hex}"
         indexed = list(enumerate(inputs))
@@ -302,9 +329,26 @@ class EmbeddingWorkerModel:
                 continue
 
             if "error" in payload:
-                raise RuntimeError(f"Worker error in batch {slot}: {payload['error']}")
+                error_msg = f"Worker error in batch {slot}: {payload['error']}"
+                board.set_error(error_msg)
+                raise RuntimeError(error_msg)
 
-            chunk_results[slot] = payload["embeddings"]
+            vectors = payload["embeddings"]
+            chunk_results[slot] = vectors
+
+            if checkpoint_path:
+                index_block = [idx for idx, _ in chunks[slot]]
+                serializable = [[float(x) for x in vec] for vec in vectors]
+                _append_checkpoint(
+                    checkpoint_path,
+                    {
+                        "job_id": job_id,
+                        "batch_index": slot,
+                        "indices": index_block,
+                        "outputs": serializable,
+                    },
+                )
+
             completed += 1
             board.render()
 

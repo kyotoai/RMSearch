@@ -129,14 +129,22 @@
   - [x] Make code for evaluation without tag graph
   - [x] Debug it and get relevance_dict_without_graph
   - [x] Make code for evaluation of embedding model
-  - [ ] Debug it and get relevance_dict_with_embedding
+  - [x] Debug it and get relevance_dict_with_embedding
     - [x] In vllm_embed.py, output embedding should be detach to cpu to avoid cuda oom
+
 
 
 - [ ] Improve vllm_reward, embed, generate
   - [x] Make query batch in search function in vllm_reward2.py to avoid cpu oom
-  - [ ] If it encounters an error, stop generating output and clearing notebook output, and show the error message
-  - [ ] add an argument checkpoint_path and save output at the end of every batch
+  - [x] If it encounters an error, stop generating output and clearing notebook output, and show the error message
+  - [x] add an argument checkpoint_path and save output at the end of every batch
+  - [ ] Debug them
+
+
+- [ ] Improve tag_graph step by step
+  - [ ] Think about how it works
+  - [ ] Implement gpt-oss
+  - [ ] 
 
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
   - [ ] Rewrite and debug train_en.py
@@ -145,7 +153,6 @@
     * process_data -> rmsearch/process_data
     * generate_tag_graph -> rmsearch/tag_graph_generation
     * make_dataset -> rmsearch/train
-    
   - [ ] Make README.md about tag_graph and train
 
 - [ ] Train reward model

@@ -38,6 +38,7 @@ finally:
 """
 
 
+import json
 import os, time, uuid, signal, traceback, queue, sys, threading
 import multiprocessing as mp
 from typing import List, Tuple, Dict, Any, Optional
@@ -48,17 +49,29 @@ from datasets import Dataset
 import pandas as pd
 from tqdm import tqdm  # kept (not used in the new log system, but left to avoid breaking imports)
 
+
+def _append_checkpoint(path: Optional[str], record: Dict[str, Any]) -> None:
+    """Append batch information to a JSONL checkpoint file."""
+    if not path:
+        return
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record) + "\n")
+
 # ---------------------------- Jupyter log board ----------------------------
 class _NotebookBoard:
-    """
-    Keeps one line per worker and reprints the board in-place in notebooks.
-    Falls back to simple prints elsewhere.
-    """
+    """Minimal live log board that avoids clearing once an error occurs."""
+
     def __init__(self, num_workers: int):
         self.state = ["initializing…" for _ in range(num_workers)]
         self._have_clear = False
+        self._suppress_clear = False
+        self._error_message: Optional[str] = None
         try:
             from IPython.display import clear_output  # type: ignore
+
             self._clear_output = clear_output
             self._have_clear = True
         except Exception:
@@ -69,15 +82,27 @@ class _NotebookBoard:
             self.state[wid] = text
         self.render()
 
-    def render(self):
-        if self._have_clear:
+    def disable_clear(self) -> None:
+        self._suppress_clear = True
+
+    def set_error(self, message: str) -> None:
+        self._error_message = message
+        self.disable_clear()
+        self.render()
+
+    def render(self) -> None:
+        if self._have_clear and not self._suppress_clear:
             try:
                 self._clear_output(wait=True)
             except Exception:
                 pass
-        print("== Worker logs ==")
-        for i, line in enumerate(self.state):
-            print(f"[Worker {i}] {line}")
+        if self._error_message is not None:
+            print("== Worker error ==")
+            print(self._error_message)
+        else:
+            print("== Worker logs ==")
+            for i, line in enumerate(self.state):
+                print(f"[Worker {i}] {line}")
         sys.stdout.flush()
 
 
@@ -271,6 +296,7 @@ class LLMWorker:
         pooling_params = None,
         batch_size: int = 8,
         timeout_s: Optional[float] = None,
+        checkpoint_path: Optional[str] = None,
     ) -> List[str]:
         if pooling_params is None:
             pooling_params = PoolingParams()
@@ -301,7 +327,7 @@ class LLMWorker:
         # Non-blocking dispatch + interleaved log polling
         to_submit = list(range(pending))  # chunk indices not yet submitted
         rr = 0  # independent round-robin pointer for submission
-        chunk_results: Dict[int, List[str]] = {}
+        chunk_results: Dict[int, Any] = {}
         deadline = time.time() + timeout_s if timeout_s else None
         poll = 0.2  # seconds
 
@@ -349,7 +375,9 @@ class LLMWorker:
                 continue
 
             if rid == "__init__" and "fatal_error" in payload:
-                raise RuntimeError(f"Worker failed to initialize:\n{payload['fatal_error']}")
+                error_msg = f"Worker failed to initialize:\n{payload['fatal_error']}"
+                board.set_error(error_msg)
+                raise RuntimeError(error_msg)
 
             if rid == "__log__":
                 board.update(wid, payload.get("msg", ""))
@@ -360,10 +388,32 @@ class LLMWorker:
                 continue
 
             if "error" in payload:
-                raise RuntimeError(f"Worker error in batch {item_idx}: {payload['error']}")
+                error_msg = f"Worker error in batch {item_idx}: {payload['error']}"
+                board.set_error(error_msg)
+                raise RuntimeError(error_msg)
 
             # normal batch result
-            chunk_results[item_idx] = payload["outputs"]
+            batch_outputs = payload["outputs"]
+            chunk_results[item_idx] = batch_outputs
+
+            if checkpoint_path:
+                original_indices, _ = zip(*chunks[item_idx])
+                if isinstance(batch_outputs, torch.Tensor):
+                    serializable = batch_outputs.detach().cpu().tolist()
+                else:
+                    try:
+                        serializable = [float(x) for x in batch_outputs]
+                    except Exception:
+                        serializable = list(batch_outputs)
+                _append_checkpoint(
+                    checkpoint_path,
+                    {
+                        "job_id": job_id,
+                        "batch_index": item_idx,
+                        "indices": list(original_indices),
+                        "outputs": serializable,
+                    },
+                )
 
         # Reconstruct outputs in original order
         outputs: List[Optional[str]] = [None] * len(prompts)
