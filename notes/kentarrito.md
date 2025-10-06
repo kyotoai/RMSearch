@@ -142,23 +142,41 @@
 
   ## Oct 6
 
+- [ ] Rewrite train_en.ipynb functions into rmsearch directory
+  - [ ] Rewrite and debug train_en.py
+  - [ ] Comment out more
+  - [x] Think how to scatter functions inside rmsearch directory and do it
+    * vllm_reward, generate, embed -> rmsearch/utils/
+    * Generate Tag Graph 2 -> rmsearch/tree
+      * generate_tag -> rmsearch/tree/generate_tag.py
+      * embed_tags -> rmsearch/tree/embed_tags.py
+      * HierarchicalKMeans -> rmsearch/tree/hierarchical_kmeans.py
+      * _as_int_list, _sorted_keys_numeric, convert_tree_dict_to_json -> method in HierarchicalKMeans
+      * build_representative_tags -> rmsearch/tree/build_representative_tags.py
+
+    * make_dataset -> rmsearch/train
+      * make queries -> rmsearch/train/make_queries.py
+      * search_tag -> rename it to def assign_key_to_tag_tree and save it in rmsearch/tree/assign_key.py
+      * judge sentence -> rmsearch/train/judge_dataset.py
+
+    * process_data -> rmsearch/train/process_data
+    * train -> rmsearch/train/lora_example.py
+    * model conversion -> rmsearch/train/utils.py
+    * evaluation -> rmsearch/evaluation
+  - [ ] Debug the code and modify it
+  - [ ] Make README.md about tag_graph and train
+
+
 - [ ] Improve tag_graph step by step
   - [x] Design the architexture
   * Saved rough overview about graph update methods in graph_update_methods.md
   - [x] Implement code in train_en.ipynb Update Graph section refering to graph_update_methods.md. Input: tag_tree_recs -> Output: tag_graph.
   - [x] Debug the code and get tag_graph.json
-  - [ ] 
+  - [ ] Probably it's not working good yet. Debug and test it.
+  - [ ] Recode search_key and assign_tag with tag_graph
+  - [ ] Get evaluation results from the tag_graph
 
 - [ ] Implement gpt-oss instead of qwen7b (qwen7b has sometimes lower performance in tag generation)
-
-- [ ] Rewrite train_en.ipynb functions into rmsearch directory
-  - [ ] Rewrite and debug train_en.py
-  - [ ] Comment out more
-  - [ ] Think how to scatter functions inside rmsearch directory and do it
-    * process_data -> rmsearch/process_data
-    * generate_tag_graph -> rmsearch/tag_graph_generation
-    * make_dataset -> rmsearch/train
-  - [ ] Make README.md about tag_graph and train
 
 - [ ] Train reward model
   - [ ] (Mingk) Make system to set aruguana as test dataset
