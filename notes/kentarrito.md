@@ -125,7 +125,7 @@
 
 ## Oct 5
 
-- [ ] Figure out why it ended up with low nDCG score.(which is the cause, graph or model itself?)
+- [x] Figure out why it ended up with low nDCG score.(which is the cause, graph or model itself?)
   - [x] Make code for evaluation without tag graph
   - [x] Debug it and get relevance_dict_without_graph
   - [x] Make code for evaluation of embedding model
@@ -139,10 +139,16 @@
   - [x] add an argument checkpoint_path and save output at the end of every batch
   - [ ] Make vllm_test.ipynb in examples to test it and debug them
 
+
+  ## Oct 6
+
 - [ ] Improve tag_graph step by step
-  - [ ] Think about how it works
-  - [ ] Implement gpt-oss
+  - [x] Design the architexture
+  * Saved rough overview about graph update methods in graph_update_methods.md
+  - [ ] Implement code in train_en.ipynb Update Graph section refering to graph_update_methods.md. Input: tag_tree_recs -> Output: tag_graph.
   - [ ] 
+
+- [ ] Implement gpt-oss instead of qwen7b (qwen7b has sometimes lower performance in tag generation)
 
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
   - [ ] Rewrite and debug train_en.py
