@@ -146,7 +146,7 @@
   - [x] Design the architexture
   * Saved rough overview about graph update methods in graph_update_methods.md
   - [x] Implement code in train_en.ipynb Update Graph section refering to graph_update_methods.md. Input: tag_tree_recs -> Output: tag_graph.
-  - [ ] 
+  - [x] Debug the code and get tag_graph.json
   - [ ] 
 
 - [ ] Implement gpt-oss instead of qwen7b (qwen7b has sometimes lower performance in tag generation)
