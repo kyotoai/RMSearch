@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import copy
+import json
 import heapq
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+
+import pandas as pd
+
+from rmsearch.utils.vllm_reward2 import build_llm, search
 
 __all__ = ["assign_key_to_tag_tree"]
 
@@ -134,26 +141,144 @@ def assign_key_to_tag_tree(
     return query2tag_ids, tag2query
 
 
-if __name__ == "__main__":
-    def fake_search(requests: List[Dict[str, Any]]):
-        outputs = []
-        for req in requests:
-            outputs.append(
-                {
-                    "keys": [
-                        {"key_id": min(idx, 1), "relevance": 1.0 - 0.1 * idx}
-                        for idx in range(len(req["keys"]))
-                    ]
-                }
+def _load_queries(args: argparse.Namespace) -> List[Dict[str, str]]:
+    if args.queries_json:
+        data = json.loads(Path(args.queries_json).read_text())
+        if isinstance(data, dict):
+            # Accept mapping like {"0": {...}}
+            values = list(data.values())
+        else:
+            values = data
+        queries = []
+        for item in values:
+            if isinstance(item, str):
+                queries.append({"query": item})
+            elif isinstance(item, dict) and "query" in item:
+                queries.append({"query": str(item["query"])})
+        if not queries:
+            raise ValueError("queries_json must contain strings or objects with a 'query' field")
+        return queries
+
+    if args.queries_csv:
+        df = pd.read_csv(args.queries_csv)
+        if args.query_column not in df.columns:
+            raise ValueError(f"Column '{args.query_column}' not found in {args.queries_csv}")
+        return [{"query": str(value)} for value in df[args.query_column].dropna().tolist()]
+
+    raise ValueError("Provide --queries-json or --queries-csv")
+
+
+def _parse_device_groups(spec: Optional[str], tensor_parallel_size: int, num_instances: int) -> Optional[List[List[int]]]:
+    if not spec:
+        return None
+    groups: List[List[int]] = []
+    for chunk in spec.split(";"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        group = [int(token) for token in chunk.split(",") if token.strip()]
+        if not group:
+            continue
+        groups.append(group)
+    if not groups:
+        return None
+    if len(groups) != num_instances:
+        raise ValueError(f"Expected {num_instances} device groups, got {len(groups)}")
+    for group in groups:
+        if len(group) != tensor_parallel_size:
+            raise ValueError(
+                "Each device group must contain exactly "
+                f"{tensor_parallel_size} devices (got {group})"
             )
-        return outputs
+    return groups
 
-    sample_queries = [{"query": "Explain retrieval"}]
-    sample_tree = [
-        {"tag": "AI", "children": [{"tag": "IR", "children": []}, {"tag": "Cooking", "children": []}]},
-        {"tag": "General", "children": []},
-    ]
 
-    q2tag, t2query = assign_key_to_tag_tree(sample_queries, sample_tree, search_fn=fake_search, k_tag=2)
-    print(q2tag)
-    print(t2query)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Assign queries to a tag tree using a reward model search backend.")
+    parser.add_argument("--tag-tree", type=Path, required=True, help="Path to the tag tree JSON file.")
+    parser.add_argument("--queries-json", type=Path, help="JSON file containing either a list of strings or objects with 'query'.")
+    parser.add_argument("--queries-csv", type=Path, help="CSV file containing queries.")
+    parser.add_argument("--query-column", type=str, default="query", help="Column name to read queries from when using CSV input.")
+    parser.add_argument("--query2tag-out", type=Path, required=True, help="Destination JSON file for query-to-tag assignments.")
+    parser.add_argument("--tag2query-out", type=Path, required=True, help="Destination JSON file for augmented tag tree.")
+    parser.add_argument("--model-name", type=str, required=True, help="Reward model name or path for scoring.")
+    parser.add_argument("--tensor-parallel-size", type=int, default=1, help="tensor_parallel_size per reward model instance.")
+    parser.add_argument("--num-instances", type=int, default=4, help="Number of reward model worker instances.")
+    parser.add_argument(
+        "--device-groups",
+        type=str,
+        help="Explicit GPU mapping, e.g. '0,1;2,3' for two workers with tensor_parallel_size=2.",
+    )
+    parser.add_argument("--batch-size", type=int, default=1000, help="Prompts processed per worker batch.")
+    parser.add_argument("--timeout", type=float, default=10_000.0, help="Timeout (s) for reward model batches.")
+    parser.add_argument("--k-tag", type=int, default=2, help="Number of child tags explored per depth.")
+    args = parser.parse_args()
+
+    if not args.tag_tree.exists():
+        raise FileNotFoundError(f"Tag tree file not found: {args.tag_tree}")
+
+    queries = _load_queries(args)
+    tag_tree = json.loads(args.tag_tree.read_text())
+
+    device_groups = _parse_device_groups(
+        args.device_groups,
+        tensor_parallel_size=args.tensor_parallel_size,
+        num_instances=args.num_instances,
+    )
+
+    rm = build_llm(
+        model_name=args.model_name,
+        tensor_parallel_size=len(device_groups[0]) if device_groups else args.tensor_parallel_size,
+        num_instances=len(device_groups) if device_groups else args.num_instances,
+        device_groups=device_groups if device_groups else None,
+        max_model_len=2500,
+        max_num_seqs=64,
+        gpu_memory_utilization=0.90,
+        runner="pooling",
+    )
+    tokenizer = rm.tokenizer
+
+    def llm_template_func(row: Dict[str, Any]) -> str:
+        message = [
+            {
+                "role": "user",
+                "content": (
+                    "Generate tag for the sentence\n\n"
+                    f"Sentence:'''{row['query']}'''"
+                ),
+            },
+            {"role": "assistant", "content": str(row["key"])}
+        ]
+        if len(message[0]["content"]) > 4000:
+            message[0]["content"] = message[0]["content"][:4000] + "..."
+        return tokenizer.apply_chat_template(message, tokenize=False)
+
+    def run_search(requests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not requests:
+            return []
+        topk = max((req.get("k", args.k_tag) for req in requests), default=args.k_tag)
+        return search(
+            rm,
+            requests,
+            llm_template_func,
+            topk=topk,
+            batch_size=args.batch_size,
+            timeout_s=args.timeout,
+        )
+
+    try:
+        query2tag, tag2query = assign_key_to_tag_tree(
+            queries,
+            tag_tree,
+            search_fn=run_search,
+            k_tag=args.k_tag,
+        )
+    finally:
+        rm.close()
+
+    args.query2tag_out.parent.mkdir(parents=True, exist_ok=True)
+    args.query2tag_out.write_text(json.dumps(query2tag, ensure_ascii=False, indent=2))
+    args.tag2query_out.parent.mkdir(parents=True, exist_ok=True)
+    args.tag2query_out.write_text(json.dumps(tag2query, ensure_ascii=False, indent=2))
+    print(f"Saved query2tag assignments to {args.query2tag_out}")
+    print(f"Saved augmented tag tree to {args.tag2query_out}")

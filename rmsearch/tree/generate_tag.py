@@ -6,15 +6,17 @@ This module extracts the tag-generation portion of
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from vllm import SamplingParams
 
 from rmsearch.utils.vllm_generate import LLMWorkerModel, build_llm
 
-__all__ = ["generate_tag", "build_model_from_settings"]
+__all__ = ["generate_tag", "build_model_from_settings", "build_pool_from_settings"]
 
 
 def _json_list_from_text(text: str) -> List[str]:
@@ -80,6 +82,11 @@ def build_model_from_settings(model_name: str, settings: Dict[str, Any]) -> LLMW
         device_groups=device_groups,
         **llm_kwargs,
     )
+
+
+def build_pool_from_settings(model_name: str, settings: Dict[str, Any]) -> LLMWorkerModel:
+    """Backward-compatible alias for older imports."""
+    return build_model_from_settings(model_name, settings)
 
 
 def generate_tag(
@@ -163,26 +170,85 @@ def generate_tag(
     ]
 
 
+def _parse_device_groups(spec: Optional[str], tensor_parallel_size: int, num_instances: int) -> Optional[List[List[int]]]:
+    if not spec:
+        return None
+    groups: List[List[int]] = []
+    for chunk in spec.split(";"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        group = [int(token) for token in chunk.split(",") if token.strip()]
+        if not group:
+            continue
+        groups.append(group)
+    if not groups:
+        return None
+    if len(groups) != num_instances:
+        raise ValueError(f"Expected {num_instances} device groups, got {len(groups)}")
+    for group in groups:
+        if len(group) != tensor_parallel_size:
+            raise ValueError(
+                "Each device group must contain exactly "
+                f"{tensor_parallel_size} devices (got {group})"
+            )
+    return groups
+
+
 if __name__ == "__main__":
-    class DummyModel:
-        """Minimal stand-in that mimics the ``LLMWorkerModel`` API."""
+    parser = argparse.ArgumentParser(description="Generate tags for keys using a vLLM worker pool.")
+    parser.add_argument("--keys-file", type=Path, required=True, help="Text file containing one key per line.")
+    parser.add_argument("--output", type=Path, required=True, help="Destination JSON file for tag records.")
+    parser.add_argument("--model-name", type=str, required=True, help="Generation model name or path.")
+    parser.add_argument("--tensor-parallel-size", type=int, default=1, help="tensor_parallel_size per instance.")
+    parser.add_argument("--num-instances", type=int, default=1, help="Number of worker instances to launch.")
+    parser.add_argument(
+        "--device-groups",
+        type=str,
+        help="Explicit GPU mapping, e.g. '0,1;2,3' for two workers with tensor_parallel_size=2.",
+    )
+    parser.add_argument("--worker-batch-size", type=int, default=8, help="Prompts per batch dispatched to each worker.")
+    parser.add_argument("--timeout", type=float, default=None, help="Optional timeout (s) for each worker batch.")
+    parser.add_argument("--top-p", type=float, default=0.9, help="Sampling top_p value.")
+    parser.add_argument("--temperature", type=float, default=0.3, help="Sampling temperature.")
+    parser.add_argument("--max-tokens", type=int, default=128, help="Maximum tokens generated per prompt.")
+    args = parser.parse_args()
 
-        def __init__(self, responses: List[str]):
-            self._responses = responses
+    if not args.keys_file.exists():
+        raise FileNotFoundError(f"Keys file not found: {args.keys_file}")
 
-        def generate(self, prompts, sampling_params=None, batch_size=None, timeout_s=None):
-            del prompts, sampling_params, batch_size, timeout_s
-            return list(self._responses)
+    keys = [line.strip() for line in args.keys_file.read_text().splitlines() if line.strip()]
+    if not keys:
+        raise ValueError("No keys found in the provided file.")
 
-        def close(self):
-            pass
+    device_groups = _parse_device_groups(
+        args.device_groups,
+        tensor_parallel_size=args.tensor_parallel_size,
+        num_instances=args.num_instances,
+    )
 
-    dummy_outputs = [
-        '["Graph Theory", "Retrieval", "Knowledge Base"]',
-        '["Reinforcement Learning", "Reward Model"]',
-    ]
-    demo_model = DummyModel(dummy_outputs)
-    demo_keys = ["Graph-based retrieval augmentation", "Optimising reward models"]
-    records = generate_tag(demo_keys, model_name="dummy", model=demo_model)
-    for rec in records:
-        print(rec)
+    model_settings = {
+        "tensor_parallel_size": args.tensor_parallel_size,
+        "num_instances": args.num_instances,
+        "device_groups": device_groups,
+        "llm_kwargs": {},
+    }
+
+    sampling = SamplingParams(
+        temperature=args.temperature,
+        top_p=args.top_p,
+        max_tokens=args.max_tokens,
+    )
+
+    tag_recs = generate_tag(
+        keys,
+        model_name=args.model_name,
+        model_settings=model_settings,
+        sampling_params=sampling,
+        worker_batch_size=args.worker_batch_size,
+        timeout_s=args.timeout,
+    )
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(tag_recs, ensure_ascii=False, indent=2))
+    print(f"Saved tag records to {args.output}")

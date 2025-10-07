@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import re
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+
+import pandas as pd
 
 from .utils import AllRequests, extract_text, setup_async_engine
 
@@ -137,17 +141,50 @@ def make_queries(
 
 
 if __name__ == "__main__":
-    class DummyTokenizer:
-        def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True):
-            del tokenize, add_generation_prompt
-            combined = "\n".join(block["content"] for block in messages)
-            return combined
+    parser = argparse.ArgumentParser(description="Generate questions, titles, and keywords for source sentences.")
+    parser.add_argument("--input-csv", type=Path, required=True, help="CSV file containing source texts.")
+    parser.add_argument("--text-column", type=str, default="text", help="Column containing the text to analyse.")
+    parser.add_argument("--output", type=Path, required=True, help="Destination JSON file for generated queries.")
+    parser.add_argument("--model-name", type=str, required=True, help="Async vLLM model used to answer requests.")
+    parser.add_argument("--tensor-parallel-size", type=int, default=2, help="tensor_parallel_size for the async engine.")
+    parser.add_argument("--pipeline-parallel-size", type=int, default=1, help="pipeline_parallel_size for the async engine.")
+    parser.add_argument("--data-parallel-size", type=int, default=1, help="data_parallel_size for the async engine.")
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.95, help="GPU memory utilisation passed to AsyncLLMEngine.")
+    parser.add_argument("--omp-num-threads", type=int, default=4, help="Number of CPU threads for the async workers.")
+    parser.add_argument("--max-requests", type=int, default=50, help="Maximum concurrent requests issued to the engine.")
+    parser.add_argument("--progress-dir", type=str, default="progress_questions", help="Directory used for progress checkpoints.")
+    parser.add_argument("--restart", action="store_true", help="Resume from existing progress logs if available.")
+    args = parser.parse_args()
 
-    def fake_request(prompts: List[str]) -> List[str]:
-        return [
-            "<titles>[\"T1\"]</titles><keywords>[\"K1\"]</keywords><questions>[\"Q1\"]</questions><irrelevant questions>[\"I1\"]</irrelevant questions>"
-            for _ in prompts
-        ]
+    if not args.input_csv.exists():
+        raise FileNotFoundError(f"Input CSV not found: {args.input_csv}")
 
-    sample_queries = make_queries(["Example sentence."], tokenizer=DummyTokenizer(), request_func=fake_request)
-    print(sample_queries)
+    df = pd.read_csv(args.input_csv)
+    if args.text_column not in df.columns:
+        raise ValueError(f"Column '{args.text_column}' not found in {args.input_csv}")
+    sentences = df[args.text_column].dropna().astype(str).tolist()
+    if not sentences:
+        raise ValueError("No sentences available for query generation.")
+
+    engine_kwargs = {
+        "model_name": args.model_name,
+        "tensor_parallel_size": args.tensor_parallel_size,
+        "pipeline_parallel_size": args.pipeline_parallel_size,
+        "data_parallel_size": args.data_parallel_size,
+        "gpu_memory_utilization": args.gpu_memory_utilization,
+        "omp_num_threads": args.omp_num_threads,
+    }
+
+    query_dict = make_queries(
+        sentences,
+        tokenizer=None,
+        request_func=None,
+        max_requests=args.max_requests,
+        progress_dir=args.progress_dir,
+        restart=args.restart,
+        engine_kwargs=engine_kwargs,
+    )
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(query_dict, ensure_ascii=False, indent=2))
+    print(f"Saved generated queries to {args.output}")

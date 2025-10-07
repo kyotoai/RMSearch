@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
+import json
+from pathlib import Path
 from contextlib import contextmanager
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -140,8 +143,6 @@ def embed_tags(
     if save_path_tags:
         torch.save(embeddings, save_path_tags)
     if save_path_tagmeta:
-        import json
-
         with open(save_path_tagmeta, "w", encoding="utf-8") as handle:
             json.dump(tag_meta, handle)
 
@@ -149,21 +150,81 @@ def embed_tags(
     return embeddings, tag_meta
 
 
+def _parse_device_groups(spec: Optional[str], tensor_parallel_size: int, num_instances: int) -> Optional[List[List[int]]]:
+    if not spec:
+        return None
+    groups: List[List[int]] = []
+    for chunk in spec.split(";"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        group = [int(token) for token in chunk.split(",") if token.strip()]
+        if not group:
+            continue
+        groups.append(group)
+    if not groups:
+        return None
+    if len(groups) != num_instances:
+        raise ValueError(f"Expected {num_instances} device groups, got {len(groups)}")
+    for group in groups:
+        if len(group) != tensor_parallel_size:
+            raise ValueError(
+                "Each device group must contain exactly "
+                f"{tensor_parallel_size} devices (got {group})"
+            )
+    return groups
+
+
 if __name__ == "__main__":
-    class DummyEmbedPool:
-        def embed(self, inputs, batch_size=None, timeout_s=None):
-            del batch_size, timeout_s
-            return [[float(idx + offset) for offset in range(4)] for idx, _ in enumerate(inputs)]
+    parser = argparse.ArgumentParser(description="Embed tag strings using a vLLM embedding worker pool.")
+    parser.add_argument("--tag-records", type=Path, required=True, help="Path to tag records JSON (from generate_tag).")
+    parser.add_argument("--embeddings-out", type=Path, required=True, help="Destination path for the embeddings tensor (.pt).")
+    parser.add_argument("--tag-meta-out", type=Path, required=True, help="Destination path for the tag metadata JSON.")
+    parser.add_argument("--model-name", type=str, required=True, help="Embedding model name or path.")
+    parser.add_argument("--tensor-parallel-size", type=int, default=1, help="tensor_parallel_size per embedding instance.")
+    parser.add_argument("--num-instances", type=int, default=1, help="Number of embedding worker instances.")
+    parser.add_argument(
+        "--device-groups",
+        type=str,
+        help="Explicit GPU mapping, e.g. '0,1;2,3' for two workers with tensor_parallel_size=2.",
+    )
+    parser.add_argument("--worker-batch-size", type=int, default=32, help="Inputs processed per worker batch.")
+    parser.add_argument("--timeout", type=float, default=None, help="Optional timeout (s) for a worker batch.")
+    parser.add_argument("--quantize", type=str, default=None, help="Quantization precision (requires sentence-transformers).")
+    parser.add_argument("--reduce-dim", type=int, default=None, help="Optional dimensionality reduction via truncated SVD.")
+    args = parser.parse_args()
 
-        def close(self):
-            pass
+    if not args.tag_records.exists():
+        raise FileNotFoundError(f"Tag records not found: {args.tag_records}")
 
-    dummy_pool = DummyEmbedPool()
-    sample_records = [
-        {"key": "Example key", "key_id": 0, "tags": ["alpha", "beta"]},
-        {"key": "Another key", "key_id": 1, "tags": ["gamma"]},
-    ]
+    tag_records = json.loads(args.tag_records.read_text())
 
-    embeddings, meta = embed_tags(sample_records, embed_model_name="dummy", pool=dummy_pool)
-    print("Embeddings shape:", tuple(embeddings.shape))
-    print("Tag meta:", meta)
+    device_groups = _parse_device_groups(
+        args.device_groups,
+        tensor_parallel_size=args.tensor_parallel_size,
+        num_instances=args.num_instances,
+    )
+
+    pool_settings = {
+        "tensor_parallel_size": args.tensor_parallel_size,
+        "num_instances": args.num_instances,
+        "device_groups": device_groups,
+        "output_to_cpu": True,
+        "llm_kwargs": {},
+    }
+
+    embeddings, meta = embed_tags(
+        tag_records,
+        embed_model_name=args.model_name,
+        pool_settings=pool_settings,
+        worker_batch_size=args.worker_batch_size,
+        timeout_s=args.timeout,
+        quantize_precision=args.quantize,
+        reduce_to_dim=args.reduce_dim,
+    )
+
+    args.embeddings_out.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(embeddings, args.embeddings_out)
+    args.tag_meta_out.parent.mkdir(parents=True, exist_ok=True)
+    args.tag_meta_out.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+    print(f"Saved embeddings to {args.embeddings_out} and metadata to {args.tag_meta_out}")

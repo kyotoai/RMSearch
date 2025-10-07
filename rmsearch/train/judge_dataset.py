@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import itertools
+import json
 import random
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from .utils import AllRequests, setup_async_engine
@@ -119,24 +122,47 @@ def judge_sentences(
 
 
 if __name__ == "__main__":
-    class DummyTokenizer:
-        def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True):
-            del tokenize, add_generation_prompt
-            return "\n".join(block["content"] for block in messages)
+    parser = argparse.ArgumentParser(description="Collect pairwise relevance judgements for candidate sentences.")
+    parser.add_argument("--relevant-json", type=Path, required=True, help="JSON file containing relevant sentences per query.")
+    parser.add_argument("--model-name", type=str, required=True, help="Async vLLM model used to deliver judgements.")
+    parser.add_argument("--tensor-parallel-size", type=int, default=2, help="tensor_parallel_size for the async engine.")
+    parser.add_argument("--pipeline-parallel-size", type=int, default=1, help="pipeline_parallel_size for the async engine.")
+    parser.add_argument("--data-parallel-size", type=int, default=1, help="data_parallel_size for the async engine.")
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.95, help="GPU memory utilisation passed to AsyncLLMEngine.")
+    parser.add_argument("--omp-num-threads", type=int, default=4, help="Number of CPU threads for the async workers.")
+    parser.add_argument("--max-requests", type=int, default=40, help="Maximum concurrent requests issued to the engine.")
+    parser.add_argument("--progress-dir", type=str, default="relevant_file_progress", help="Directory for progress checkpoints.")
+    parser.add_argument("--output", type=Path, default=None, help="Destination path for the collected judgements JSON.")
+    parser.add_argument("--restart", action="store_true", help="Resume from existing progress logs if available.")
+    parser.add_argument("--sample-pairs", type=int, default=1, help="Number of sentence pairs sampled per query.")
+    args = parser.parse_args()
 
-    rel = [
-        {
-            "query_id": 0,
-            "query": "What is retrieval?",
-            "keys": [
-                {"key_id": 1, "key": "Retrieval augments generation."},
-                {"key_id": 2, "key": "Cooking is fun."},
-            ],
-        }
-    ]
+    if not args.relevant_json.exists():
+        raise FileNotFoundError(f"Relevant sentences file not found: {args.relevant_json}")
 
-    def fake_request(prompts: List[str]) -> List[str]:
-        return ["<ID>1</ID>" for _ in prompts]
+    relevant_sentences = json.loads(args.relevant_json.read_text())
 
-    judged = judge_sentences(rel, tokenizer=DummyTokenizer(), request_func=fake_request)
-    print(judged)
+    engine_kwargs = {
+        "model_name": args.model_name,
+        "tensor_parallel_size": args.tensor_parallel_size,
+        "pipeline_parallel_size": args.pipeline_parallel_size,
+        "data_parallel_size": args.data_parallel_size,
+        "gpu_memory_utilization": args.gpu_memory_utilization,
+        "omp_num_threads": args.omp_num_threads,
+    }
+
+    results = judge_sentences(
+        relevant_sentences,
+        tokenizer=None,
+        request_func=None,
+        max_requests=args.max_requests,
+        engine_kwargs=engine_kwargs,
+        progress_dir=args.progress_dir,
+        restart=args.restart,
+        sample_pairs=args.sample_pairs,
+    )
+
+    output_path = args.output or (Path(args.progress_dir) / "results.json")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(results, ensure_ascii=False, indent=2))
+    print(f"Saved judgements to {output_path}")

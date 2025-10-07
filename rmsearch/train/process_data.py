@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import argparse
 from pathlib import Path
 from typing import Optional
 
@@ -77,6 +78,25 @@ def process_data(
 
 
 if __name__ == "__main__":
-    demo_dir = Path("./demo_dataset")
-    out = process_data("dummy-dataset", output_dir=demo_dir, n_sample_train=5, n_sample_test=0, n_small_sample=3)
-    print("Dataset prepared at:", out)
+    parser = argparse.ArgumentParser(description="Download and preprocess training data for RMSearch experiments.")
+    parser.add_argument("--dataset-name", type=str, required=True, help="HuggingFace dataset identifier.")
+    parser.add_argument("--output-dir", type=Path, required=True, help="Directory where processed data will be stored.")
+    parser.add_argument("--dataset-config", type=str, default=None, help="Optional dataset configuration name.")
+    parser.add_argument("--split", type=str, default="train", help="Dataset split to load (default: train).")
+    parser.add_argument("--n-sample-train", type=int, default=100_000, help="Number of training samples to retain.")
+    parser.add_argument("--n-sample-test", type=int, default=8_000, help="Number of samples reserved for evaluation.")
+    parser.add_argument("--n-small-sample", type=int, default=10_000, help="Size of df_small.csv for quick iterations.")
+    parser.add_argument("--random-seed", type=int, default=42, help="Random seed for shuffling and sampling.")
+    args = parser.parse_args()
+
+    out_dir = process_data(
+        args.dataset_name,
+        output_dir=args.output_dir,
+        dataset_config=args.dataset_config,
+        split=args.split,
+        n_sample_train=args.n_sample_train,
+        n_sample_test=args.n_sample_test,
+        n_small_sample=args.n_small_sample,
+        random_seed=args.random_seed,
+    )
+    print("Dataset prepared at:", out_dir)

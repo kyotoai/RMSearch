@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
@@ -184,14 +185,49 @@ def train_reward_model(
 
 
 if __name__ == "__main__":
-    sample_results = [
-        {
-            "output": "<ID>1</ID>",
-            "sentence_ids": [0, 1],
-            "question": "What is retrieval?",
-        }
-    ]
-    sample_sentences = ["Retrieval augments generation.", "Cooking is fun."]
-    dataset = make_dataset_list(sample_results, sentences=sample_sentences)
-    print(json.dumps(dataset, indent=2))
-    print("train_reward_model requires real models and is not executed in this demo.")
+    parser = argparse.ArgumentParser(description="Train a reward model using LoRA adapters.")
+    parser.add_argument(
+        "--dataset-list",
+        type=Path,
+        required=True,
+        help="Path to dataset_list.json produced by make_dataset_list",
+    )
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        default="/workspace/llama3b-rm",
+        help="Base reward model name or path.",
+    )
+    parser.add_argument(
+        "--num-gpus",
+        type=int,
+        default=2,
+        help="Number of GPUs available for training.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("./rm_model"),
+        help="Directory where the trained model checkpoints will be stored.",
+    )
+    parser.add_argument(
+        "--base-dir",
+        type=Path,
+        default=Path("./rm_exp"),
+        help="Working directory used for intermediate datasets.",
+    )
+    args = parser.parse_args()
+
+    if not args.dataset_list.exists():
+        raise FileNotFoundError(f"Dataset list not found: {args.dataset_list}")
+
+    with args.dataset_list.open() as handle:
+        dataset_list = json.load(handle)
+
+    train_reward_model(
+        dataset_list,
+        model_name=args.model_name,
+        num_gpus=args.num_gpus,
+        output_dir=args.output_dir,
+        base_dir=args.base_dir,
+    )

@@ -140,7 +140,7 @@
   - [ ] Make vllm_test.ipynb in examples to test it and debug them
 
 
-  ## Oct 6
+  ## Oct 6, 7
 
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
   - [ ] Rewrite and debug train_en.py
@@ -163,8 +163,12 @@
     * train -> rmsearch/train/lora_example.py
     * model conversion -> rmsearch/train/utils.py
     * evaluation -> rmsearch/evaluation
-  - [ ] Debug the code and modify it
-  - [ ] Make README.md about tag_graph and train
+  - [x] Modify rmsearch more
+    - [x] In build_representative_tag, it should use vllm_generate.py instead of All_Requests. You should refer to Generate Tag Graph2 section for its usage.
+    - [x] In lora_example, just imitate train_en.py and load model and train it in __main__
+    - [x] So as retrieval.py. show how to use the search function in __main__. Just write the same code in train_en.ipynb
+    - [x] Add arg.parser to all the files in rmsearch/
+  - [x] Make README.md about tag_graph and train
 
 
 - [ ] Improve tag_graph step by step

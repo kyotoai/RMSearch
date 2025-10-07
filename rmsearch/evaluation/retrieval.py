@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence
 
 from rmsearch.tree.assign_key import assign_key_to_tag_tree
@@ -83,25 +84,114 @@ def retrieval_evaluation(
 
 
 if __name__ == "__main__":
-    def fake_search(requests: List[Dict[str, Any]]):
-        result = []
-        for req in requests:
-            keys = req["keys"]
-            result.append(
-                {
-                    "keys": [
-                        {"key_id": i, "relevance": 1.0 - 0.1 * i, "text": text}
-                        for i, text in enumerate(keys)
-                    ]
-                }
-            )
-        return result
+    import argparse
+    import json
+    import logging
+    import multiprocessing as mp
 
-    queries = ["Explain retrieval"]
-    sentences = ["Retrieval augments generation.", "Cooking is fun."]
-    tag_tree = [
-        {"tag": "AI", "children": [{"tag": "IR", "children": [], "query_ids": [0]}, {"tag": "Cooking", "children": [], "query_ids": [1]}]},
-    ]
+    import pandas as pd
 
-    outputs = retrieval_evaluation(queries, sentences, tag_tree, search_fn=fake_search)
-    print(outputs)
+    from rmsearch.utils.vllm_reward2 import build_llm, search
+
+    parser = argparse.ArgumentParser(description="Run retrieval evaluation using a vLLM reward model.")
+    parser.add_argument("--working-dir", type=Path, default=Path("/workspace/RMS_exp"), help="Root working directory used during training.")
+    parser.add_argument("--data-name", type=str, default="smollm-corpus", help="Dataset identifier under the working directory.")
+    parser.add_argument("--model-name", type=str, default="/workspace/llama3b-rm-converted-model", help="Path to the converted reward model.")
+    parser.add_argument("--tensor-parallel-size", type=int, default=1, help="Tensor parallel size for the reward model workers.")
+    parser.add_argument("--num-instances", type=int, default=4, help="Number of reward model worker instances.")
+    parser.add_argument("--batch-size", type=int, default=1000, help="Batch size per inference call.")
+    parser.add_argument("--timeout", type=float, default=10_000.0, help="Timeout in seconds for reward model requests.")
+    parser.add_argument("--k-tag", type=int, default=2, help="Branching factor when traversing the tag tree.")
+    parser.add_argument("--k-key", type=int, default=10, help="Number of keys retrieved per query in the final stage.")
+    parser.add_argument("--output", type=Path, default=Path("relevance_dict.json"), help="Where to save the evaluation results.")
+    args = parser.parse_args()
+
+    working_dir = args.working_dir
+    data_dir = working_dir / "data" / args.data_name
+
+    df = pd.read_csv(data_dir / "df_small.csv")
+    with (data_dir / "query_dict.json").open() as handle:
+        query_dict = json.load(handle)
+    with (data_dir / "tag2query-tag_tree.json").open() as handle:
+        tag_tree = json.load(handle)
+
+    sentences = [df.iloc[i]["text"] for i in range(len(df))]
+    queries: List[str] = []
+    correct_ids: List[int] = []
+    for idx in range(len(df)):
+        questions = query_dict[str(idx)]["questions"]
+        queries.extend(questions)
+        correct_ids.extend([idx for _ in range(len(questions))])
+
+    logging.getLogger("vllm").setLevel(logging.ERROR)
+    mp.set_start_method("spawn", force=True)
+
+    device_groups: List[List[int]] = []
+    device_id = 0
+    for _ in range(args.num_instances):
+        group = []
+        for _ in range(args.tensor_parallel_size):
+            group.append(device_id)
+            device_id += 1
+        device_groups.append(group)
+
+    rm = build_llm(
+        model_name=args.model_name,
+        tensor_parallel_size=len(device_groups[0]) if device_groups else args.tensor_parallel_size,
+        num_instances=len(device_groups) or args.num_instances,
+        device_groups=device_groups if device_groups else None,
+        max_model_len=2500,
+        max_num_seqs=64,
+        gpu_memory_utilization=0.90,
+        runner="pooling",
+    )
+    tokenizer = rm.tokenizer
+
+    def llm_template_func(row: Dict[str, Any]) -> str:
+        query = row["query"]
+        key = row["key"]
+        message = [
+            {
+                "role": "user",
+                "content": (
+                    "Give me relevance score between\n\n"
+                    f"Query:{query}\n\n"
+                    f"Sentence:{key}"
+                ),
+            }
+        ]
+        if len(message[0]["content"]) > 4000:
+            message[0]["content"] = message[0]["content"][:4000] + "..."
+        return tokenizer.apply_chat_template(message, tokenize=False)
+
+    def run_search(requests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not requests:
+            return []
+        topk = max((req.get("k", args.k_tag) for req in requests), default=args.k_tag)
+        return search(
+            rm,
+            requests,
+            llm_template_func,
+            topk=topk,
+            batch_size=args.batch_size,
+            timeout_s=args.timeout,
+        )
+
+    try:
+        outputs = retrieval_evaluation(
+            queries,
+            sentences,
+            tag_tree,
+            search_fn=run_search,
+            k_tag=args.k_tag,
+            k_key=args.k_key,
+            correct_ids=correct_ids,
+        )
+    finally:
+        rm.close()
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with args.output.open("w", encoding="utf-8") as handle:
+        json.dump(outputs, handle, ensure_ascii=False, indent=2)
+
+    print(f"Saved retrieval evaluation results to {args.output}")

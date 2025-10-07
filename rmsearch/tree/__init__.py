@@ -7,7 +7,6 @@ from .build_representative_tags import (
     build_representative_tags,
     extract_text,
     get_node_by_path,
-    get_representative_tag_request,
     is_leaf,
     set_representative_tag,
 )
@@ -21,7 +20,6 @@ __all__ = [
     "build_representative_tags",
     "extract_text",
     "get_node_by_path",
-    "get_representative_tag_request",
     "is_leaf",
     "set_representative_tag",
 ]
