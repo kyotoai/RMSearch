@@ -140,7 +140,7 @@
   - [ ] Make vllm_test.ipynb in examples to test it and debug them
 
 
-  ## Oct 6, 7
+## Oct 6, 7
 
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
   - [ ] Rewrite and debug train_en.py
@@ -171,6 +171,8 @@
   - [x] Make README.md about tag_graph and train
 
 
+## Oct 6, 7
+
 - [ ] Improve tag_graph step by step
   - [x] Design the architexture
   * Saved rough overview about graph update methods in graph_update_methods.md
@@ -179,6 +181,35 @@
   - [ ] Probably it's not working good yet. Debug and test it.
   - [ ] Recode search_key and assign_tag with tag_graph
   - [ ] Get evaluation results from the tag_graph
+
+## Oct 7
+
+- [x] Think how to devide this project to collaborators
+* The most important thing is to grow AI training skills of collaborators -> devide rmsearch, seimei related thing to collaborators. Not me.
+* Decide bonus based on creativity, novelty, impact and number of code lines. $100 ~ $800
+* ToDo (all -> do it with everyone collaboration, later -> decide the detail later)
+  * Improve Tag graph -> kentarrito
+  * Advanced DPO batching -> kentarrito
+  * GPU parallel for training with deepspeed -> Prakhar
+  * Implement gpt-oss -> Prakhar
+  * Make system to set aruguana as test dataset -> Mingk
+  * Add more dataset -> Mingk
+  * Code to train rm for tag search -> later
+  * Write papers and blogs -> all
+  * Make web service -> kentarrito & roshia
+  * design seimei -> all
+  * make agents for analying directory, implementing knowledge graph and improving system real-time -> kentarrito, Cameron
+  * make agents for nuclear fusion simulation automation -> kentarrito, Cameron
+  * Make seimei library -> later
+  * Write papers about seimei -> later
+  * Expand business over a lot of companies based on these technology!
+
+
+- [ ] Prepare for collaborators to join
+  - [x] Make their directory
+  - [x] Make kickoff meeting md
+
+
 
 - [ ] Implement gpt-oss instead of qwen7b (qwen7b has sometimes lower performance in tag generation)
 
