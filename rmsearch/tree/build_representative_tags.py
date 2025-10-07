@@ -193,6 +193,10 @@ def build_representative_tags(
         with path_obj.open("w", encoding="utf-8") as handle:
             json.dump(tag_tree_recs, handle, ensure_ascii=False, indent=2)
 
+    # tag_tree_recs (list): hierarchical structure where each node resembles
+    #   {"tag": "<representative label>",
+    #    "tags": ["<leaf tag>", ...] (only present for leaves),
+    #    "children": [<child nodes>] (omitted on leaves)}.
     return tag_tree_recs
 
 

@@ -144,7 +144,7 @@
 
 - [ ] Rewrite train_en.ipynb functions into rmsearch directory
   - [ ] Rewrite and debug train_en.py
-  - [ ] Comment out more
+  - [x] Comment out more in rmsearch/
   - [x] Think how to scatter functions inside rmsearch directory and do it
     * vllm_reward, generate, embed -> rmsearch/utils/
     * Generate Tag Graph 2 -> rmsearch/tree

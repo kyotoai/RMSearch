@@ -32,6 +32,8 @@ python -m rmsearch.train.process_data \
 **Outputs**
 - `<output-dir>/dataset_dict.json` (HF binary format when `datasets` is installed).
 - `<output-dir>/df.csv` full sample, `<output-dir>/df_small.csv` subset.
+- Example row in `df_small.csv`:
+  `{"text": "Graph-based retrieval augmentation for enterprise documents"}`
 
 **Notices**
 - Requires `datasets` for real downloads; otherwise a stub CSV is produced.
@@ -63,6 +65,17 @@ python -m rmsearch.train.make_queries \
 **Outputs**
 - `{output}`: JSON mapping request indices to generated titles/keywords/questions/irrelevant questions.
 - `{progress-dir}/results.json` and `finished_ids.json` for incremental restarts.
+- Example entry:
+  ```json
+  {
+    "42": {
+      "titles": ["Graph Retrieval Overview"],
+      "keywords": ["retrieval", "graph"],
+      "questions": ["How does graph retrieval work?"],
+      "irr_questions": ["What is your favourite cuisine?"]
+    }
+  }
+  ```
 
 **Notices**
 - Requires the generation model weights on local disk.
@@ -94,6 +107,15 @@ python -m rmsearch.train.judge_dataset \
 **Outputs**
 - `{output}`: JSON list of adjudicated comparisons with `sentence_ids`, `question`, and `output` fields.
 - `{progress-dir}` retains intermediate state for resumable execution.
+- Example record:
+  ```json
+  {
+    "request_id": 7,
+    "sentence_ids": [123, 987],
+    "question": "Explain graph retrieval",
+    "output": "<ID>1</ID>"
+  }
+  ```
 
 **Notices**
 - Requires the same async engine as `make_queries`; ensure the model fits into GPU memory.
@@ -123,6 +145,15 @@ python -m rmsearch.train.lora_example \
 - Checkpoints under `output-dir` (e.g. `checkpoint-XXXX`).
 - Preprocessed dataset shards in `base-dir`.
 - TRL training logs under `output-dir`.
+- Example dataset entry fed to TRL:
+  ```json
+  {
+    "chosen_msg": [{"role": "user", "content": "...positive sentence..."}],
+    "rejected_msg": [{"role": "user", "content": "...negative sentence..."}],
+    "chosen_sentence_id": 12,
+    "rejected_sentence_id": 45
+  }
+  ```
 
 **Notices**
 - Expects the base reward model weights and tokenizer to reside locally.

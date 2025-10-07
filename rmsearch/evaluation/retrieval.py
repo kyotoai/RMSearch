@@ -80,6 +80,14 @@ def retrieval_evaluation(
         for key_entry, key_id in zip(record.get("keys", []), requests[idx]["key_ids"]):
             key_entry["relevant_id"] = key_id
 
+    # outputs (list): one element per query containing
+    #   {
+    #     "keys": [
+    #        {"key_id": <local index in request>, "relevance": <score>, "relevant_id": <global sentence idx>, ...},
+    #        ...
+    #     ],
+    #     "correct_id": <oracle index if provided>
+    #   }
     return outputs
 
 

@@ -117,7 +117,14 @@ def judge_sentences(
             record["output"] = output_text
             results.append(record)
 
-    # results structure -> [{"request_id": int, "prompt": str, "sentence_ids": [int, int], "question": str, "output": str}]
+    # results (list): records like
+    #   {
+    #     "request_id": <sequential id>,
+    #     "prompt": "<full prompt sent to the model>",
+    #     "sentence_ids": [<id_a>, <id_b>],
+    #     "question": "<original query text>",
+    #     "output": "<model judgement containing <ID> tag>"
+    #   }
     return results
 
 

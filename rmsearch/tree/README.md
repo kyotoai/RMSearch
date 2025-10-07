@@ -28,6 +28,14 @@ python -m rmsearch.tree.generate_tag \
 
 **Outputs**
 - `tag_records.json`: List of dictionaries with `key`, `key_id`, and generated `tags`.
+- Example entry:
+  ```json
+  {
+    "key": "Graph-based retrieval augmentation",
+    "key_id": 0,
+    "tags": ["graph retrieval", "enterprise search", "augmentation"]
+  }
+  ```
 
 **Notices**
 - The script creates and tears down the worker pool in-process. Ensure CUDA
@@ -56,6 +64,7 @@ python -m rmsearch.tree.embed_tags \
 **Outputs**
 - `key_embeddings.pt`: Torch tensor of embeddings.
 - `tag_meta.json`: `(key_id, tag_idx)` metadata aligning rows with the original tags.
+- Example `tag_meta.json` slice: `[[0, 0], [0, 1], [1, 0]]`
 
 **Notices**
 - Set `--device-groups` to pin embedding workers to specific GPUs if you launch
@@ -83,6 +92,16 @@ python -m rmsearch.tree.build_representative_tags \
 
 **Outputs**
 - Updated tag tree JSON with `tag` fields populated for internal nodes.
+- Example node after enrichment:
+  ```json
+  {
+    "tag": "Enterprise Retrieval",
+    "children": [
+      {"tag": "Graph Retrieval", "tags": ["graph retrieval", "knowledge graph"]},
+      {"tag": "Hybrid Search", "tags": ["hybrid retrieval", "bm25"]}
+    ]
+  }
+  ```
 
 **Notices**
 - Leaves without explicit `tag` fields are initialised with their first `tags`
@@ -114,6 +133,12 @@ python -m rmsearch.tree.assign_key \
 **Outputs**
 - `query2tag_ids.json`: List of `{ "tag_ids": [[...]] }` structures per query.
 - `tag2query.json`: Tag tree annotated with `query_ids` for downstream retrieval.
+- Example `query2tag_ids.json` item:
+  ```json
+  {
+    "tag_ids": [[0, 1, 2], [3, 0]]
+  }
+  ```
 
 **Notices**
 - Queries should mirror the prompts produced by `make_queries.py` or whatever

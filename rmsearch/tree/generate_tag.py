@@ -163,7 +163,10 @@ def generate_tag(
             unique_tags = ["general"]
         cleaned_batches.append(unique_tags)
 
-    # tag_recs structure -> [{"key": str, "key_id": int, "tags": [str, ...]}]
+    # tag_recs (list): each element summarises a source key and looks like
+    #   {"key": "<original key string>",
+    #    "key_id": <index of the key in the provided iterable>,
+    #    "tags": ["<generated tag 1>", "<generated tag 2>", ...]}
     return [
         {"key": key, "key_id": idx, "tags": tags}
         for idx, (key, tags) in enumerate(zip(key_list, cleaned_batches))

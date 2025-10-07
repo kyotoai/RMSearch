@@ -146,7 +146,9 @@ def embed_tags(
         with open(save_path_tagmeta, "w", encoding="utf-8") as handle:
             json.dump(tag_meta, handle)
 
-    # tag_meta structure -> [(key_id, tag_index)] pairs aligning with embeddings rows
+    # embeddings: torch.Tensor shaped [num_tags, hidden_dim] in model dtype/device.
+    # tag_meta (list): [(key_id, tag_index)] so row `i` of `embeddings` corresponds to
+    #   tag_records[tag_meta[i][0]]["tags"][tag_meta[i][1]].
     return embeddings, tag_meta
 
 

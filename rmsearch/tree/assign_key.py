@@ -136,8 +136,11 @@ def assign_key_to_tag_tree(
         for tag_ids in record["tag_ids"]:
             _set_query_id(tag2query, tag_ids, query_id)
 
-    # query2tag_ids structure -> [{"tag_ids": [[int, ...], ...]}]
-    # tag2query structure -> tag_tree copy augmented with "query_ids" lists
+    # query2tag_ids (list): each element is
+    #   {"tag_ids": [[<path indices to best leaf>, ...]]}
+    #   where each inner list represents a path from root to a leaf in tag_tree.
+    # tag2query (list of dicts): clone of the input tag tree with additional
+    #   "query_ids" lists appended to nodes indicating which queries traverse them.
     return query2tag_ids, tag2query
 
 

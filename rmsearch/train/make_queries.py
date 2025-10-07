@@ -136,7 +136,13 @@ def make_queries(
             "irr_questions": _safe_json(irr_questions),
         }
 
-    # query_dict structure -> {request_id: {"titles": [...], "keywords": [...], "questions": [...], "irr_questions": [...]}}
+    # query_dict (dict): maps integer request ids to
+    #   {
+    #     "titles": ["<generated title>", ...],
+    #     "keywords": ["<keyword>", ...],
+    #     "questions": ["<question>", ...],
+    #     "irr_questions": ["<irrelevant question>", ...]
+    #   }
     return query_dict
 
 

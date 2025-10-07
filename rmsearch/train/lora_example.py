@@ -75,7 +75,13 @@ def make_dataset_list(
             }
         )
 
-    # dataset_list structure -> [{"chosen_msg": [...], "rejected_msg": [...], "chosen_sentence_id": int, "rejected_sentence_id": int}]
+    # dataset_list (list): preference pairs used by TRL, where each element is
+    #   {
+    #     "chosen_msg": [{"role": "user", "content": "<prompt with positive sentence>"}],
+    #     "rejected_msg": [{"role": "user", "content": "<prompt with negative sentence>"}],
+    #     "chosen_sentence_id": <index of the preferred sentence>,
+    #     "rejected_sentence_id": <index of the less relevant sentence>
+    #   }
     return dataset_list
 
 
