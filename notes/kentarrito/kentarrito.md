@@ -171,7 +171,7 @@
   - [x] Make README.md about tag_graph and train
 
 
-## Oct 6, 7
+## Oct 6
 
 - [ ] Improve tag_graph step by step
   - [x] Design the architexture
@@ -205,11 +205,25 @@
   * Expand business over a lot of companies based on these technology!
 
 
+## Oct 8
+
 - [ ] Prepare for collaborators to join
   - [x] Make their directory
   - [x] Make kickoff meeting md
 
+`git clone --branch develop https://github.com/kyotoai/RMSearch.git`
 
+- [ ] Debug rmsearch/ directory
+  - [x] Make rmsearch_test.ipynb
+  - [x] Process data is not what it's expected
+  - [ ] Run all the code and check if it's working
+    - [x] when running vllm_generate.py and others in python kernel, log keeps flowing which should be modified.
+    - [x] add __main__ to utils/vllm_*.py
+    - [ ] 
+
+- [ ] Make tag graph
+
+- [ ] Make checkpoint branch
 
 - [ ] Implement gpt-oss instead of qwen7b (qwen7b has sometimes lower performance in tag generation)
 

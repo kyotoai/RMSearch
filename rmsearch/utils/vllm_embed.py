@@ -17,8 +17,13 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import multiprocessing as mp
 import queue as _q  # keep non-blocking put semantics clear
 
-from IPython.display import clear_output
 from vllm import LLM
+
+from rmsearch._display import resolve_clear_output, should_enable_board, should_use_tqdm
+
+
+_clear_output = resolve_clear_output()
+_USE_TQDM = should_use_tqdm()
 
 
 def _append_checkpoint(path: Optional[str], record: Dict[str, Any]) -> None:
@@ -127,7 +132,7 @@ def _worker_main(
                 if kind == "embed":
                     phase = "embedding"
                     inputs = payload["inputs"]
-                    outputs = llm.embed(inputs)
+                    outputs = llm.embed(inputs, use_tqdm=_USE_TQDM)
                     embeds_list = []
                     for output in outputs:
                         embeds = output.outputs.embedding
@@ -182,10 +187,13 @@ class _NotebookBoard:
         self.state = ["initializing…" for _ in range(num_workers)]
         self._suppress_clear = False
         self._error_message: Optional[str] = None
+        self._enabled = should_enable_board()
+        self._dirty = True
 
     def update(self, wid: int, text: str) -> None:
         if 0 <= wid < len(self.state):
             self.state[wid] = text
+            self._dirty = True
         self.render()
 
     def disable_clear(self) -> None:
@@ -194,14 +202,16 @@ class _NotebookBoard:
     def set_error(self, message: str) -> None:
         self._error_message = message
         self.disable_clear()
-        self.render()
+        self._dirty = True
+        self.render(force=True)
 
-    def render(self) -> None:
-        if not self._suppress_clear:
-            try:
-                clear_output(wait=True)
-            except Exception:
-                pass
+    def render(self, force: bool = False) -> None:
+        if not (force or self._enabled or self._error_message):
+            return
+        if not force and not self._dirty:
+            return
+        if self._enabled and not self._suppress_clear:
+            _clear_output(wait=True)
         if self._error_message is not None:
             print("== Worker error ==")
             print(self._error_message)
@@ -209,6 +219,7 @@ class _NotebookBoard:
             print("== Worker logs ==")
             for idx, line in enumerate(self.state):
                 print(f"[Worker {idx}] {line}")
+        self._dirty = False
 
 
 class EmbeddingWorkerModel:
@@ -224,7 +235,7 @@ class EmbeddingWorkerModel:
         self.ctx = mp.get_context("spawn")
         self.model = model
         self.device_groups = device_groups
-        self.llm_kwargs = llm_kwargs
+        self.llm_kwargs = dict(llm_kwargs)
         self.output_to_cpu = output_to_cpu
         self.result_q: mp.Queue = self.ctx.Queue()
         self.task_queues: List[mp.Queue] = [
@@ -240,7 +251,7 @@ class EmbeddingWorkerModel:
                     wid,
                     devs,
                     model,
-                    llm_kwargs,
+                    dict(self.llm_kwargs),
                     self.task_queues[wid],
                     self.result_q,
                     self.output_to_cpu,

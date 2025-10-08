@@ -1,17 +1,21 @@
 # --- import at top ---
+import argparse
 import queue as _q  # distinguish from variable name 'queue' in stdlib
 import threading
-from IPython.display import clear_output
 
 import os, time, uuid, signal, traceback, queue, sys, threading
 import multiprocessing as mp
 from typing import List, Tuple, Dict, Any, Optional
 from vllm import LLM, SamplingParams
 
+from rmsearch._display import resolve_clear_output, should_enable_board, should_use_tqdm
+
+
+_clear_output = resolve_clear_output()
+_USE_TQDM = should_use_tqdm()
+
+
 # ... (rest of your imports and code) ...
-
-
-
 
 # ---------------- Worker: keep lightweight heartbeat logging ----------------
 def _worker_main(
@@ -86,7 +90,7 @@ def _worker_main(
                     phase = "generating"
                     prompts = payload["prompts"]
                     sp = payload["sampling_params"]
-                    outputs = llm.generate(prompts, sp)
+                    outputs = llm.generate(prompts, sp, use_tqdm=_USE_TQDM)
                     texts = [o.outputs[0].text if o.outputs else "" for o in outputs]
                     # include worker id so parent can manage inflight if needed
                     result_q.put((job_id, item_idx, {"texts": texts, "wid": worker_id}), block=False)
@@ -109,18 +113,33 @@ def _worker_main(
 class _NotebookBoard:
     def __init__(self, num_workers: int):
         self.state = ["initializing…" for _ in range(num_workers)]
+        self._enabled = should_enable_board()
+        self._dirty = True
+        self._error_message: Optional[str] = None
     def update(self, wid: int, text: str):
         if 0 <= wid < len(self.state):
             self.state[wid] = text
+            self._dirty = True
         self.render()
-    def render(self):
-        try:
-            clear_output(wait=True)
-        except Exception:
-            pass
-        print("== Worker logs ==")
-        for i, line in enumerate(self.state):
-            print(f"[Worker {i}] {line}")
+    def set_error(self, message: str):
+        self._error_message = message
+        self._dirty = True
+        self.render(force=True)
+    def render(self, force: bool = False):
+        if not (force or self._enabled or self._error_message):
+            return
+        if not force and not self._dirty:
+            return
+        if self._enabled:
+            _clear_output(wait=True)
+        if self._error_message is not None:
+            print("== Worker error ==")
+            print(self._error_message)
+        else:
+            print("== Worker logs ==")
+            for i, line in enumerate(self.state):
+                print(f"[Worker {i}] {line}")
+        self._dirty = False
 
 class LLMWorkerModel:
     # ... __init__ unchanged ...
@@ -134,7 +153,7 @@ class LLMWorkerModel:
         self.ctx = mp.get_context("spawn")
         self.model = model
         self.device_groups = device_groups
-        self.llm_kwargs = llm_kwargs
+        self.llm_kwargs = dict(llm_kwargs)
         self.result_q: mp.Queue = self.ctx.Queue()
         self.task_queues: List[mp.Queue] = [
             self.ctx.Queue(maxsize=max_request_per_worker) for _ in device_groups
@@ -145,7 +164,7 @@ class LLMWorkerModel:
         for wid, devs in enumerate(device_groups):
             p = self.ctx.Process(
                 target=_worker_main,
-                args=(wid, devs, model, llm_kwargs, self.task_queues[wid], self.result_q),
+                args=(wid, devs, model, dict(self.llm_kwargs), self.task_queues[wid], self.result_q),
                 daemon=False,
             )
             p.start()
@@ -312,3 +331,109 @@ def build_llm(
 def generate(model: LLMWorkerModel, prompts: List[str], **gen_kwargs) -> List[str]:
     return model.generate(prompts, **gen_kwargs)
 
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run a quick vLLM generation demo with LLMWorkerModel.")
+    parser.add_argument(
+        "--model-path",
+        type=str,
+        default="/workspace/qwen4b",
+        help="Path or identifier of the model to load.",
+    )
+    parser.add_argument(
+        "--tensor-parallel-size",
+        type=int,
+        default=1,
+        help="Number of GPUs per worker.",
+    )
+    parser.add_argument(
+        "--num-instances",
+        type=int,
+        default=1,
+        help="Number of worker processes to launch.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=4,
+        help="Number of prompts to send per batch.",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.7,
+        help="Sampling temperature.",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=0.95,
+        help="Nucleus sampling probability.",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=64,
+        help="Maximum tokens to generate per prompt.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=120.0,
+        help="Timeout (seconds) for the overall generation job.",
+    )
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.90,
+        help="GPU memory fraction to target when loading the model.",
+    )
+    parser.add_argument(
+        "--prompts",
+        nargs="*",
+        default=None,
+        help="Optional list of prompts; defaults to built-in examples when omitted.",
+    )
+    args = parser.parse_args()
+
+    fallback_prompts = [
+        "Summarise the advantages of retrieval-augmented generation in three bullet points.",
+        "Provide a short haiku about GPU clusters.",
+        "Explain what RMSearch does in one sentence.",
+        "List two tips for managing async vLLM workloads.",
+    ]
+    prompts = args.prompts if args.prompts else fallback_prompts
+
+    sampling = SamplingParams(
+        temperature=args.temperature,
+        top_p=args.top_p,
+        max_tokens=args.max_tokens,
+    )
+
+    print(f"Loading model {args.model_path!r} with {args.num_instances} instance(s)…")
+    llm = build_llm(
+        args.model_path,
+        tensor_parallel_size=args.tensor_parallel_size,
+        num_instances=args.num_instances,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        max_model_len=10000,
+    )
+
+    try:
+        print(f"Generating {len(prompts)} prompt(s) with batch size {args.batch_size}…")
+        outputs = generate(
+            llm,
+            prompts,
+            sampling_params=sampling,
+            batch_size=args.batch_size,
+            timeout_s=args.timeout,
+        )
+        for idx, (prompt, output) in enumerate(zip(prompts, outputs), start=1):
+            separator = "-" * 60
+            print(separator)
+            print(f"Prompt {idx}:\n{prompt}\n")
+            print(f"Completion:\n{output.strip()}")
+        print("-" * 60)
+        print("Done.")
+    finally:
+        llm.close()

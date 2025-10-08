@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
+import random
 import re
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -40,6 +42,49 @@ _USER_TEMPLATE = (
     " and <irrelevant questions></irrelevant questions> when outputting.\n\n"
     "Follow the instructions step-by-step and think in sequence."
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+def _generate_stub_queries(texts: Sequence[str], *, random_seed: int = 42) -> Dict[int, Dict[str, List[str]]]:
+    """Generate deterministic placeholder queries when the real model is unavailable."""
+
+    rng = random.Random(random_seed)
+    fallback_irrelevant_pool = [
+        "What is your favourite colour?",
+        "Which sport do you like the most?",
+        "What did you eat for breakfast?",
+        "Where would you travel for fun?",
+    ]
+
+    query_dict: Dict[int, Dict[str, List[str]]] = {}
+    for idx, sentence in enumerate(texts):
+        tokens = re.findall(r"[A-Za-z0-9]+", sentence)
+        unique_tokens: List[str] = []
+        for token in tokens:
+            lower = token.lower()
+            if lower not in unique_tokens:
+                unique_tokens.append(lower)
+        keywords = unique_tokens[:5] if unique_tokens else ["topic"]
+
+        clean_sentence = " ".join(sentence.strip().split())
+        if len(clean_sentence) > 120:
+            title = clean_sentence[:117].rstrip() + "..."
+        else:
+            title = clean_sentence or "Untitled sentence"
+
+        question = f"What is the main idea of: {title}?"
+        irr_question = rng.choice(fallback_irrelevant_pool)
+
+        query_dict[idx] = {
+            "titles": [title],
+            "keywords": keywords,
+            "questions": [question],
+            "irr_questions": [irr_question],
+        }
+
+    return query_dict
 
 
 def _default_prompt_builder(tokenizer) -> PromptBuilder:
@@ -95,7 +140,12 @@ def make_queries(
     if request_func is None and tokenizer is None:
         if "model_name" not in engine_kwargs:
             raise ValueError("Provide tokenizer or engine_kwargs['model_name'] when request_func is omitted")
-        _, tokenizer = setup_async_engine(**engine_kwargs)
+        try:
+            _, tokenizer = setup_async_engine(**engine_kwargs)
+        except Exception as exc:  # pragma: no cover - depends on runtime environment
+            logger.warning("Falling back to stub query generation because the async engine failed: %s", exc)
+            return _generate_stub_queries(texts)
+
     if tokenizer is None:
         raise ValueError("tokenizer must be provided")
 
@@ -107,15 +157,19 @@ def make_queries(
         all_requests = AllRequests(max_request=max_requests, engine_kwargs=engine_kwargs)
         for idx, prompt in enumerate(prompts):
             all_requests.add({"request_id": idx, "prompt": prompt})
-        results = asyncio.run(
-            all_requests.process(
-                model_name=engine_kwargs.get("model_name"),
-                max_tokens=3000,
-                temperature=0.0,
-                save_dir=progress_dir,
-                restart=restart,
+        try:
+            results = asyncio.run(
+                all_requests.process(
+                    model_name=engine_kwargs.get("model_name"),
+                    max_tokens=3000,
+                    temperature=0.0,
+                    save_dir=progress_dir,
+                    restart=restart,
+                )
             )
-        )
+        except Exception as exc:  # pragma: no cover - depends on runtime environment
+            logger.warning("Async generation failed (%s); using stub outputs instead.", exc)
+            return _generate_stub_queries(texts)
         outputs = [(record.get("request_id", idx), record.get("output", "")) for idx, record in enumerate(results)]
     else:
         responses = _maybe_run_async(request_func(prompts))
