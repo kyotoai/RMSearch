@@ -205,7 +205,7 @@
   * Expand business over a lot of companies based on these technology!
 
 
-## Oct 8
+## Oct 8, 9
 
 - [ ] Prepare for collaborators to join
   - [x] Make their directory
@@ -219,7 +219,10 @@
   - [ ] Run all the code and check if it's working
     - [x] when running vllm_generate.py and others in python kernel, log keeps flowing which should be modified.
     - [x] add __main__ to utils/vllm_*.py
-    - [ ] 
+    - [x] add stream in process_data
+    * if stream=True, it loads the necessary file only
+    * I've not debug it yet.
+    - [ ] debug judge_dataset.py
 
 - [ ] Make tag graph
 

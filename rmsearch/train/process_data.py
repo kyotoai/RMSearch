@@ -11,8 +11,9 @@ from typing import Optional
 import pandas as pd
 
 try:  # Optional dependency: HuggingFace datasets is heavy
-    from datasets import DatasetDict, Features, Value, load_dataset  # type: ignore
+    from datasets import Dataset, DatasetDict, Features, Value, load_dataset  # type: ignore
 except Exception:  # pragma: no cover - optional import
+    Dataset = None  # type: ignore
     DatasetDict = None  # type: ignore
     Features = None  # type: ignore
     Value = None  # type: ignore
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 _MAX_STUB_ROWS = 50
 _DEFAULT_DF_SMALL_SIZE = 10_000
 _OFFLINE_ENV_VARS = ("HF_DATASETS_OFFLINE", "HF_HUB_OFFLINE")
+_DEFAULT_STREAM_BUFFER_SIZE = 10_000
 
 
 def _is_offline_mode() -> bool:
@@ -92,12 +94,16 @@ def process_data(
     split: str = "train",
     n_sample: Optional[int] = None,
     random_seed: int = 42,
+    stream: bool = False,
 ) -> Path:
     """Download, shuffle, and persist dataset slices for later stages.
 
     Returns the ``output_dir`` containing ``df.csv`` and ``df_small.csv`` plus the
     HuggingFace binary artefacts when the ``datasets`` package is available. If
     ``n_sample`` is provided only that many rows are stored to ease disk pressure.
+    When ``stream`` is ``True`` the dataset is loaded via the streaming API before
+    being materialised locally, which can reduce temporary disk usage for large
+    corpora.
     """
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -115,13 +121,17 @@ def process_data(
 
     features = Features({"index": Value("int64"), "text": Value("string")})
 
+    load_kwargs = {
+        "split": split,
+        "streaming": stream,
+    }
+    if dataset_config is not None:
+        load_kwargs["name"] = dataset_config
+    if features is not None:
+        load_kwargs["features"] = features
+
     try:
-        dataset = load_dataset(
-            dataset_name,
-            name=dataset_config,
-            split=split,
-            features=features if features is not None else None,
-        )
+        dataset = load_dataset(dataset_name, **load_kwargs)
     except Exception as exc:  # pragma: no cover - exercised in offline environments
         if _looks_like_connection_issue(exc):
             logger.warning(
@@ -136,15 +146,35 @@ def process_data(
             )
         raise
 
-    dataset = dataset.shuffle(seed=random_seed)
+    if stream:
+        if Dataset is None:  # pragma: no cover - safety net for optional import
+            raise RuntimeError("Streaming mode requires the HuggingFace datasets package.")
 
-    if n_sample is not None and n_sample > 0:
-        sample_size = min(n_sample, len(dataset))
-        train_ds = dataset.select(range(sample_size))
+        buffer_size = _DEFAULT_STREAM_BUFFER_SIZE
+        if n_sample is not None and n_sample > 0:
+            buffer_size = max(buffer_size, n_sample)
+
+        stream_ds = dataset.shuffle(seed=random_seed, buffer_size=buffer_size)
+
+        if n_sample is not None and n_sample > 0:
+            iterable = stream_ds.take(n_sample)
+        else:
+            iterable = stream_ds
+            logger.info("Streaming full dataset; provide --n-sample to limit rows if needed.")
+
+        rows = list(iterable)
+        train_ds = Dataset.from_list(rows, features=features if features is not None else None)
+        dataset_dict = DatasetDict({"train": train_ds})
     else:
-        train_ds = dataset
+        dataset = dataset.shuffle(seed=random_seed)
 
-    dataset_dict = DatasetDict({"train": train_ds})
+        if n_sample is not None and n_sample > 0:
+            sample_size = min(n_sample, len(dataset))
+            train_ds = dataset.select(range(sample_size))
+        else:
+            train_ds = dataset
+
+        dataset_dict = DatasetDict({"train": train_ds})
 
     df_all = datasetdict_to_pandas(dataset_dict)
     dataset_dict.save_to_disk(str(output_dir))
@@ -170,6 +200,7 @@ if __name__ == "__main__":
         help="Optional number of rows to persist when disk space is limited.",
     )
     parser.add_argument("--random-seed", type=int, default=42, help="Random seed for shuffling and sampling.")
+    parser.add_argument("--stream", action="store_true", help="Load dataset through the streaming API.")
     args = parser.parse_args()
 
     out_dir = process_data(
@@ -179,5 +210,6 @@ if __name__ == "__main__":
         split=args.split,
         n_sample=args.n_sample,
         random_seed=args.random_seed,
+        stream=args.stream,
     )
     print("Dataset prepared at:", out_dir)
