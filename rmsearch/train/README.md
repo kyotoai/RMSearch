@@ -125,6 +125,7 @@ python -m rmsearch.train.make_query_recs \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --batch-size 8 \
+  --max-model-len 10000 \
   --output ./data/smollm-corpus/query_recs.json
 ```
 
@@ -144,6 +145,27 @@ python -m rmsearch.train.make_query_recs \
 **Notices**
 - Shares batching, sampling, and fallback behaviour with `make_queries.py`; refer to that section for runtime considerations.
 
+## `filter_query_recs.py`
+
+Filter `query_recs.json` by `query-type` and persist the subset to a new file.
+
+```bash
+python -m rmsearch.train.filter_query_recs \
+  --input ./data/smollm-corpus/query_recs.json \
+  --output ./data/smollm-corpus/filtered_query_recs.json \
+  --filter questions
+```
+
+**Arguments**
+- `--input`: Path to the JSON list produced by `make_query_recs.py`.
+- `--output`: Destination JSON for the filtered records.
+- `--filter`: `query-type` value to keep (default `questions`).
+
+**Outputs**
+- `{output}`: JSON list containing only entries whose `query-type` matches the provided filter.
+
+**Notices**
+- Provide a different `--filter` value (e.g. `titles`, `keywords`, `irr_questions`) to slice other subsets without regenerating queries.
 
 
 ## `get_top_relevant_keys_rm.py`
