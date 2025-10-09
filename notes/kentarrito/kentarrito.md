@@ -236,10 +236,15 @@ In examples/train_en.ipynb "Make Dataset ..." section there is "Reward Model Get
     - [x] Debug stream in process_data.py
     - [x] Debug rmsearch/train/make_queries.py
     - [x] Make rmsearch/train/make_query_recs.py - [{"query":, "query_id":, "df_id":, "query-type":(like "title", "questions")}, ...]
-    - [ ] Add filter_query_recs.py -> [{"query":, "query_id":, "df_id":, "query-type":(like only "questions")}, ...]
-    - [ ] Debug get_top_relevant_keys_rm.py, get_top_relevant_keys_embed.py
-    - [ ] Add sample_dpo_batch.py - sample query & 2 keys from queries (& relevance_records) 
-
+    - [x] Add rmsearch/train/filter_query_recs.py -> [{"query":, "query_id":, "df_id":, "query-type":(like only "questions")}, ...]
+    - [ ] Modify get_top_relevant_keys_rm.py, get_top_relevant_keys_embed.py for taking filter_query_recs as inputs and debug them
+    - [x] Add sample_dpo_batch.py - sample query & 2 keys from queries (& relevance_records)
+```
+make rmsearch/train/sample_dpo_batch.py following
+1. If relevance_records are given, sample 1 key from top relevant keys. And 1 from df_id. Combining the 2 keys, make sampled_query_key_set = [{"query":, "query_id":, "keys":[], "key_ids":[], "query-type":(like only "questions")}, ...]
+2. Add all the valuables used in the code to parse argument
+3. save it ./data/smollm/sampled_query_key_set.json in default
+```
     - [ ] Debug judge_dataset.py
     - [ ] Debug tree/
 

@@ -168,6 +168,8 @@ python -m rmsearch.train.filter_query_recs \
 - Provide a different `--filter` value (e.g. `titles`, `keywords`, `irr_questions`) to slice other subsets without regenerating queries.
 
 
+
+
 ## `get_top_relevant_keys_rm.py`
 
 Traverse the tag tree with the reward model to score and retrieve the top-N keys
@@ -175,7 +177,7 @@ per query.
 
 ```bash
 python -m rmsearch.train.get_top_relevant_keys_rm \
-  --queries-json ./data/smollm-corpus/query_dict.json \
+  --queries-json ./data/smollm-corpus/filtered_query_recs.json \
   --keys-csv ./data/smollm-corpus/df.csv \
   --key-column text \
   --tag-tree ./data/smollm-corpus/tag_tree_recs.json \
@@ -188,7 +190,7 @@ python -m rmsearch.train.get_top_relevant_keys_rm \
 ```
 
 **Arguments**
-- `--queries-json` / `--queries-csv`: Query inputs (strings or objects with `"query"`).
+- `--queries-json` / `--queries-csv`: Query inputs. The JSON path should point to `filtered_query_recs.json` (or a similar list of objects containing at least a `"query"` field, with optional `df_id` and `query-type`).
 - `--keys-json` / `--keys-csv`: Candidate key sentences; use `--key-json-field` / `--key-column` to pick the text field.
 - `--tag-tree`: Base tag tree JSON; the script derives a `tag2key` structure via `assign_key_to_tag_tree`.
 - `--tag2key-out`: Optional path to persist the generated tree annotated with `key_ids`.
@@ -199,7 +201,7 @@ python -m rmsearch.train.get_top_relevant_keys_rm \
 - `--checkpoint`: Directory for caching reward-model search responses (both assignment and retrieval).
 
 **Outputs**
-- Relevance records describing the query text, optional `correct_id`, and the scored key list under `"keys"`.
+- Relevance records describing the query text (plus any `df_id` / `query_type` metadata when present), optional `correct_id`, and the scored key list under `"keys"`.
 - Optional `tag2key-out` file mirroring the tag tree but annotated with `key_ids`.
 
 **Notices**
@@ -217,7 +219,7 @@ store the top-N matches per query.
 
 ```bash
 python -m rmsearch.train.get_top_relevant_keys_embed \
-  --queries-json ./data/smollm-corpus/query_prompts.json \
+  --queries-json ./data/smollm-corpus/filtered_query_recs.json \
   --keys-csv ./data/smollm-corpus/df_small.csv \
   --key-column text \
   --model-name intfloat/e5-mistral-7b-instruct \
@@ -229,7 +231,7 @@ python -m rmsearch.train.get_top_relevant_keys_embed \
 ```
 
 **Arguments**
-- `--queries-json` / `--queries-csv`: Query inputs (strings or objects with `"query"`).
+- `--queries-json` / `--queries-csv`: Query inputs. The JSON path should point to `filtered_query_recs.json` (or a similar list of objects containing at least a `"query"` field, with optional `df_id` and `query-type`).
 - `--keys-json` / `--keys-csv`: Candidate key sentences; use `--key-json-field` / `--key-column` to pick the text field.
 - `--model-name`, `--tensor-parallel-size`, `--num-instances`, `--max-model-len`, `--max-num-seqs`, `--gpu-memory-utilization`: Embedding worker configuration passed to `vllm_embed`.
 - `--query-batch-size`, `--key-batch-size`: Batch sizes for embedding calls.
@@ -240,13 +242,43 @@ python -m rmsearch.train.get_top_relevant_keys_embed \
 - `--output`: Destination JSON for the relevance records (default `relevance_records_embed.json`).
 
 **Outputs**
-- JSON list mirroring the RM-based format with `query`, `query_id`, optional `correct_id`, and `"keys"` entries containing `key_id`, `key`, and cosine-like similarity scores.
+- JSON list mirroring the RM-based format with `query`, `query_id`, optional `df_id` / `query_type`, optional `correct_id`, and `"keys"` entries containing `key_id`, `key`, and cosine-like similarity scores.
 - Optional embedding checkpoints if the related flags are supplied.
 
 **Notices**
 - Embeddings are pulled through the vLLM embedding API (see `rmsearch/utils/vllm_embed.py`); ensure the model exposes embedding heads.
 - The similarity computation promotes tensors to the chosen device; large matrices may demand significant memory if you select `cuda`.
 - Provide non-empty query and key inputs; the script validates and aborts otherwise.
+
+
+
+## `sample_dpo_batch.py`
+
+Sample pairs of relevant/df-sourced keys for DPO-style preference datasets.
+
+```bash
+python -m rmsearch.train.sample_dpo_batch \
+  --relevance-json ./data/smollm-corpus/relevance_records_rm.json \
+  --filtered-queries-json ./data/smollm-corpus/filtered_query_recs.json \
+  --source-csv ./data/smollm-corpus/df.csv \
+  --output ./data/smollm-corpus/sampled_query_key_set.json
+```
+
+**Arguments**
+- `--relevance-json`: Optional path to the relevance records (RM or embedding variant). When omitted, two keys are uniformly sampled from the source CSV instead.
+- `--filtered-queries-json`: Optional metadata lookup (e.g. `filtered_query_recs.json`) to recover `df_id` / `query-type`.
+- `--source-csv`: DataFrame backing the df_id indices (defaults expect `df.csv`).
+- `--source-column`: Column within the DataFrame containing the key text (default `text`).
+- `--output`: Destination JSON for the sampled pairs (default `./data/smollm-corpus/sampled_query_key_set.json`).
+- `--random-seed`: Sampling seed (default 42).
+
+**Outputs**
+- `{output}`: JSON list where each entry includes `query`, `query_id`, `keys`, `key_ids`, and the propagated `query-type` when available. When no relevance file is provided, a single placeholder query with two randomly sampled keys is emitted.
+
+**Notices**
+- Sampling picks one key from the relevance results and one from the original df_id (when available); if no relevance file is supplied, two keys are drawn uniformly from the entire source CSV.
+
+
 
 
 

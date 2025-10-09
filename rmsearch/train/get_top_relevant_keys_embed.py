@@ -18,6 +18,37 @@ def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _load_query_entries_from_json(path: Path) -> List[Dict[str, Any]]:
+    data = _read_json(path)
+    entries: List[Dict[str, Any]] = []
+
+    def _coerce_entry(obj: Dict[str, Any]) -> Dict[str, Any]:
+        if "query" not in obj:
+            raise ValueError(f"JSON object in {path} is missing required 'query' field: {obj}")
+        entry = dict(obj)
+        entry["query"] = str(entry["query"])
+        return entry
+
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                entries.append(_coerce_entry(item))
+            elif isinstance(item, str):
+                entries.append({"query": item})
+    elif isinstance(data, dict):
+        for value in data.values():
+            if isinstance(value, dict):
+                entries.append(_coerce_entry(value))
+            elif isinstance(value, str):
+                entries.append({"query": value})
+    else:
+        raise TypeError(f"Unsupported JSON payload in {path}: {type(data)}")
+
+    if not entries:
+        raise ValueError(f"No query entries found in {path}")
+    return entries
+
+
 def _load_strings_from_json(path: Path, *, value_key: str) -> List[str]:
     data = _read_json(path)
     if isinstance(data, dict):
@@ -49,11 +80,11 @@ def _load_strings_from_csv(path: Path, *, column: str) -> List[str]:
     return values
 
 
-def _load_queries(args: argparse.Namespace) -> List[str]:
+def _load_queries(args: argparse.Namespace) -> List[Dict[str, Any]]:
     if args.queries_json:
-        return _load_strings_from_json(Path(args.queries_json), value_key="query")
+        return _load_query_entries_from_json(Path(args.queries_json))
     if args.queries_csv:
-        return _load_strings_from_csv(Path(args.queries_csv), column=args.query_column)
+        return [{"query": text} for text in _load_strings_from_csv(Path(args.queries_csv), column=args.query_column)]
     raise ValueError("Provide --queries-json or --queries-csv")
 
 
@@ -88,7 +119,7 @@ def _to_device(tensor: torch.Tensor, device: torch.device) -> torch.Tensor:
 
 
 def _build_records(
-    queries: Sequence[str],
+    query_entries: Sequence[Dict[str, Any]],
     keys: Sequence[str],
     indices: torch.Tensor,
     scores: torch.Tensor,
@@ -99,11 +130,17 @@ def _build_records(
     scores_cpu = scores.cpu().tolist()
     records: List[Dict[str, Any]] = []
     for query_id, (key_ids, score_row) in enumerate(zip(indices_cpu, scores_cpu)):
+        query_meta = query_entries[query_id]
         entry: Dict[str, Any] = {
-            "query": queries[query_id],
+            "query": query_meta["query"],
             "query_id": query_id,
             "keys": [],
         }
+        if "df_id" in query_meta:
+            entry["df_id"] = query_meta["df_id"]
+        query_type = query_meta.get("query-type") or query_meta.get("query_type")
+        if query_type:
+            entry["query_type"] = query_type
         if correct_ids is not None:
             entry["correct_id"] = int(correct_ids[query_id])
         for kid, score in zip(key_ids, score_row):
@@ -122,7 +159,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Retrieve top-N keys per query using vLLM embeddings."
     )
-    parser.add_argument("--queries-json", type=str, help="JSON file with query strings or objects containing 'query'.")
+    parser.add_argument(
+        "--queries-json",
+        type=str,
+        help="JSON file with query objects (e.g. filtered_query_recs.json) containing at least a 'query' field.",
+    )
     parser.add_argument("--queries-csv", type=str, help="CSV file with query strings.")
     parser.add_argument("--query-column", type=str, default="query", help="CSV column containing query text.")
     parser.add_argument("--keys-json", type=str, help="JSON file with key strings or objects.")
@@ -155,7 +196,8 @@ def main() -> None:
     logging.getLogger("vllm").setLevel(logging.ERROR)
     args = parse_args()
 
-    queries = _load_queries(args)
+    query_entries = _load_queries(args)
+    queries = [entry["query"] for entry in query_entries]
     keys = _load_keys(args)
     correct_ids = _load_correct_ids(args.correct_ids_json, len(queries)) if args.correct_ids_json else None
 
@@ -221,7 +263,7 @@ def main() -> None:
     indices = indices.detach()
     del relevance, query_tensor, key_tensor
 
-    records = _build_records(queries, keys, indices, scores, correct_ids=correct_ids)
+    records = _build_records(query_entries, keys, indices, scores, correct_ids=correct_ids)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(records, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Saved relevance records to {args.output}")
