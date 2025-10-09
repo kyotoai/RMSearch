@@ -35,9 +35,14 @@ def _get_tag_dict(tag_ids: List[int], tree: List[Dict[str, Any]]) -> Optional[Di
 def _set_query_id(tag2query: List[Dict[str, Any]], tag_ids: List[int], query_id: int) -> None:
     subtree: List[Dict[str, Any]] = tag2query
     for tag_id in tag_ids:
-        node = subtree[tag_id]
-        node.setdefault("query_ids", []).append(query_id)
-        subtree = node.get("children", [])
+        try:
+            node = subtree[tag_id]
+            node.setdefault("query_ids", []).append(query_id)
+            subtree = node.get("children", [])
+        except:
+            print("subtree:", subtree)
+            print("tag_id:", tag_id)
+            raise Exception()
 
 
 def _run_search(search_fn: SearchFn | AsyncSearchFn, requests: List[Dict[str, Any]]):

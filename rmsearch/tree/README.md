@@ -12,19 +12,23 @@ Generate candidate tags for each key using a vLLM generation worker pool.
 
 ```bash
 python -m rmsearch.tree.generate_tag \
-  --keys-file ./data/smollm-corpus/keys.txt \
-  --model-name /workspace/qwen7b \
+  --keys-file ./data/smollm-corpus/df.csv \
+  --key-column text \
+  --model-name /workspace/qwen4b \
   --output ./data/smollm-corpus/tag_records.json \
   --tensor-parallel-size 1 \
-  --num-instances 2
+  --num-instances 1 \
+  --max-model-len 10_000
 ```
 
 **Arguments**
 - `--keys-file`: Plain-text file with one key (sentence/title) per line.
+- `--key-column`: Column name of keys_file if it's a csv file.
 - `--output`: Destination JSON file for tag records.
 - `--model-name`: Generation model checkpoint.
 - `--tensor-parallel-size`, `--num-instances`, `--device-groups`: Control worker topology; `--device-groups` accepts strings like `"0,1;2,3"`.
 - `--worker-batch-size`, `--timeout`, `--temperature`, `--top-p`, `--max-tokens`: Sampling and scheduling knobs.
+- `--gpu-memory-utilization`, `--max-model-len`, `--dtype`, `--trust-remote-code`: Options forwarded to `vllm.LLM`.
 
 **Outputs**
 - `tag_records.json`: List of dictionaries with `key`, `key_id`, and generated `tags`.
@@ -48,8 +52,8 @@ Embed tag strings using the vLLM embedding API.
 ```bash
 python -m rmsearch.tree.embed_tags \
   --tag-records ./data/smollm-corpus/tag_records.json \
-  --model-name intfloat/e5-mistral-7b-instruct \
-  --embeddings-out ./data/smollm-corpus/key_embeddings.pt \
+  --model-name /workspace/e5-mistral7b \
+  --embeddings-out ./data/smollm-corpus/tag_embeddings.pt \
   --tag-meta-out ./data/smollm-corpus/tag_meta.json
 ```
 
@@ -62,7 +66,7 @@ python -m rmsearch.tree.embed_tags \
 - `--reduce-dim`: Optional dimensionality reduction target.
 
 **Outputs**
-- `key_embeddings.pt`: Torch tensor of embeddings.
+- `tag_embeddings.pt`: Torch tensor of embeddings.
 - `tag_meta.json`: `(key_id, tag_idx)` metadata aligning rows with the original tags.
 - Example `tag_meta.json` slice: `[[0, 0], [0, 1], [1, 0]]`
 
@@ -78,7 +82,8 @@ vLLM generation.
 ```bash
 python -m rmsearch.tree.build_representative_tags \
   --tag-tree ./data/smollm-corpus/tag_tree_recs.json \
-  --model-name /workspace/qwen7b \
+  --model-name /workspace/qwen4b \
+  --max-model-len 10_000 \
   --output ./data/smollm-corpus/tag_tree_recs.json
 ```
 
@@ -89,6 +94,7 @@ python -m rmsearch.tree.build_representative_tags \
 - `--tensor-parallel-size`, `--num-instances`, `--device-groups`: Worker topology.
 - `--worker-batch-size`, `--timeout`, `--temperature`, `--top-p`, `--max-tokens`: Sampling controls.
 - `--n-tag-sample`: Number of child tags sampled when summarising parent nodes.
+- `--gpu-memory-utilization`, `--max-model-len`, `--dtype`, `--trust-remote-code`: Options forwarded to `vllm.LLM`.
 
 **Outputs**
 - Updated tag tree JSON with `tag` fields populated for internal nodes.

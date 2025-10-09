@@ -201,6 +201,7 @@ def _parse_device_groups(spec: Optional[str], tensor_parallel_size: int, num_ins
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate tags for keys using a vLLM worker pool.")
     parser.add_argument("--keys-file", type=Path, required=True, help="Text file containing one key per line.")
+    parser.add_argument("--key-column", type=str, default=None, help="Text file containing one key per line.")
     parser.add_argument("--output", type=Path, required=True, help="Destination JSON file for tag records.")
     parser.add_argument("--model-name", type=str, required=True, help="Generation model name or path.")
     parser.add_argument("--tensor-parallel-size", type=int, default=1, help="tensor_parallel_size per instance.")
@@ -210,6 +211,8 @@ if __name__ == "__main__":
         type=str,
         help="Explicit GPU mapping, e.g. '0,1;2,3' for two workers with tensor_parallel_size=2.",
     )
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.90, help="GPU memory utilisation passed to vLLM.")
+    parser.add_argument("--max-model-len", type=int, default=None, help="Optional maximum model context length.")
     parser.add_argument("--worker-batch-size", type=int, default=8, help="Prompts per batch dispatched to each worker.")
     parser.add_argument("--timeout", type=float, default=None, help="Optional timeout (s) for each worker batch.")
     parser.add_argument("--top-p", type=float, default=0.9, help="Sampling top_p value.")
@@ -220,7 +223,21 @@ if __name__ == "__main__":
     if not args.keys_file.exists():
         raise FileNotFoundError(f"Keys file not found: {args.keys_file}")
 
-    keys = [line.strip() for line in args.keys_file.read_text().splitlines() if line.strip()]
+    if args.keys_file.suffix == ".csv":
+        if args.key_column == None:
+            raise Exception("When key_file is csv file, --key-column must be provided.")
+        import pandas as pd
+        df = pd.read_csv(args.keys_file)
+        keys = df["text"].to_list()
+
+    else:
+        try:
+            with open(args.keys_file) as f:
+                keys = json.load(f)
+        except:
+            raise Exception("keys-file must be .csv or .json")
+
+    #keys = [line.strip() for line in args.keys_file.read_text().splitlines() if line.strip()]
     if not keys:
         raise ValueError("No keys found in the provided file.")
 
@@ -230,11 +247,16 @@ if __name__ == "__main__":
         num_instances=args.num_instances,
     )
 
+    llm_kwargs = {}
+    llm_kwargs["gpu_memory_utilization"] = args.gpu_memory_utilization
+    if args.max_model_len is not None:
+        llm_kwargs["max_model_len"] = args.max_model_len
+    
     model_settings = {
         "tensor_parallel_size": args.tensor_parallel_size,
         "num_instances": args.num_instances,
         "device_groups": device_groups,
-        "llm_kwargs": {},
+        "llm_kwargs": llm_kwargs,
     }
 
     sampling = SamplingParams(

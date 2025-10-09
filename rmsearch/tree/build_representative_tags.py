@@ -237,6 +237,10 @@ if __name__ == "__main__":
         type=str,
         help="Explicit GPU mapping, e.g. '0,1;2,3' for two workers with tensor_parallel_size=2.",
     )
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.90, help="GPU memory utilisation passed to vLLM.")
+    parser.add_argument("--max-model-len", type=int, default=None, help="Optional maximum model context length.")
+    parser.add_argument("--dtype", type=str, default=None, help="Optional dtype override for the vLLM engine.")
+    parser.add_argument("--trust-remote-code", action="store_true", help="Allow custom model code when loading from HF Hub.")
     parser.add_argument("--worker-batch-size", type=int, default=8, help="Prompts processed per worker batch.")
     parser.add_argument("--timeout", type=float, default=None, help="Optional timeout (s) for each worker batch.")
     parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature for prompt generation.")
@@ -262,6 +266,16 @@ if __name__ == "__main__":
         num_instances=args.num_instances,
     )
 
+    llm_kwargs = {
+        "gpu_memory_utilization": args.gpu_memory_utilization,
+    }
+    if args.max_model_len is not None:
+        llm_kwargs["max_model_len"] = args.max_model_len
+    if args.dtype:
+        llm_kwargs["dtype"] = args.dtype
+    if args.trust_remote_code:
+        llm_kwargs["trust_remote_code"] = True
+
     output_path = args.output or args.tag_tree
 
     updated_tree = build_representative_tags(
@@ -270,7 +284,7 @@ if __name__ == "__main__":
         tensor_parallel_size=args.tensor_parallel_size,
         num_instances=args.num_instances,
         device_groups=device_groups,
-        llm_kwargs={},
+        llm_kwargs=llm_kwargs,
         sampling_params=sampling,
         worker_batch_size=args.worker_batch_size,
         timeout_s=args.timeout,
