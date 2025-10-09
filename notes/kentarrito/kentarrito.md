@@ -237,7 +237,7 @@ In examples/train_en.ipynb "Make Dataset ..." section there is "Reward Model Get
     - [x] Debug rmsearch/train/make_queries.py
     - [x] Make rmsearch/train/make_query_recs.py - [{"query":, "query_id":, "df_id":, "query-type":(like "title", "questions")}, ...]
     - [x] Add rmsearch/train/filter_query_recs.py -> [{"query":, "query_id":, "df_id":, "query-type":(like only "questions")}, ...]
-    - [ ] Modify get_top_relevant_keys_rm.py, get_top_relevant_keys_embed.py for taking filter_query_recs as inputs and debug them
+    - [x] Modify get_top_relevant_keys_rm.py, get_top_relevant_keys_embed.py for taking filter_query_recs as inputs and debug them
     - [x] Add sample_dpo_batch.py - sample query & 2 keys from queries (& relevance_records)
 ```
 make rmsearch/train/sample_dpo_batch.py following
@@ -245,7 +245,9 @@ make rmsearch/train/sample_dpo_batch.py following
 2. Add all the valuables used in the code to parse argument
 3. save it ./data/smollm/sampled_query_key_set.json in default
 ```
-    - [ ] Debug judge_dataset.py
+    - [x] Modify judge_dataset.py for sample_dpo_batch.py
+    - [x] Debug judge_dataset.py
+    - [ ] I want to save all the chat history to codex to some directory. Let's make one in notes.
     - [ ] Debug tree/
 
 
@@ -261,12 +263,6 @@ make rmsearch/train/sample_dpo_batch.py following
   - [ ] Add more dataset
   - [ ] Advanced DPO batching
   - [ ] GPU parallel for training with deepspeed
-
-
-
-
-
-
 
 
 

@@ -335,8 +335,6 @@ class LLMWorker:
         deadline = time.time() + timeout_s if timeout_s else None
         poll = 0.2  # seconds
 
-        print("3")  # keep original debug print
-
         def try_submit(next_idx: int) -> bool:
             nonlocal rr
             wid = rr
