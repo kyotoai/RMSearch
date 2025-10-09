@@ -222,7 +222,22 @@
     - [x] add stream in process_data
     * if stream=True, it loads the necessary file only
     * I've not debug it yet.
+    - [x] Make rmsearch/tree/search_key.py
+    - [ ] add get_top_relevant_keys.py
+```
+In examples/train_en.ipynb "Make Dataset ..." section there is "Reward Model Gets TopN-Relevant ..." and  "Embedding Model Gets TopN-Relevant ...". I want you to implement these two sections to /rmsearch/train/get_top_relevant_keys_rm.py, /rmsearch/train/get_top_relevant_keys_embed.py respectively. Follow the points below
+
+1. In get_top_relevant_keys_rm.py, use rmsearch/tree/assign_key.py and rmsearch/tree/search_key.py.
+2. In get_top_relevant_keys_rm.py, first assign key and make tag2key from tag_tree. and then, search key and make relevant_records. save it in relevance_records_rm.json in default.
+3. In rmsearch/train/get_top_relevant_keys_embed.py, you should use vllm_embed.py instead of sentence_transformers. other than that, follow the code in train_en.ipynb. save the output in relevance_records_embed.json in default.
+4. add all the valuables used in the code to parse argument
+5. Add ## `get_top_relevant_keys_rm.py` and ## `get_top_relevant_keys_embed.py` section below ## `make_queries.py` in readme. 
+```
+
+    * changed names of progress folder and output of them
     - [ ] debug judge_dataset.py
+    - [ ] debug tree
+
 
 - [ ] Make tag graph
 

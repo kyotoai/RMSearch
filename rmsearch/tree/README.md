@@ -146,6 +146,46 @@ python -m rmsearch.tree.assign_key \
 - The reward model must be converted to the inference format expected by
   `rmsearch.utils.vllm_reward2`.
 
+## `search_key.py`
+
+Route queries through the tag graph and re-rank their candidate keys with the
+reward model.
+
+```bash
+python -m rmsearch.tree.search_key \
+  --queries ./data/smollm-corpus/queries.json \
+  --keys ./data/smollm-corpus/keys.json \
+  --tag2key ./data/smollm-corpus/tag2key.json \
+  --model-name /workspace/llama3b-rm-converted-model \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --k-tag 2 \
+  --k-key 5 \
+  --max-model-len 2500 \
+  --max-num-seqs 64 \
+  --gpu-memory-utilization 0.90
+```
+
+**Arguments**
+- `--queries`: JSON file containing query strings (plain list or objects with `"query"`).
+- `--keys`: JSON file containing key strings (plain list or objects with `"text"`).
+- `--tag2key`: Tag graph JSON where nodes include `"key_ids"` and optional `children`.
+- `--model-name`: Reward model checkpoint or identifier.
+- `--tensor-parallel-size`, `--num-instances`: Worker layout for the reward model.
+- `--k-tag`, `--k-key`: Tag branching factor and final top-k keys per query.
+- `--output`: Optional path to persist the ranked results as JSON.
+- `--checkpoint`: Optional directory that caches intermediate `search_fn` responses for reuse.
+- `--max-model-len`, `--max-num-seqs`, `--gpu-memory-utilization`: vLLM runtime limits.
+
+**Outputs**
+- Console prints the ranked list for each query when `--output` is omitted.
+- With `--output`, writes a pretty-printed JSON file mirroring the console payload.
+
+**Notices**
+- When input paths are omitted, the script falls back to a small in-memory sample.
+- Ensure the tag graph is aligned with the key indices you pass via `--keys`.
+- Checkpoint caching skips repeated vLLM calls when the cached JSON files already exist.
+
 ## `hierarchical_kmeans.py`
 
 This module exposes the `HierarchicalKMeans` class used inside notebooks to
