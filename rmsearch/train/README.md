@@ -10,8 +10,7 @@ with the appropriate models available locally.
 
 ```bash
 git clone https://github.com/kyotoai/RMSearch.git
-cd RMSearch
-pip install .
+pip install RMSearch/
 ```
 
 ## `process_data.py`
@@ -22,9 +21,10 @@ slices.
 ```bash
 python -m rmsearch.train.process_data \
   --dataset-name HuggingFaceTB/smollm-corpus \
-  --output-dir ./data/smollm-corpus \
+  --output-dir /workspace/data/smollm-corpus \
   --dataset-config cosmopedia-v2 \
-  --n-sample 100000
+  --n-sample 10 \
+  --stream
 ```
 Omit `--n-sample` entirely if you want to materialise the full split.
 
@@ -35,6 +35,7 @@ Omit `--n-sample` entirely if you want to materialise the full split.
 - `--dataset-config`: Optional configuration name if the dataset exposes multiple configs.
 - `--split`: Dataset split to load (defaults to `train`).
 - `--random-seed`: Shuffle seed.
+- `--stream`: Load via the HuggingFace streaming API before materialising rows locally.
 
 **Outputs**
 - `<output-dir>/dataset_dict.json` (HF binary format when `datasets` is installed).
@@ -47,34 +48,40 @@ Omit `--n-sample` entirely if you want to materialise the full split.
 - Set `HF_HUB_OFFLINE=1` (or `HF_DATASETS_OFFLINE=1`) to skip network calls and immediately generate the stub outputs.
 - The `HuggingFaceTB/smollm-corpus` snapshot uses the `cosmopedia-v2` configuration; pass `--dataset-config cosmopedia-v2` if you want that specific slice.
 - When storage is limited, supply `--n-sample` to only keep that many rows in both the saved DatasetDict and CSVs; omit it to persist the entire split.
+- Combine `--stream` with `--n-sample` to limit in-memory buffering; the script dynamically sizes the shuffle buffer so streamed subsets still appear random without staging the entire split on disk.
 - Large datasets may need additional disk space.
 
 ## `make_queries.py`
 
 Generate titles, keywords, questions, and irrelevant questions for each source
-sentence using an async vLLM engine.
+sentence using the local vLLM worker pool (`rmsearch.utils.vllm_generate`).
 
 ```bash
 python -m rmsearch.train.make_queries \
-  --input-csv ./data/smollm-corpus/df_test.csv \
+  --input-csv /workspace/data/smollm-corpus/df.csv \
   --text-column text \
-  --model-name /workspace/qwen7b \
-  --output ./data/smollm-corpus/query_dict.json
+  --model-name /workspace/qwen4b \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --batch-size 8 \
+  --output /workspace/data/smollm-corpus/query_dict.json
 ```
 
 **Arguments**
 - `--input-csv`: CSV with the source sentences.
 - `--text-column`: Column containing the text to analyse.
 - `--output`: Where the generated query metadata is written as JSON.
-- `--model-name`: Async vLLM model path/name.
-- `--tensor-parallel-size`, `--pipeline-parallel-size`, `--data-parallel-size`, `--gpu-memory-utilization`, `--omp-num-threads`: Engine resource settings; adjust to fit your GPU topology.
-- `--max-requests`: Upper bound on concurrent async requests.
-- `--progress-dir`: Directory used for on-disk checkpoints (`results.json`, `finished_ids.json`).
-- `--restart`: Resume from an existing progress directory instead of starting fresh.
+- `--model-name`: Local vLLM model path/name.
+- `--tokenizer-name`: Optional tokenizer identifier (defaults to `--model-name`).
+- `--tensor-parallel-size`: Number of tensor parallel shards per worker.
+- `--num-instances`: Number of worker processes to launch.
+- `--gpu-memory-utilization`, `--max-model-len`, `--dtype`, `--trust-remote-code`: Options forwarded to `vllm.LLM`.
+- `--batch-size`: Prompts per generation batch.
+- `--temperature`, `--top-p`, `--max-tokens`: Sampling controls passed to `vllm.SamplingParams`.
+- `--timeout-s`: Optional wall-clock timeout for the job.
 
 **Outputs**
 - `{output}`: JSON mapping request indices to generated titles/keywords/questions/irrelevant questions.
-- `{progress-dir}/results.json` and `finished_ids.json` for incremental restarts.
 - Example entry:
   ```json
   {
@@ -88,9 +95,9 @@ python -m rmsearch.train.make_queries \
   ```
 
 **Notices**
-- Requires the generation model weights on local disk.
-- Async engine uses GPU memory aggressively; tune `gpu_memory_utilization` if you see OOMs.
-- If the async engine cannot start (for example on CPU-only hosts), the script now falls back to deterministic stub outputs so downstream steps continue; you can inspect the log message to confirm the fallback.
+- Requires the generation model weights on local disk; set `CUDA_VISIBLE_DEVICES` to pin GPUs.
+- The helper constructs multiprocessing workers; ensure `num_instances * tensor_parallel_size` does not exceed available GPUs.
+- When vLLM or the tokenizer cannot be loaded (e.g. CPU-only hosts), the script falls back to deterministic stub outputs so downstream steps continue—check the log for confirmation.
 - For quick debugging, work with a small CSV (e.g. copy `df_small.csv` to `df_test.csv` with ~10 rows) before launching long vLLM runs.
 
 ## `get_top_relevant_keys_rm.py`

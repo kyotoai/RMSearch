@@ -119,16 +119,12 @@ def process_data(
             random_seed=random_seed,
         )
 
-    features = Features({"index": Value("int64"), "text": Value("string")})
-
     load_kwargs = {
         "split": split,
         "streaming": stream,
     }
     if dataset_config is not None:
         load_kwargs["name"] = dataset_config
-    if features is not None:
-        load_kwargs["features"] = features
 
     try:
         dataset = load_dataset(dataset_name, **load_kwargs)
@@ -162,8 +158,11 @@ def process_data(
             iterable = stream_ds
             logger.info("Streaming full dataset; provide --n-sample to limit rows if needed.")
 
-        rows = list(iterable)
-        train_ds = Dataset.from_list(rows, features=features if features is not None else None)
+        rows = []
+        for sample in iterable:
+            rows.append(dict(sample))
+
+        train_ds = Dataset.from_list(rows)
         dataset_dict = DatasetDict({"train": train_ds})
     else:
         dataset = dataset.shuffle(seed=random_seed)
@@ -173,11 +172,10 @@ def process_data(
             train_ds = dataset.select(range(sample_size))
         else:
             train_ds = dataset
-
         dataset_dict = DatasetDict({"train": train_ds})
 
     df_all = datasetdict_to_pandas(dataset_dict)
-    dataset_dict.save_to_disk(str(output_dir))
+    # dataset_dict.save_to_disk(str(output_dir))
     df_all.to_csv(output_dir / "df.csv", index=False)
 
     if len(df_all):
