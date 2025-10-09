@@ -247,7 +247,7 @@ make rmsearch/train/sample_dpo_batch.py following
 ```
     - [x] Modify judge_dataset.py for sample_dpo_batch.py
     - [x] Debug judge_dataset.py
-    - [ ] I want to save all the chat history to codex to some directory. Let's make one in notes.
+    - [x] Add chat_history.md. I want to save all the chat history to codex to some directory. Let's make one in notes.
     - [ ] Debug tree/
 
 
