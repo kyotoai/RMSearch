@@ -93,6 +93,83 @@ python -m rmsearch.train.make_queries \
 - If the async engine cannot start (for example on CPU-only hosts), the script now falls back to deterministic stub outputs so downstream steps continue; you can inspect the log message to confirm the fallback.
 - For quick debugging, work with a small CSV (e.g. copy `df_small.csv` to `df_test.csv` with ~10 rows) before launching long vLLM runs.
 
+## `get_top_relevant_keys_rm.py`
+
+Traverse the tag tree with the reward model to score and retrieve the top-N keys
+per query.
+
+```bash
+python -m rmsearch.train.get_top_relevant_keys_rm \
+  --queries-json ./data/smollm-corpus/query_prompts.json \
+  --keys-csv ./data/smollm-corpus/df_small.csv \
+  --key-column text \
+  --tag-tree ./data/smollm-corpus/tag_tree_recs.json \
+  --model-name /workspace/llama3b-rm-converted-model \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --k-tag 2 \
+  --k-key 10 \
+  --output ./data/smollm-corpus/relevance_records_rm.json
+```
+
+**Arguments**
+- `--queries-json` / `--queries-csv`: Query inputs (strings or objects with `"query"`).
+- `--keys-json` / `--keys-csv`: Candidate key sentences; use `--key-json-field` / `--key-column` to pick the text field.
+- `--tag-tree`: Base tag tree JSON; the script derives a `tag2key` structure via `assign_key_to_tag_tree`.
+- `--tag2key-out`: Optional path to persist the generated tree annotated with `key_ids`.
+- `--correct-ids-json`: Optional gold indices matching the query order.
+- `--output`: Destination JSON for the relevance records (default `relevance_records_rm.json`).
+- `--model-name`, `--tensor-parallel-size`, `--num-instances`, `--max-model-len`, `--max-num-seqs`, `--gpu-memory-utilization`: Reward-model worker topology.
+- `--k-tag`, `--k-key`: Branching factor per depth and number of keys returned per query.
+- `--checkpoint`: Directory for caching reward-model search responses (both assignment and retrieval).
+
+**Outputs**
+- Relevance records describing the query text, optional `correct_id`, and the scored key list under `"keys"`.
+- Optional `tag2key-out` file mirroring the tag tree but annotated with `key_ids`.
+
+**Notices**
+- Uses the same vLLM reward-model backend as `rmsearch.tree.search_key`; ensure the model fits the available GPUs.
+- Provide either JSON or CSV inputs for queries/keys; the script errors if both variants are omitted.
+- Checkpoint caching reuses prior reward-model responses to shorten reruns.
+
+## `get_top_relevant_keys_embed.py`
+
+Embed queries and keys with vLLM, score them with dot-product similarity, and
+store the top-N matches per query.
+
+```bash
+python -m rmsearch.train.get_top_relevant_keys_embed \
+  --queries-json ./data/smollm-corpus/query_prompts.json \
+  --keys-csv ./data/smollm-corpus/df_small.csv \
+  --key-column text \
+  --model-name intfloat/e5-mistral-7b-instruct \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --k-key 100 \
+  --similarity-device cuda \
+  --output ./data/smollm-corpus/relevance_records_embed.json
+```
+
+**Arguments**
+- `--queries-json` / `--queries-csv`: Query inputs (strings or objects with `"query"`).
+- `--keys-json` / `--keys-csv`: Candidate key sentences; use `--key-json-field` / `--key-column` to pick the text field.
+- `--model-name`, `--tensor-parallel-size`, `--num-instances`, `--max-model-len`, `--max-num-seqs`, `--gpu-memory-utilization`: Embedding worker configuration passed to `vllm_embed`.
+- `--query-batch-size`, `--key-batch-size`: Batch sizes for embedding calls.
+- `--query-checkpoint`, `--key-checkpoint`: Optional JSONL checkpoints written during embedding.
+- `--similarity-device`: Device used for the matrix multiply when ranking (default `cpu`; pass `cuda` for GPU).
+- `--k-key`: Number of keys returned per query (default 50).
+- `--correct-ids-json`: Optional gold key indices aligned with the query order.
+- `--output`: Destination JSON for the relevance records (default `relevance_records_embed.json`).
+
+**Outputs**
+- JSON list mirroring the RM-based format with `query`, `query_id`, optional `correct_id`, and `"keys"` entries containing `key_id`, `key`, and cosine-like similarity scores.
+- Optional embedding checkpoints if the related flags are supplied.
+
+**Notices**
+- Embeddings are pulled through the vLLM embedding API (see `rmsearch/utils/vllm_embed.py`); ensure the model exposes embedding heads.
+- The similarity computation promotes tensors to the chosen device; large matrices may demand significant memory if you select `cuda`.
+- Provide non-empty query and key inputs; the script validates and aborts otherwise.
+
 ## `judge_dataset.py`
 
 Collect pairwise relevance judgements for candidate sentences, producing the

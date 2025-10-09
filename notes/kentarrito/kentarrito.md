@@ -223,7 +223,7 @@
     * if stream=True, it loads the necessary file only
     * I've not debug it yet.
     - [x] Make rmsearch/tree/search_key.py
-    - [ ] add get_top_relevant_keys.py
+    - [x] add get_top_relevant_keys_rm.py, get_top_relevant_keys_embed.py
 ```
 In examples/train_en.ipynb "Make Dataset ..." section there is "Reward Model Gets TopN-Relevant ..." and  "Embedding Model Gets TopN-Relevant ...". I want you to implement these two sections to /rmsearch/train/get_top_relevant_keys_rm.py, /rmsearch/train/get_top_relevant_keys_embed.py respectively. Follow the points below
 
@@ -233,8 +233,6 @@ In examples/train_en.ipynb "Make Dataset ..." section there is "Reward Model Get
 4. add all the valuables used in the code to parse argument
 5. Add ## `get_top_relevant_keys_rm.py` and ## `get_top_relevant_keys_embed.py` section below ## `make_queries.py` in readme. 
 ```
-
-    * changed names of progress folder and output of them
     - [ ] debug judge_dataset.py
     - [ ] debug tree
 
