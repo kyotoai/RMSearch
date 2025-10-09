@@ -13,7 +13,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tup
 
 import pandas as pd
 
-from .utils import AllRequests, extract_text, setup_async_engine
+from .utils import extract_text
 
 __all__ = ["make_queries"]
 
@@ -102,6 +102,15 @@ def _default_prompt_builder(tokenizer) -> PromptBuilder:
     return build_prompt
 
 
+def _load_tokenizer(tokenizer_name: str):
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, padding_side="left")
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    return tokenizer
+
+
 def _maybe_run_async(maybe_result):
     if asyncio.iscoroutine(maybe_result):
         return asyncio.run(maybe_result)
@@ -125,9 +134,9 @@ def make_queries(
     *,
     tokenizer: Any | None = None,
     request_func: Optional[RequestFunc] = None,
-    max_requests: int = 50,
-    progress_dir: str = "progress_questions",
-    restart: bool = False,
+    batch_size: int = 8,
+    sampling_config: Optional[Dict[str, Any]] = None,
+    timeout_s: Optional[float] = None,
     engine_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Dict[int, Dict[str, List[str]]]:
     """Build query metadata for each input text.
@@ -137,13 +146,14 @@ def make_queries(
 
     engine_kwargs = engine_kwargs or {}
 
+    tokenizer_source = engine_kwargs.get("tokenizer_name") or engine_kwargs.get("model_name") if engine_kwargs else None
     if request_func is None and tokenizer is None:
-        if "model_name" not in engine_kwargs:
-            raise ValueError("Provide tokenizer or engine_kwargs['model_name'] when request_func is omitted")
+        if not tokenizer_source:
+            raise ValueError("Provide tokenizer or include 'model_name' / 'tokenizer_name' in engine_kwargs when request_func is omitted")
         try:
-            _, tokenizer = setup_async_engine(**engine_kwargs)
+            tokenizer = _load_tokenizer(tokenizer_source)
         except Exception as exc:  # pragma: no cover - depends on runtime environment
-            logger.warning("Falling back to stub query generation because the async engine failed: %s", exc)
+            logger.warning("Falling back to stub query generation because the tokenizer failed to load: %s", exc)
             return _generate_stub_queries(texts)
 
     if tokenizer is None:
@@ -154,23 +164,61 @@ def make_queries(
 
     outputs: List[Tuple[int, str]]
     if request_func is None:
-        all_requests = AllRequests(max_request=max_requests, engine_kwargs=engine_kwargs)
-        for idx, prompt in enumerate(prompts):
-            all_requests.add({"request_id": idx, "prompt": prompt})
+        if engine_kwargs is None:
+            raise ValueError("engine_kwargs must be provided when request_func is omitted")
+
         try:
-            results = asyncio.run(
-                all_requests.process(
-                    model_name=engine_kwargs.get("model_name"),
-                    max_tokens=3000,
-                    temperature=0.0,
-                    save_dir=progress_dir,
-                    restart=restart,
-                )
+            from ..utils import vllm_generate as _vllm_generate
+            from vllm import SamplingParams
+        except Exception as exc:  # pragma: no cover - depends on runtime environment
+            logger.warning("Falling back to stub query generation because vLLM could not be imported: %s", exc)
+            return _generate_stub_queries(texts)
+
+        engine_params = dict(engine_kwargs)
+        model_name = engine_params.pop("model_name", None)
+        if not model_name:
+            raise ValueError("engine_kwargs must include 'model_name'")
+
+        tensor_parallel_size = engine_params.pop("tensor_parallel_size", 1)
+        num_instances = engine_params.pop("num_instances", 1)
+        engine_params.pop("tokenizer_name", None)  # already handled above
+
+        sampling_values: Dict[str, Any] = {"temperature": 0.0, "max_tokens": 3000, "top_p": 0.95}
+        if sampling_config:
+            sampling_values.update(sampling_config)
+        sampling = SamplingParams(**sampling_values)
+
+        llm = None
+        try:
+            llm = _vllm_generate.build_llm(
+                model_name=model_name,
+                tensor_parallel_size=tensor_parallel_size,
+                num_instances=num_instances,
+                **engine_params,
             )
         except Exception as exc:  # pragma: no cover - depends on runtime environment
-            logger.warning("Async generation failed (%s); using stub outputs instead.", exc)
+            logger.warning("Falling back to stub query generation because the vLLM worker failed to start: %s", exc)
             return _generate_stub_queries(texts)
-        outputs = [(record.get("request_id", idx), record.get("output", "")) for idx, record in enumerate(results)]
+
+        outputs_texts: Optional[List[str]] = None
+        try:
+            outputs_texts = _vllm_generate.generate(
+                llm,
+                prompts,
+                sampling_params=sampling,
+                batch_size=batch_size,
+                timeout_s=timeout_s,
+            )
+        except Exception as exc:  # pragma: no cover - depends on runtime environment
+            logger.warning("vLLM generation failed (%s); using stub outputs instead.", exc)
+        finally:
+            if llm is not None:
+                llm.close(kill=outputs_texts is None)
+
+        if outputs_texts is None:
+            return _generate_stub_queries(texts)
+
+        outputs = list(enumerate(outputs_texts))
     else:
         responses = _maybe_run_async(request_func(prompts))
         outputs = list(enumerate(responses))
@@ -205,15 +253,19 @@ if __name__ == "__main__":
     parser.add_argument("--input-csv", type=Path, required=True, help="CSV file containing source texts.")
     parser.add_argument("--text-column", type=str, default="text", help="Column containing the text to analyse.")
     parser.add_argument("--output", type=Path, required=True, help="Destination JSON file for generated queries.")
-    parser.add_argument("--model-name", type=str, required=True, help="Async vLLM model used to answer requests.")
-    parser.add_argument("--tensor-parallel-size", type=int, default=2, help="tensor_parallel_size for the async engine.")
-    parser.add_argument("--pipeline-parallel-size", type=int, default=1, help="pipeline_parallel_size for the async engine.")
-    parser.add_argument("--data-parallel-size", type=int, default=1, help="data_parallel_size for the async engine.")
-    parser.add_argument("--gpu-memory-utilization", type=float, default=0.95, help="GPU memory utilisation passed to AsyncLLMEngine.")
-    parser.add_argument("--omp-num-threads", type=int, default=4, help="Number of CPU threads for the async workers.")
-    parser.add_argument("--max-requests", type=int, default=50, help="Maximum concurrent requests issued to the engine.")
-    parser.add_argument("--progress-dir", type=str, default="progress_questions", help="Directory used for progress checkpoints.")
-    parser.add_argument("--restart", action="store_true", help="Resume from existing progress logs if available.")
+    parser.add_argument("--model-name", type=str, required=True, help="Local vLLM model path or identifier.")
+    parser.add_argument("--tokenizer-name", type=str, default=None, help="Optional tokenizer name; defaults to --model-name.")
+    parser.add_argument("--tensor-parallel-size", type=int, default=1, help="Number of tensor parallel shards per worker.")
+    parser.add_argument("--num-instances", type=int, default=1, help="Number of worker processes to launch.")
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.90, help="GPU memory utilisation passed to vLLM.")
+    parser.add_argument("--max-model-len", type=int, default=None, help="Optional maximum model context length.")
+    parser.add_argument("--dtype", type=str, default=None, help="Optional dtype override for the vLLM engine.")
+    parser.add_argument("--trust-remote-code", action="store_true", help="Allow custom model code when loading from HF Hub.")
+    parser.add_argument("--batch-size", type=int, default=8, help="Number of prompts sent per generation batch.")
+    parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature.")
+    parser.add_argument("--top-p", type=float, default=0.95, help="Top-p nucleus sampling value.")
+    parser.add_argument("--max-tokens", type=int, default=3000, help="Maximum tokens generated per prompt.")
+    parser.add_argument("--timeout-s", type=float, default=None, help="Optional timeout (in seconds) for the overall job.")
     args = parser.parse_args()
 
     if not args.input_csv.exists():
@@ -229,19 +281,29 @@ if __name__ == "__main__":
     engine_kwargs = {
         "model_name": args.model_name,
         "tensor_parallel_size": args.tensor_parallel_size,
-        "pipeline_parallel_size": args.pipeline_parallel_size,
-        "data_parallel_size": args.data_parallel_size,
         "gpu_memory_utilization": args.gpu_memory_utilization,
-        "omp_num_threads": args.omp_num_threads,
+        "num_instances": args.num_instances,
     }
+    if args.tokenizer_name:
+        engine_kwargs["tokenizer_name"] = args.tokenizer_name
+    if args.max_model_len is not None:
+        engine_kwargs["max_model_len"] = args.max_model_len
+    if args.dtype:
+        engine_kwargs["dtype"] = args.dtype
+    if args.trust_remote_code:
+        engine_kwargs["trust_remote_code"] = True
 
     query_dict = make_queries(
         sentences,
         tokenizer=None,
         request_func=None,
-        max_requests=args.max_requests,
-        progress_dir=args.progress_dir,
-        restart=args.restart,
+        batch_size=args.batch_size,
+        sampling_config={
+            "temperature": args.temperature,
+            "top_p": args.top_p,
+            "max_tokens": args.max_tokens,
+        },
+        timeout_s=args.timeout_s,
         engine_kwargs=engine_kwargs,
     )
 

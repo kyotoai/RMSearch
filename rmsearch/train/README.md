@@ -63,6 +63,7 @@ python -m rmsearch.train.make_queries \
   --model-name /workspace/qwen4b \
   --tensor-parallel-size 1 \
   --num-instances 1 \
+  --max-model-len 10000 \
   --batch-size 8 \
   --output /workspace/data/smollm-corpus/query_dict.json
 ```

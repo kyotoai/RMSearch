@@ -234,7 +234,7 @@ In examples/train_en.ipynb "Make Dataset ..." section there is "Reward Model Get
 5. Add ## `get_top_relevant_keys_rm.py` and ## `get_top_relevant_keys_embed.py` section below ## `make_queries.py` in readme. 
 ```
     - [x] Debug stream in process_data.py
-    - [ ] Debug make_queries.py
+    - [x] Debug rmsearch/train/make_queries.py
     - [ ] debug get_top_relevant_keys_rm.py, get_top_relevant_keys_embed.py
     - [ ] debug judge_dataset.py
     - [ ] debug tree/
