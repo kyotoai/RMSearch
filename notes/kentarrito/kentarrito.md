@@ -235,9 +235,13 @@ In examples/train_en.ipynb "Make Dataset ..." section there is "Reward Model Get
 ```
     - [x] Debug stream in process_data.py
     - [x] Debug rmsearch/train/make_queries.py
-    - [ ] debug get_top_relevant_keys_rm.py, get_top_relevant_keys_embed.py
-    - [ ] debug judge_dataset.py
-    - [ ] debug tree/
+    - [x] Make rmsearch/train/make_query_recs.py - [{"query":, "query_id":, "df_id":, "query-type":(like "title", "questions")}, ...]
+    - [ ] Add filter_query_recs.py -> [{"query":, "query_id":, "df_id":, "query-type":(like only "questions")}, ...]
+    - [ ] Debug get_top_relevant_keys_rm.py, get_top_relevant_keys_embed.py
+    - [ ] Add sample_dpo_batch.py - sample query & 2 keys from queries (& relevance_records) 
+
+    - [ ] Debug judge_dataset.py
+    - [ ] Debug tree/
 
 
 - [ ] Make tag graph

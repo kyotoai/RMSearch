@@ -6,12 +6,18 @@ you can run the pipeline outside the notebook. Each command writes the same
 artifacts the notebook expects, and assumes you have a GPU-enabled environment
 with the appropriate models available locally.
 
+
+
+
 ## Install rmsearch
 
 ```bash
 git clone https://github.com/kyotoai/RMSearch.git
-pip install RMSearch/
+pip install RMSearch/.
 ```
+
+
+
 
 ## `process_data.py`
 
@@ -21,7 +27,7 @@ slices.
 ```bash
 python -m rmsearch.train.process_data \
   --dataset-name HuggingFaceTB/smollm-corpus \
-  --output-dir /workspace/data/smollm-corpus \
+  --output-dir ./data/smollm-corpus \
   --dataset-config cosmopedia-v2 \
   --n-sample 10 \
   --stream
@@ -51,6 +57,9 @@ Omit `--n-sample` entirely if you want to materialise the full split.
 - Combine `--stream` with `--n-sample` to limit in-memory buffering; the script dynamically sizes the shuffle buffer so streamed subsets still appear random without staging the entire split on disk.
 - Large datasets may need additional disk space.
 
+
+
+
 ## `make_queries.py`
 
 Generate titles, keywords, questions, and irrelevant questions for each source
@@ -58,14 +67,14 @@ sentence using the local vLLM worker pool (`rmsearch.utils.vllm_generate`).
 
 ```bash
 python -m rmsearch.train.make_queries \
-  --input-csv /workspace/data/smollm-corpus/df.csv \
+  --input-csv ./data/smollm-corpus/df.csv \
   --text-column text \
-  --model-name /workspace/qwen4b \
+  --model-name ./qwen4b \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --max-model-len 10000 \
   --batch-size 8 \
-  --output /workspace/data/smollm-corpus/query_dict.json
+  --output ./data/smollm-corpus/query_dict.json
 ```
 
 **Arguments**
@@ -101,6 +110,42 @@ python -m rmsearch.train.make_queries \
 - When vLLM or the tokenizer cannot be loaded (e.g. CPU-only hosts), the script falls back to deterministic stub outputs so downstream steps continue—check the log for confirmation.
 - For quick debugging, work with a small CSV (e.g. copy `df_small.csv` to `df_test.csv` with ~10 rows) before launching long vLLM runs.
 
+
+
+## `make_query_recs.py`
+
+Flatten the generated titles, keywords, questions, and irrelevant questions into
+per-query recommendation records while reusing the same vLLM backend.
+
+```bash
+python -m rmsearch.train.make_query_recs \
+  --input-csv ./data/smollm-corpus/df.csv \
+  --text-column text \
+  --model-name ./qwen4b \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --batch-size 8 \
+  --output ./data/smollm-corpus/query_recs.json
+```
+
+**Arguments**
+- Inherits the same CLI as `make_queries.py`; see above for detailed flag descriptions.
+
+**Outputs**
+- `{output}`: JSON list where each element contains `query`, `df_id`, and `query-type`, covering every generated title/keyword/question/irrelevant question.
+- Example entry:
+  ```json
+  [
+    {"query": "Graph Retrieval Overview", "df_id": 42, "query-type": "titles"},
+    {"query": "How does graph retrieval work?", "df_id": 42, "query-type": "questions"}
+  ]
+  ```
+
+**Notices**
+- Shares batching, sampling, and fallback behaviour with `make_queries.py`; refer to that section for runtime considerations.
+
+
+
 ## `get_top_relevant_keys_rm.py`
 
 Traverse the tag tree with the reward model to score and retrieve the top-N keys
@@ -108,11 +153,11 @@ per query.
 
 ```bash
 python -m rmsearch.train.get_top_relevant_keys_rm \
-  --queries-json ./data/smollm-corpus/query_prompts.json \
-  --keys-csv ./data/smollm-corpus/df_small.csv \
+  --queries-json ./data/smollm-corpus/query_dict.json \
+  --keys-csv ./data/smollm-corpus/df.csv \
   --key-column text \
   --tag-tree ./data/smollm-corpus/tag_tree_recs.json \
-  --model-name /workspace/llama3b-rm-converted-model \
+  --model-name ./llama3b-rm-converted-model \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --k-tag 2 \
@@ -139,6 +184,9 @@ python -m rmsearch.train.get_top_relevant_keys_rm \
 - Uses the same vLLM reward-model backend as `rmsearch.tree.search_key`; ensure the model fits the available GPUs.
 - Provide either JSON or CSV inputs for queries/keys; the script errors if both variants are omitted.
 - Checkpoint caching reuses prior reward-model responses to shorten reruns.
+
+
+
 
 ## `get_top_relevant_keys_embed.py`
 
@@ -177,6 +225,9 @@ python -m rmsearch.train.get_top_relevant_keys_embed \
 - Embeddings are pulled through the vLLM embedding API (see `rmsearch/utils/vllm_embed.py`); ensure the model exposes embedding heads.
 - The similarity computation promotes tensors to the chosen device; large matrices may demand significant memory if you select `cuda`.
 - Provide non-empty query and key inputs; the script validates and aborts otherwise.
+
+
+
 
 ## `judge_dataset.py`
 
@@ -218,6 +269,9 @@ python -m rmsearch.train.judge_dataset \
 - Requires the same async engine as `make_queries`; ensure the model fits into GPU memory.
 - Random sampling means reruns without `--restart` may yield different pairings.
 
+
+
+
 ## `lora_example.py`
 
 Fine-tune a reward model using TRL's `RewardTrainer` with LoRA adapters.
@@ -256,6 +310,9 @@ python -m rmsearch.train.lora_example \
 - Expects the base reward model weights and tokenizer to reside locally.
 - Training parameters mirror the notebook; adjust inside the script if you need different LoRA or training hyperparameters.
 - Long-running GPU job – monitor disk space for checkpoints.
+
+
+
 
 ## vLLM Serve (`openai/gpt-oss-20b`)
 
@@ -374,12 +431,18 @@ outputs = llm.generate(
 
 Decode the resulting token IDs with `encoding.parse_messages_from_completion_tokens` when you need structured tool-call messages.
 
+
+
+
 ## Utility Modules Overview
 
 - `rmsearch/utils/vllm_serve_generate.py`: Client for an external `vllm serve` process. `build_llm` connects to an HTTP endpoint; `generate` mirrors the local batching API while issuing OpenAI-compatible completion requests.
 - `rmsearch/utils/vllm_generate.py`: In-process vLLM worker pool that spawns subprocesses, ideal when you have the checkpoint on the same machine and want tight integration.
 - `rmsearch/utils/vllm_reward.py`: Embedding-oriented worker pool with helper routines for reward modelling; refer to the module docstring for checkpointing hooks.
 - `rmsearch/utils/vllm_embed.py`: Convenience wrapper that swaps generation for pooling to obtain dense embeddings via the same multi-worker infrastructure.
+
+
+
 
 ## General Notes
 
