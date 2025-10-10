@@ -225,23 +225,26 @@
     * I've not debug it yet.
     - [x] Make rmsearch/tree/search_key.py
     - [x] add get_top_relevant_keys_rm.py, get_top_relevant_keys_embed.py
+        ```
         In examples/train_en.ipynb "Make Dataset ..." section there is "Reward Model Gets TopN-Relevant ..." and  "Embedding Model Gets TopN-Relevant ...". I want you to implement these two sections to /rmsearch/train/get_top_relevant_keys_rm.py, /rmsearch/train/get_top_relevant_keys_embed.py respectively. Follow the points below
         1. In get_top_relevant_keys_rm.py, use rmsearch/tree/assign_key.py and rmsearch/tree/search_key.py.
         2. In get_top_relevant_keys_rm.py, first assign key and make tag2key from tag_tree. and then, search key and make relevant_records. save it in relevance_records_rm.json in default.
         3. In rmsearch/train/get_top_relevant_keys_embed.py, you should use vllm_embed.py instead of sentence_transformers. other than that, follow the code in train_en.ipynb. save the output in relevance_records_embed.json in default.
         4. add all the valuables used in the code to parse argument
         5. Add ## `get_top_relevant_keys_rm.py` and ## `get_top_relevant_keys_embed.py` section below ## `make_queries.py` in readme. 
-
+        ```
     - [x] Debug stream in process_data.py
     - [x] Debug rmsearch/train/make_queries.py
     - [x] Make rmsearch/train/make_query_recs.py - [{"query":, "query_id":, "df_id":, "query-type":(like "title", "questions")}, ...]
     - [x] Add rmsearch/train/filter_query_recs.py -> [{"query":, "query_id":, "df_id":, "query-type":(like only "questions")}, ...]
     - [x] Modify get_top_relevant_keys_rm.py, get_top_relevant_keys_embed.py for taking filter_query_recs as inputs and debug them
     - [x] Add sample_dpo_batch.py - sample query & 2 keys from queries (& relevance_records)
+        ```
         make rmsearch/train/sample_dpo_batch.py following
         1. If relevance_records are given, sample 1 key from top relevant keys. And 1 from df_id. Combining the 2 keys, make sampled_query_key_set = [{"query":, "query_id":, "keys":[], "key_ids":[], "query-type":(like only "questions")}, ...]
         2. Add all the valuables used in the code to parse argument
         3. save it ./data/smollm/sampled_query_key_set.json in default
+        ```
     - [x] Modify judge_dataset.py for sample_dpo_batch.py
     - [x] Debug judge_dataset.py
     - [x] Add chat_history.md. I want to save all the chat history to codex to some directory. Let's make one in notes.
@@ -255,7 +258,10 @@
   - [ ] Debug make_tag_tree.py
 
 
+## Oct 10
+
 - [ ] Make tag graph
+  - [ ] 
 
 
 - [ ] Make checkpoint branch
