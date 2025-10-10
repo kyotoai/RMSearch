@@ -329,11 +329,11 @@ Fine-tune a reward model using TRL's `RewardTrainer` with LoRA adapters.
 
 ```bash
 python -m rmsearch.train.lora_example \
-  --dataset-list ./exp2/dataset_list.json \
+  --dataset-list ./exp1/dataset_list.json \
   --model-name /workspace/llama3b-rm \
-  --num-gpus 2 \
-  --output-dir ./exp2/model1 \
-  --base-dir ./exp2
+  --num-gpus 1 \
+  --output-dir ./exp1/model1 \
+  --base-dir ./exp1
 ```
 
 **Arguments**
