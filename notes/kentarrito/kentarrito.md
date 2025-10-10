@@ -251,9 +251,13 @@
   - [x] embed_tags.py
   - [ ] build_representative_tags.py
   * there is no file to create tag_tree_recs from tag_tree and tag_embeddings using hirarchical_kmeans
-  - [ ] 
+  - [x] Create make_tag_tree.py
+  - [ ] Debug make_tag_tree.py
+
 
 - [ ] Make tag graph
+
+
 - [ ] Make checkpoint branch
 - [ ] Implement gpt-oss instead of qwen7b (qwen7b has sometimes lower performance in tag generation)
 

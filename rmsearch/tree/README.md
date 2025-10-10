@@ -74,6 +74,36 @@ python -m rmsearch.tree.embed_tags \
 - Set `--device-groups` to pin embedding workers to specific GPUs if you launch
   more than one instance.
 
+## `make_tag_tree.py`
+
+Cluster tag embeddings into a hierarchical k-means tree.
+
+```bash
+python -m rmsearch.tree.make_tag_tree \
+  --working-dir . \
+  --data-name smollm-corpus \
+  --branching-factor 10 \
+  --max-leaf-size 60 \
+  --random-state 0
+```
+
+**Arguments**
+- `--working-dir`: Root directory that contains the `data/` folder (defaults to current directory).
+- `--data-name`: Dataset subdirectory inside `data/` that holds tag artifacts.
+- `--embeddings`: Optional override path for `tag_embeddings.pt`.
+- `--tag-meta`: Optional override path for `tag_meta.json`; used to validate alignment.
+- `--output`: Optional destination for `tag_tree_recs.json`.
+- `--branching-factor`: Maximum number of clusters per split (`n_clusters` passed to k-means).
+- `--max-leaf-size`: Leaf size threshold before splitting further.
+- `--random-state`: Seed controlling k-means initialisation.
+
+**Outputs**
+- `tag_tree_recs.json`: Hierarchical tree structure with leaf `tag_ids` lists.
+
+**Notices**
+- The script validates that the embedding rows match `tag_meta.json` length before clustering.
+- Uses `HierarchicalKMeans` under the hood; adjust `--branching-factor` and `--max-leaf-size` to tune tree shape.
+
 ## `build_representative_tags.py`
 
 Traverse the tag tree and populate representative tags for internal nodes using
