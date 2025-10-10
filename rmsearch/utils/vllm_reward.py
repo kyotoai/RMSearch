@@ -49,6 +49,12 @@ from datasets import Dataset
 import pandas as pd
 from tqdm import tqdm  # kept (not used in the new log system, but left to avoid breaking imports)
 
+from rmsearch._display import resolve_clear_output, should_enable_board, should_use_tqdm
+
+
+_clear_output = resolve_clear_output()
+_USE_TQDM = should_use_tqdm()
+
 
 def _append_checkpoint(path: Optional[str], record: Dict[str, Any]) -> None:
     """Append batch information to a JSONL checkpoint file."""
@@ -66,20 +72,15 @@ class _NotebookBoard:
 
     def __init__(self, num_workers: int):
         self.state = ["initializing…" for _ in range(num_workers)]
-        self._have_clear = False
         self._suppress_clear = False
         self._error_message: Optional[str] = None
-        try:
-            from IPython.display import clear_output  # type: ignore
-
-            self._clear_output = clear_output
-            self._have_clear = True
-        except Exception:
-            self._have_clear = False
+        self._enabled = should_enable_board()
+        self._dirty = True
 
     def update(self, wid: int, text: str):
         if 0 <= wid < len(self.state):
             self.state[wid] = text
+            self._dirty = True
         self.render()
 
     def disable_clear(self) -> None:
@@ -88,14 +89,16 @@ class _NotebookBoard:
     def set_error(self, message: str) -> None:
         self._error_message = message
         self.disable_clear()
-        self.render()
+        self._dirty = True
+        self.render(force=True)
 
-    def render(self) -> None:
-        if self._have_clear and not self._suppress_clear:
-            try:
-                self._clear_output(wait=True)
-            except Exception:
-                pass
+    def render(self, force: bool = False) -> None:
+        if not (force or self._enabled or self._error_message):
+            return
+        if not force and not self._dirty:
+            return
+        if self._enabled and not self._suppress_clear:
+            _clear_output(wait=True)
         if self._error_message is not None:
             print("== Worker error ==")
             print(self._error_message)
@@ -103,6 +106,7 @@ class _NotebookBoard:
             print("== Worker logs ==")
             for i, line in enumerate(self.state):
                 print(f"[Worker {i}] {line}")
+        self._dirty = False
         sys.stdout.flush()
 
 
@@ -195,7 +199,7 @@ def _worker_main(
                     prompts = payload["prompts"]
                     pp = payload.get("pooling_params", None)  # kept for compatibility
                     phase = "generating"
-                    outputs = llm.encode(prompts, pooling_task="embed", use_tqdm=False)
+                    outputs = llm.encode(prompts, pooling_task="embed", use_tqdm=_USE_TQDM)
 
                     embeds = torch.stack([out.outputs.data for out in outputs])
                     common_dtype = torch.float32
@@ -220,7 +224,7 @@ def _worker_main(
                     # Reward API path (not implemented previously for tqdm; keep semantics)
                     prompts = payload["prompts"]
                     phase = "generating"
-                    outputs = llm.reward(prompts)
+                    outputs = llm.reward(prompts, use_tqdm=_USE_TQDM)
                     result_q.put((job_id, item_idx, worker_id, {"outputs": outputs}))
                     done += 1
                     phase = "idle"
@@ -255,7 +259,7 @@ class LLMWorker:
         self.ctx = mp.get_context("spawn")
         self.model = model
         self.device_groups = device_groups
-        self.llm_kwargs = llm_kwargs
+        self.llm_kwargs = dict(llm_kwargs)
         self.result_q: mp.Queue = self.ctx.Queue()
         self.task_queues: List[mp.Queue] = [
             self.ctx.Queue(maxsize=max_request_per_worker) for _ in device_groups
@@ -271,7 +275,7 @@ class LLMWorker:
         for wid, devs in enumerate(device_groups):
             p = self.ctx.Process(
                 target=_worker_main,
-                args=(wid, devs, model, llm_kwargs, self.task_queues[wid], self.result_q),
+                args=(wid, devs, model, dict(self.llm_kwargs), self.task_queues[wid], self.result_q),
                 daemon=False,
             )
             p.start()
@@ -330,8 +334,6 @@ class LLMWorker:
         chunk_results: Dict[int, Any] = {}
         deadline = time.time() + timeout_s if timeout_s else None
         poll = 0.2  # seconds
-
-        print("3")  # keep original debug print
 
         def try_submit(next_idx: int) -> bool:
             nonlocal rr

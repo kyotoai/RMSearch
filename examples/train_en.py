@@ -101,6 +101,7 @@ def setup_async_engine() -> Tuple[Any, Any]:
     return engine, tokenizer
 
 
+# This doesn't work in >vllm==1.10.0
 class AllRequests:
     """Direct port of the notebook helper that fans prompts out to vLLM."""
 
@@ -239,19 +240,22 @@ def process_data() -> None:
     output_dir = DATA_OUTPUT_ROOT / save_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # This was necesary for some dataset. Normally it's not needed
     features = Features({
         "index": Value("int64"),
         "text": Value("string"),
     })
 
+    # Remove comment out or modify here if you need
     ds = load_dataset(
         dataset_name,
-        name=DATASET_CONFIG,
-        split=DATA_SPLIT,
-        features=features,
+        #name=DATASET_CONFIG,
+        #split=DATA_SPLIT,
+        #features=features,
     )
-    if "index" in ds.column_names:
-        ds = ds.remove_columns("index")
+
+    #if "index" in ds.column_names:
+    #    ds = ds.remove_columns("index")
 
     ds = ds.shuffle(seed=RANDOM_SEED)
 
@@ -800,9 +804,9 @@ def rm_assign_keys() -> None:
 
     query2tag_ids, tag2query = asyncio.run(search_tag(key_dict, tag_dict))
 
-    with (workspace_data_dir / "query2tag_ids-tag_tree.json").open("w") as f:
+    with (workspace_data_dir / "query2tag_ids.json").open("w") as f:
         json.dump(query2tag_ids, f)
-    with (workspace_data_dir / "tag2query-tag_tree.json").open("w") as f:
+    with (workspace_data_dir / "tag2query.json").open("w") as f:
         json.dump(tag2query, f)
 
     print("All Finished")

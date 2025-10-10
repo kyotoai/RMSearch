@@ -4,6 +4,7 @@ trl==0.14.0
 peft
 pandas
 matplotlib
-vllm #==0.6.5
+#vllm==0.6.5
+vllm
 evaluate
 sentence_transformers

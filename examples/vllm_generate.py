@@ -1,8 +1,20 @@
 # vllm_generate.py
+import json
 import os, time, uuid, signal, traceback, queue
 import multiprocessing as mp
 from typing import List, Tuple, Dict, Any, Optional
 from vllm import LLM, SamplingParams
+
+
+def _append_checkpoint(path: Optional[str], record: Dict[str, Any]) -> None:
+    """Append batch-level outputs to a JSONL checkpoint file."""
+    if not path:
+        return
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record) + "\n")
 
 def _worker_main(
     worker_id: int,
@@ -85,6 +97,7 @@ class LLMWorkerPool:
         sampling_params: Optional[SamplingParams] = None,
         batch_size: int = 8,
         timeout_s: Optional[float] = None,
+        checkpoint_path: Optional[str] = None,
     ) -> List[str]:
         if sampling_params is None:
             sampling_params = SamplingParams(max_tokens=32, temperature=0.7, top_p=0.95)
@@ -115,8 +128,24 @@ class LLMWorkerPool:
             if rid != job_id:
                 continue
             if "error" in payload:
-                raise RuntimeError(f"Worker error in batch {item_idx}: {payload['error']}")
-            chunk_results[item_idx] = payload["texts"]
+                error_msg = f"Worker error in batch {item_idx}: {payload['error']}"
+                print(error_msg, flush=True)
+                raise RuntimeError(error_msg)
+            texts = payload["texts"]
+            chunk_results[item_idx] = texts
+
+            if checkpoint_path:
+                _, batch_prompts = zip(*chunks[item_idx])
+                _append_checkpoint(
+                    checkpoint_path,
+                    {
+                        "job_id": job_id,
+                        "batch_index": item_idx,
+                        "indices": [idx for idx, _ in chunks[item_idx]],
+                        "prompts": list(batch_prompts),
+                        "outputs": texts,
+                    },
+                )
             pending -= 1
 
         outputs: List[Optional[str]] = [None] * len(prompts)
