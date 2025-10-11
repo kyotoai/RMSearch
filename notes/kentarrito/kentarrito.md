@@ -258,13 +258,42 @@
   - [ ] Debug make_tag_tree.py
 
 
-## Oct 10
+## Oct 10, 11
 
-- [ ] Make tag graph
-  - [ ] 
+- [x] Make checkpoint branch -> Merge pull request #6
+
+- [ ] Make rmsearch/graph
+  - [x] Think about /notes/reference/graph_update_methods.md
+  * there are 3 layers to optimize graph, improving tag, adding new edge and training rm for searching tags
+  * for improving tag, llm should make extra representative tags and rm should pick some which fits children and conflicts with other children
+  * for adding new edge, using retrieval dataset to find relevant but distant tags and connecting their parents to each tag is good way to update conflicted tag graph
+  - [ ] Think what files to build
+  * generate_tag.py, embed_tags.py, make_tag_graph.py, build_representative_tags_v2.py, search_key_graph.py, assign_key_graph.py
+    - [x] Decide graph architecture (refer to ## make_tag_graph.py)
+    * parquet is efficient to search
+    * it basically saves {node -> children} for all node
+    * if adding information about edge (like weight), need to add edge.parquet or edges column
+    * BE CAREFUL THAT there can be mutual nodes. Search function should care about it.
+    - [ ] Start from writing ## build_representative_tags_v2.py in the README.md
+  - [ ] Make prompt to code first sample in rmsearch/graph
+  ```
+
+  ```
+
+## Oct 11
+
+- [ ] Make rmsearch/agents
+  - [ ] Design workflow with Cameron
+  * 
+  - [ ] Make code to delete functions and make dataset
+  - [ ] Make code to evaluate a code (make test code)
 
 
-- [ ] Make checkpoint branch
+
+
+
+
+
 - [ ] Implement gpt-oss instead of qwen7b (qwen7b has sometimes lower performance in tag generation)
 
 - [ ] Train reward model
@@ -273,9 +302,3 @@
   - [ ] Add more dataset
   - [ ] Advanced DPO batching
   - [ ] GPU parallel for training with deepspeed
-
-
-
-
-
-
