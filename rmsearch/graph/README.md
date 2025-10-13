@@ -9,7 +9,9 @@ All commands expect a GPU environment with access to the required models.
 
 ## Overview
 
-(add exlanations refering to rmsearch/train/README.md)
+Steps that generate tags, embeddings, and the initial tree remain documented in
+`rmsearch/train/README.md`. The sections below describe how the graph-specific
+modules extend those artifacts for assignment and search.
 
 ## `generate_tag.py`
 
@@ -116,7 +118,9 @@ python -m rmsearch.tree.make_tag_tree \
 ## `build_representative_tags_v2.py`
 
 Traverse the tag tree and populate representative tags for internal nodes using
-vLLM generation.
+vLLM generation. The v2 prompt samples up to `--max-sample-children` tags from
+the branch itself and `--max-sample-other` contrast tags from elsewhere in the
+tree so the model produces longer, more specific labels.
 
 ```bash
 python -m rmsearch.graph.build_representative_tags_v2 \
@@ -136,7 +140,6 @@ python -m rmsearch.graph.build_representative_tags_v2 \
 - `--max-sample-other`: Number of counter samples from other tag's children.
 - `--tensor-parallel-size`, `--num-instances`, `--device-groups`: Worker topology.
 - `--worker-batch-size`, `--timeout`, `--temperature`, `--top-p`, `--max-tokens`: Sampling controls.
-- `--n-tag-sample`: Number of child tags sampled when summarising parent nodes.
 - `--gpu-memory-utilization`, `--max-model-len`, `--dtype`, `--trust-remote-code`: Options forwarded to `vllm.LLM`.
 
 **Outputs**
@@ -190,7 +193,7 @@ python -m rmsearch.tree.convert_tree_to_graph \
 
 ## `assign_key_graph.py`
 
-Assign free-form queries to the tag graph using the reward-model scoring helper.
+Assign free-form keys to the tag graph using the reward-model scoring helper.
 
 ```bash
 python -m rmsearch.graph.assign_key_graph \
@@ -203,17 +206,17 @@ python -m rmsearch.graph.assign_key_graph \
 
 **Arguments**
 - `--tag-graph`: Tag graph parquet produced earlier.
-- `--keys-json` / `--keys-csv`: Input queries (list of strings or objects containing `"key"`); for CSV, use `--key-column` to select the column.
-- `--key2tag-out`: parquet file storing the best path IDs per query.
-- `--tag2key-out`: parquet file storing the augmented tree with `key_ids` annotations.
-- `--model-name`: Reward model checkpoint used for scoring query/tag pairs.
+- `--keys-json` / `--keys-csv`: Input key texts (strings or objects containing `"text"`/`"key"`); for CSV, use `--key-column` to select the column.
+- `--key2tag-out`: Parquet file storing the best path IDs per key.
+- `--tag2key-out`: Parquet file storing the augmented tree with `key_ids` annotations.
+- `--model-name`: Reward model checkpoint used for scoring key/tag pairs.
 - `--tensor-parallel-size`, `--num-instances`, `--device-groups`: Reward worker placement.
 - `--batch-size`, `--timeout`: Search helper parameters.
 - `--k-tag`: Number of top tags explored at each level.
 
 **Outputs**
-- `key2tag_ids.parquet`: List of `{ "tag_ids": [[...]] }` structures per query.
-- `tag2key_ids.parquet`: Tag graph annotated with `tag_ids` for downstream retrieval.
+- `key2tag_ids.parquet`: List of `{ "key_id": <int>, "tag_ids": [[...]] }` structures per key.
+- `tag2key_ids.parquet`: Tag graph annotated with `key_ids` for downstream retrieval.
 - Example `tag2key_ids.parquet` item:
   ```
   {
@@ -231,8 +234,9 @@ python -m rmsearch.graph.assign_key_graph \
   ```
 
 **Notices**
-- Queries should mirror the prompts produced by `make_queries.py` or whatever
-  downstream text you intend to route through the tree.
+- Keys are routed level by level: each key text is compared against sibling tags,
+  and the best path is recorded in `key2tag_ids.parquet` while `tag2key_ids.parquet`
+  accumulates unique key identifiers per node.
 - The reward model must be converted to the inference format expected by
   `rmsearch.utils.vllm_reward`.
 
@@ -243,7 +247,8 @@ python -m rmsearch.graph.assign_key_graph \
 ## `search_key_graph.py`
 
 Route queries through the tag graph and re-rank their candidate keys with the
-reward model.
+reward model. Queries are matched to tag paths first; the collected candidate
+keys are then scored to produce the final ranking per query.
 
 ```bash
 python -m rmsearch.graph.search_key_graph \
@@ -268,7 +273,7 @@ python -m rmsearch.graph.search_key_graph \
 - `--tensor-parallel-size`, `--num-instances`: Worker layout for the reward model.
 - `--k-tag`, `--k-key`: Tag branching factor and final top-k keys per query.
 - `--output`: Optional path to persist the ranked results as JSON.
-- `--checkpoint`: Optional directory that caches intermediate `search_fn` responses for reuse.
+- `--fallback-key-sample`: Maximum number of keys scored when a tag path does not yet expose `key_ids`.
 - `--max-model-len`, `--max-num-seqs`, `--gpu-memory-utilization`: vLLM runtime limits.
 
 **Outputs**
@@ -276,27 +281,12 @@ python -m rmsearch.graph.search_key_graph \
 - With `--output`, writes a pretty-printed JSON file mirroring the console payload.
 
 **Notices**
-- When input paths are omitted, the script falls back to a small in-memory sample.
-- Ensure the tag graph is aligned with the key indices you pass via `--keys`.
-- Checkpoint caching skips repeated vLLM calls when the cached JSON files already exist.
-
-
-
-
-## `hierarchical_kmeans.py`
-
-This module exposes the `HierarchicalKMeans` class used inside notebooks to
-construct the initial tree structure. It does not expose a CLI, but you can
-instantiate it from Python to cluster embeddings prior to running the steps
-above.
-
-```python
-from rmsearch.tree.hierarchical_kmeans import HierarchicalKMeans
-```
-
-**Notices**
-- Requires scikit-learn, NumPy, and PyTorch. Use it offline to build the initial
-  tree dictionary (`tag_tree_recs.json`).
+- If the provided graph lacks `key_ids`, the script first assigns keys by
+  routing the key texts themselves, ensuring candidate sets are available.
+- When no candidates are attached to a path, the model scores up to
+  `--fallback-key-sample` keys to keep recall reasonable while bounding cost.
+- Matching assumes the key ordering in the parquet file aligns with the order of
+  keys loaded from `--keys`.
 
 
 
@@ -341,7 +331,8 @@ python -m rmsearch.train.make_query_recs \
 
 ## `add_edges_by_query_key_set.py`
 
-Bridge tag to tag so that reward model can search key from query. 
+Bridge tag paths with additional key assignments so the reward model can more
+reliably surface keys for incoming queries.
 
 ```bash
 python -m rmsearch.graph.add_edges_by_query_key_set \
@@ -360,26 +351,32 @@ python -m rmsearch.graph.add_edges_by_query_key_set \
   --gpu-memory-utilization 0.90
 ```
 
+**Algorism**
+1. Route each query through the tag graph to capture the tag paths it prefers.
+2. Rank the full key set for every query and keep the top `--k-key` hits.
+3. Attach those key identifiers to every tag visited along the query path so
+   later searches see the same candidates without recomputing.
+
 **Arguments**
+- `--keys-file`: CSV/JSON file with key texts; use `--key-column` when reading CSV.
 - `--queries`: JSON file containing query strings (plain list or objects with `"query"`).
-...
 - `--tag2key`: Tag graph parquet where nodes include `"tag_id"`, `"tag"`, `"children_tag_ids"` and optional `"key_ids"`.
+- `--output`: Destination parquet file for the updated graph.
 - `--model-name`: Reward model checkpoint or identifier.
-- `--tensor-parallel-size`, `--num-instances`: Worker layout for the reward model.
-- `--k-tag`, `--k-key`: Tag branching factor and final top-k keys per query.
-- `--output`: Optional path to persist the ranked results as JSON.
-- `--checkpoint`: Optional directory that caches intermediate `search_fn` responses for reuse.
+- `--tensor-parallel-size`, `--num-instances`, `--device-groups`: Reward worker placement.
+- `--batch-size`, `--timeout`: Search helper parameters.
+- `--k-tag`, `--k-key`: Tag branching factor and the number of keys attached per query.
 - `--max-model-len`, `--max-num-seqs`, `--gpu-memory-utilization`: vLLM runtime limits.
 
 **Outputs**
-- Improved tag2key where new edges (more children_tag_ids) are added to connect query to key.
+- Updated tag2key parquet where tags visited by queries now include the high
+  scoring key identifiers from those queries.
 
 **Notices**
-
-
-
-
-
+- Queries should mirror the prompts produced by `make_query_recs.py` or whatever
+  downstream workload you intend to support.
+- Keys are appended to every tag along the routed path, so ancestors can surface
+  the same candidates during retrieval without another reward-model pass.
 
 
 

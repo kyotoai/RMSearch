@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
-
-import argparse
 
 from vllm import SamplingParams
 
 from rmsearch.utils.vllm_generate import LLMWorkerModel, build_llm
 
 __all__ = [
+    "build_representative_tags_v2",
     "build_representative_tags",
     "set_representative_tag",
     "get_node_by_path",
@@ -56,12 +56,25 @@ def is_leaf(node: Dict[str, Any]) -> bool:
 def _prepare_requests(
     tag_tree_recs: List[Dict[str, Any]],
     *,
-    n_tag_sample: int,
+    max_sample_children: int,
+    max_sample_other: int,
 ) -> Tuple[List[Dict[str, Any]], bool]:
     """Collect prompts for parents whose children already have tags."""
 
     pending: List[Dict[str, Any]] = []
     progress_made = False
+
+    def _dedupe(items: Sequence[str]) -> List[str]:
+        seen: set[str] = set()
+        ordered: List[str] = []
+        for item in items:
+            if not item:
+                continue
+            if item in seen:
+                continue
+            seen.add(item)
+            ordered.append(item)
+        return ordered
 
     def ensure_leaf_tags(node: Dict[str, Any]) -> None:
         nonlocal progress_made
@@ -73,6 +86,26 @@ def _prepare_requests(
         else:
             for child in node.get("children", []):
                 ensure_leaf_tags(child)
+
+    def collect_tags(node: Dict[str, Any]) -> List[str]:
+        tags: List[str] = []
+        tag_val = node.get("tag")
+        if tag_val:
+            tags.append(tag_val)
+        for child in node.get("children", []):
+            tags.extend(collect_tags(child))
+        return tags
+
+    def collect_tags_from_list(nodes: Sequence[Dict[str, Any]]) -> List[str]:
+        collected: List[str] = []
+        for node in nodes:
+            collected.extend(collect_tags(node))
+        return collected
+
+    synthetic_root = {"children": tag_tree_recs}
+    ensure_leaf_tags(synthetic_root)
+
+    all_tags = _dedupe(collect_tags_from_list(tag_tree_recs))
 
     def enqueue(node_list: List[Dict[str, Any]], path: List[int]) -> None:
         for idx, child in enumerate(node_list):
@@ -90,22 +123,38 @@ def _prepare_requests(
         if len(child_tags) != len(node_list):
             return
 
-        sample = child_tags if len(child_tags) <= n_tag_sample else random.sample(child_tags, n_tag_sample)
-        if not sample:
-            sample = ["general"]
-        lines = "\n".join(f"- {tag}" for tag in sample)
+        child_tags = _dedupe(child_tags)
+        if not child_tags:
+            child_tags = ["general"]
+        if len(child_tags) > max_sample_children:
+            sampled_children = random.sample(child_tags, max_sample_children)
+        else:
+            sampled_children = child_tags
+
+        subtree_tags = _dedupe(collect_tags(parent))
+        contrast_pool = [tag for tag in all_tags if tag not in subtree_tags]
+        if contrast_pool:
+            if len(contrast_pool) > max_sample_other:
+                sampled_contrast = random.sample(contrast_pool, max_sample_other)
+            else:
+                sampled_contrast = contrast_pool
+        else:
+            sampled_contrast = ["general"]
+
+        child_lines = "\n".join(f"- {tag}" for tag in sampled_children)
+        contrast_lines = "\n".join(f"- {tag}" for tag in sampled_contrast)
         prompt = (
-            "You are a taxonomy expert. Given the following sample tags from one cluster,\n"
-            "produce ONE concise representative tag (≤ 6 words) that best describes them all.\n"
-            "Do NOT include punctuation at the end. Output ONLY the tag text, nothing else.\n\n"
-            f"Sample tags:\n{lines}\n\nRepresentative tag:"
+            "You are curating a hierarchical taxonomy. Review the child tags belonging to a single cluster\n"
+            "and craft ONE descriptive representative tag (7-12 words) that captures their shared theme.\n"
+            "Use the contrast tags to avoid overly generic wording. Return only the representative tag text,\n"
+            "without punctuation or additional commentary.\n\n"
+            f"Child sample tags:\n{child_lines}\n\n"
+            f"Contrast tags from other clusters:\n{contrast_lines}\n\n"
+            "Representative tag:"
         )
         pending.append({"path": path, "prompt": prompt})
 
-    synthetic_root = {"children": tag_tree_recs}
-    ensure_leaf_tags(synthetic_root)
     enqueue(tag_tree_recs, [])
-
     return pending, progress_made
 
 
@@ -116,9 +165,14 @@ def _run_iteration(
     sampling_params: SamplingParams,
     worker_batch_size: int,
     timeout_s: Optional[float],
-    n_tag_sample: int,
+    max_sample_children: int,
+    max_sample_other: int,
 ) -> Tuple[List[Dict[str, Any]], bool]:
-    pending, progress_made = _prepare_requests(tag_tree_recs, n_tag_sample=n_tag_sample)
+    pending, progress_made = _prepare_requests(
+        tag_tree_recs,
+        max_sample_children=max_sample_children,
+        max_sample_other=max_sample_other,
+    )
 
     if not pending and not progress_made:
         return tag_tree_recs, True
@@ -131,12 +185,11 @@ def _run_iteration(
             batch_size=worker_batch_size,
             timeout_s=timeout_s,
         )
-
         if len(outputs) != len(pending):
             raise RuntimeError("vLLM worker returned mismatched number of outputs")
 
-        for entry, output in zip(pending, outputs):
-            tag_text = extract_text(output, "tag") or output.strip()
+        for entry, output_text in zip(pending, outputs):
+            tag_text = extract_text(output_text, "tag") or output_text.strip()
             tag_text = tag_text or "general"
             set_representative_tag(tag_tree_recs, entry["path"], tag_text)
 
@@ -154,16 +207,46 @@ def build_representative_tags(
     sampling_params: Optional[SamplingParams] = None,
     worker_batch_size: int = 8,
     timeout_s: Optional[float] = None,
-    n_tag_sample: int = 6,
-    save_path: Optional[str | Path] = None,
+    max_sample_children: int = 20,
+    max_sample_other: int = 20,
+    save_path: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """Iteratively populate parent ``tag`` fields using a vLLM worker pool.
+    return build_representative_tags_v2(
+        tag_tree_recs,
+        model_name=model_name,
+        tensor_parallel_size=tensor_parallel_size,
+        num_instances=num_instances,
+        device_groups=device_groups,
+        llm_kwargs=llm_kwargs,
+        sampling_params=sampling_params,
+        worker_batch_size=worker_batch_size,
+        timeout_s=timeout_s,
+        max_sample_children=max_sample_children,
+        max_sample_other=max_sample_other,
+        save_path=save_path,
+    )
 
-    ``tag_tree_recs`` structure -> ``[{"tag": str, "tags": [str], "children": [...]}]``.
-    """
 
-    sampling = sampling_params or SamplingParams(temperature=0.0, top_p=0.9, max_tokens=32)
-    llm_kwargs = llm_kwargs or {}
+def build_representative_tags_v2(
+    tag_tree_recs: List[Dict[str, Any]],
+    *,
+    model_name: str,
+    tensor_parallel_size: int = 1,
+    num_instances: int = 1,
+    device_groups: Optional[List[List[int]]] = None,
+    llm_kwargs: Optional[Dict[str, Any]] = None,
+    sampling_params: Optional[SamplingParams] = None,
+    worker_batch_size: int = 8,
+    timeout_s: Optional[float] = None,
+    max_sample_children: int = 20,
+    max_sample_other: int = 20,
+    save_path: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    if llm_kwargs is None:
+        llm_kwargs = {}
+
+    if sampling_params is None:
+        sampling_params = SamplingParams(temperature=0.0, top_p=0.9, max_tokens=32)
 
     model = build_llm(
         model_name=model_name,
@@ -179,10 +262,11 @@ def build_representative_tags(
             tag_tree_recs, converged = _run_iteration(
                 tag_tree_recs,
                 model=model,
-                sampling_params=sampling,
+                sampling_params=sampling_params,
                 worker_batch_size=worker_batch_size,
                 timeout_s=timeout_s,
-                n_tag_sample=n_tag_sample,
+                max_sample_children=max_sample_children,
+                max_sample_other=max_sample_other,
             )
     finally:
         model.close()
@@ -193,10 +277,6 @@ def build_representative_tags(
         with path_obj.open("w", encoding="utf-8") as handle:
             json.dump(tag_tree_recs, handle, ensure_ascii=False, indent=2)
 
-    # tag_tree_recs (list): hierarchical structure where each node resembles
-    #   {"tag": "<representative label>",
-    #    "tags": ["<leaf tag>", ...] (only present for leaves),
-    #    "children": [<child nodes>] (omitted on leaves)}.
     return tag_tree_recs
 
 
@@ -246,7 +326,18 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature for prompt generation.")
     parser.add_argument("--top-p", type=float, default=0.9, help="Sampling top_p value.")
     parser.add_argument("--max-tokens", type=int, default=32, help="Maximum tokens generated per prompt.")
-    parser.add_argument("--n-tag-sample", type=int, default=6, help="Number of child tags to include in each prompt.")
+    parser.add_argument(
+        "--max-sample-children",
+        type=int,
+        default=20,
+        help="Maximum number of child tags to include in each prompt.",
+    )
+    parser.add_argument(
+        "--max-sample-other",
+        type=int,
+        default=20,
+        help="Maximum number of contrast tags sampled from other branches.",
+    )
     args = parser.parse_args()
 
     if not args.tag_tree.exists():
@@ -278,7 +369,7 @@ if __name__ == "__main__":
 
     output_path = args.output or args.tag_tree
 
-    updated_tree = build_representative_tags(
+    updated_tree = build_representative_tags_v2(
         tag_tree,
         model_name=args.model_name,
         tensor_parallel_size=args.tensor_parallel_size,
@@ -288,7 +379,8 @@ if __name__ == "__main__":
         sampling_params=sampling,
         worker_batch_size=args.worker_batch_size,
         timeout_s=args.timeout,
-        n_tag_sample=args.n_tag_sample,
+        max_sample_children=args.max_sample_children,
+        max_sample_other=args.max_sample_other,
         save_path=str(output_path),
     )
 

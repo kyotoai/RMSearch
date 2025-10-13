@@ -3,7 +3,7 @@
 ## README -> code files
 
 ```
-Refering to rmsearch/---/README.md, make files in ---/ folder. If there is something ambiguous or some logical conflict in the readme, ask some questions to me before you make the files. Also update readme for clearer expressions and less ambiguity.
+Refering to rmsearch/---/README.md, make files in ---/ folder. If there is something ambiguous or some logical conflict in the readme, ask some questions to me before you make the files. Also update readme by adding more sentences or improving text for clearer expressions and less ambiguity. Don't change or delete lines in readme so much.
 ```
 
 
