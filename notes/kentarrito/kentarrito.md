@@ -280,13 +280,12 @@
 
   ```
 
-## Oct 11
+## Oct 13
 
 - [ ] Make rmsearch/agents
-  - [ ] Design workflow with Cameron
-  * 
-  - [ ] Make code to delete functions and make dataset
-  - [ ] Make code to evaluate a code (make test code)
+  - [x] Design workflow and make readme in rmsearch/agents
+  - [x] codex generates it based on the readme.
+  - [ ]
 
 
 
@@ -302,3 +301,9 @@
   - [ ] Add more dataset
   - [ ] Advanced DPO batching
   - [ ] GPU parallel for training with deepspeed
+
+
+
+
+
+
