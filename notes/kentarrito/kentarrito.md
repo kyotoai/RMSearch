@@ -285,7 +285,12 @@
 - [ ] Make rmsearch/agents
   - [x] Design workflow and make readme in rmsearch/agents
   - [x] codex generates it based on the readme.
-  - [ ]
+  - [ ] Debug them
+    - [x] make_agents.py
+    - [ ] make_evaluation_dataset_code.py
+    - [ ] llm_inference.py
+
+  
 
 
 

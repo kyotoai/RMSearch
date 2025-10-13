@@ -14,8 +14,8 @@ Generate agents to make inference.
 
 ```bash
 python -m rmsearch.agents.make_agents \
-  --prompts-dir ./agents/generate_agents/example/ \
-  --n-agents 5
+  --prompts-dir RMSearch/rmsearch/agents/generate_agents/example/ \
+  --n-agents 1 \
   --output ./agents/agent_records.json \
   --model-name /workspace/qwen4b \
   --tensor-parallel-size 1 \
@@ -60,7 +60,7 @@ python -m rmsearch.agents.make_agents \
 
 ```bash
 python -m rmsearch.agents.make_evaluation_dataset_code \
-  --code-dir ./agents/code \
+  --code-dir ./code \
   --output ./agents/dataset.json \
   --model-name /workspace/qwen4b \
   --tensor-parallel-size 1 \
@@ -77,7 +77,6 @@ python -m rmsearch.agents.make_evaluation_dataset_code \
 |   |- ...
 ```
 - `--output`: Destination JSON file for dataset.
-    
 - `--model-name`: Generation model checkpoint.
 - `--tensor-parallel-size`, `--num-instances`, `--device-groups`: Control worker topology; `--device-groups` accepts strings like `"0,1;2,3"`.
 - `--worker-batch-size`, `--timeout`, `--temperature`, `--top-p`, `--max-tokens`: Sampling and scheduling knobs.

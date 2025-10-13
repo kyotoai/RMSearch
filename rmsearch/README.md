@@ -6,15 +6,23 @@ support tooling used throughout the RMSearch notebooks. This document maps the
 most important entry points to their implementation files so you can jump
 directly into the code when customising or debugging the pipeline.
 
-## Installation & Import
+## Download
 
+### For users
 ```bash
-pip install -e .  # from the repository root
+git clone https://github.com/kyotoai/RMSearch.git
 ```
 
-```python
-from rmsearch import Search, RMTrainer
+### For developpers
+```bash
+git clone --branch develop https://github.com/kyotoai/RMSearch.git
 ```
+
+## Installation
+```bash
+pip install -e RMSearch/.
+```
+
 
 Both classes assume you have locally available model checkpoints and a GPU
 environment with CUDA-visible devices.
