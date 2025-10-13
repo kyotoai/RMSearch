@@ -258,7 +258,7 @@
   - [ ] Debug make_tag_tree.py
 
 
-## Oct 10, 11
+## Oct 10, 11, 13
 
 - [x] Make checkpoint branch -> Merge pull request #6
 
@@ -274,7 +274,7 @@
     * it basically saves {node -> children} for all node
     * if adding information about edge (like weight), need to add edge.parquet or edges column
     * BE CAREFUL THAT there can be mutual nodes. Search function should care about it.
-    - [ ] Start from writing ## build_representative_tags_v2.py in the README.md
+    - [x] Start from writing ## build_representative_tags_v2.py in the README.md
   - [ ] Make prompt to code first sample in rmsearch/graph
   ```
 
@@ -291,7 +291,7 @@
     - [ ] llm_inference.py
 
 - [ ] Develop rmsearch/graph
-  - [ ] Modify README.md
+  - [x] Modify rmsearch/graph/README.md
   - [ ] Code files by codex
   - [ ] Debug them
 
@@ -301,6 +301,10 @@
 
 
 - [ ] Implement gpt-oss instead of qwen7b (qwen7b has sometimes lower performance in tag generation)
+- [ ] Implement vllm serve
+- [ ] Implement llm api call
+- [ ] Implement rm api call
+- [ ] update rmsearch.py
 
 - [ ] Train reward model
   - [ ] (Mingk) Make system to set aruguana as test dataset
