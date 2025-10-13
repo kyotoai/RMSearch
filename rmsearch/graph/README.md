@@ -142,14 +142,14 @@ vLLM generation.
 
 ```bash
 python -m rmsearch.graph.build_representative_tags_v2 \
-  --tag-tree ./data/smollm-corpus/tag_tree_recs.json \
+  --graph ./data/smollm-corpus/graph.parquet \
   --model-name /workspace/qwen4b \
   --max-model-len 10_000 \
   --output ./data/smollm-corpus/tag_tree_recs.json
 ```
 
 **Arguments**
-- `--tag-tree`: Existing tag tree JSON (leaf nodes should already have `tags`).
+- `--graph`: Existing tag graph parquet (leaf nodes should already have `tags`).
 - `--output`: File to overwrite or create with enriched tags (defaults to input path).
 - `--model-name`: Generation checkpoint for tag summarisation.
 - `--tensor-parallel-size`, `--num-instances`, `--device-groups`: Worker topology.
