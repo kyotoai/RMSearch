@@ -68,9 +68,20 @@ python -m rmsearch.agents.make_evaluation_dataset_code \
   --max-model-len 10_000
 ```
 
+**Algorism**
+1. Walk inside the code_dir and get all code files in any language.
+2. LLM decides lines to drop in all the files inside the code_dir, and output list of task to fill the dropped lines. 
+3. Dropped lines typically include:
+  * Important lines of code for some algorism
+  * Functions to do some task
+  * Classes to work for some task
+4. The task list should be varient ranged from precise to ambiguous. Make different expressions for the same task. 
+
+
 **Arguments**
 - `--code-dir`: Code files are inside the directory.
 ```
+code
 |- code1
 |   |- ...
 |- code2
@@ -83,21 +94,21 @@ python -m rmsearch.agents.make_evaluation_dataset_code \
 - `--gpu-memory-utilization`, `--max-model-len`, `--dtype`, `--trust-remote-code`: Options forwarded to `vllm.LLM`.
 
 **Outputs**
-- `datatset.json`: List of dictionaries with `task`, `dir_path` and `correct_answer`.
+- `datatset.json`: List of dictionaries with `tasks`, `code_dir`, `dir_path` and `dropped_lines`.
 - Example JSON
 ```
 [
     {
-        "task": "Implement ...?",
-        "dir_path": "./agents/code/gkvp",
-        "correct_answer": "..."
+        "tasks": ["Implement ...", "How to add ... ?", ...],
+        "code_dir": "code1"
+        "file_path": "./code/code1/fileA",
+        "dropped_lines": [23, 24, ...],
     },
     ...
 ]
 ```
 
 **Notices**
-- This file intentionally deletes some functions inside code and make task to code the deleted part.
 
 
 

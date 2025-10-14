@@ -288,6 +288,7 @@
   - [ ] Debug them
     - [x] make_agents.py
     - [ ] make_evaluation_dataset_code.py
+      - [x] add algorism to readme
     - [ ] llm_inference.py
 
 - [ ] Develop rmsearch/graph
