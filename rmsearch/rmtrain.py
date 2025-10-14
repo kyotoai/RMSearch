@@ -16,12 +16,49 @@ from datasets import Dataset, load_dataset, load_from_disk
 from transformers import AutoModelForSequenceClassification,AutoTokenizer,TrainingArguments,AutoConfig,AutoModelForCausalLM
 
 
+from transformers import TrainerCallback, TrainingArguments, Trainer
+
+from transformers import TrainerCallback
+
+from transformers import TrainerCallback
+
+class StageCheckOnStepCallback(TrainerCallback):
+    """
+    A robust callback that checks for the DeepSpeed engine and forces its output to flush.
+    """
+    _tag_names = ["stage-checker"]
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        if state.global_step == 0:
+            trainer = kwargs.get("trainer")
+            if trainer and trainer.is_world_process_zero():
+                # Use flush=True to bypass the output buffer
+                print("\n" + "="*80, flush=True)
+                print("--- DEEPSPEED STAGE CHECK (ON FIRST STEP) ---", flush=True)
+                
+                deepspeed_engine = getattr(trainer, "deepspeed", None)
+                
+                if deepspeed_engine:
+                    print(f"✅ SUCCESS: Engine found. ZeRO Stage: {deepspeed_engine.zero_stage}", flush=True)
+                else:
+                    print("❌ FAILURE: Engine not found.", flush=True)
+                print("="*80 + "\n", flush=True)
+
 
 class CustomRewardTrainer(RewardTrainer):
     _tag_names = ["trl", "reward-trainer"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        print("--- Post-Init DeepSpeed Engine Check ---")
+        deepspeed_engine = getattr(self, "deepspeed", None)
+        if deepspeed_engine:
+            print("Successfully found DeepSpeed engine.")
+            print(f"ZeRO stage: {deepspeed_engine.zero_stage}")
+        else:
+            print("DeepSpeed engine not found after initialization.")
+        print("--- End Check ---")
 
     def train(self, *args, **kwargs): # You need this because it will use RewardTrainer compute_loss method without this. To use a subclass function, some method in the subclass must be called from main directly. 
         return super().train(*args, **kwargs)
@@ -208,7 +245,7 @@ class RMTrainer:
                 evaluation_strategy="steps",
                 eval_steps=20,
                 eval_on_start=True,
-                save_steps=20,
+                save_steps=10,
                 logging_steps=1,
                 num_train_epochs = 3,
                 report_to=None,
@@ -260,6 +297,8 @@ class RMTrainer:
             num_trash = len(formatted_dataset["test"])%(self.num_gpus*training_args.per_device_train_batch_size)
             formatted_dataset["test"] = formatted_dataset["test"].select(range(len(formatted_dataset["test"])-num_trash))
             
+        stage_check_callback = StageCheckOnStepCallback()
+
         if trainer_cls:
             trainer = trainer_cls(
                 model=self.model,
@@ -268,6 +307,7 @@ class RMTrainer:
                 train_dataset=formatted_dataset["train"],
                 eval_dataset=formatted_dataset["test"],
                 data_collator=data_collator,
+                callbacks=[stage_check_callback]
                 #peft_config=peft_config,
             )
         else:
@@ -279,12 +319,13 @@ class RMTrainer:
                 tokenizer=self.tokenizer,
                 train_dataset=formatted_dataset["train"],
                 eval_dataset=formatted_dataset["test"],
+                callbacks=[stage_check_callback]
                 #data_collator=custom_data_collator,
                 #peft_config=peft_config,
             )
             
         accelerator = trainer.accelerator
-        self.model = self.model.to(accelerator.device)
+        # self.model = self.model.to(accelerator.device)
         
         train_output = trainer.train()
 

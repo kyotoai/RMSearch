@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import deepspeed
 import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
@@ -137,7 +138,7 @@ def train_reward_model(
     formatted_dataset = rmtrainer.prepare_dataset(
         dataset_list,
         base_dir=base_dir,
-        test_size=100,
+        test_size=20,
         formatting_func=formatting_func,
     )
 
@@ -152,16 +153,17 @@ def train_reward_model(
 
     training_args = RewardConfig(
         output_dir=str(output_dir),
-        per_device_train_batch_size=3,
-        per_device_eval_batch_size=2,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=4,
         eval_strategy="steps",
         eval_steps=40,
-        eval_on_start=True,
-        save_steps=20,
+        # eval_on_start=True,
+        save_steps=10,
         logging_steps=1,
         num_train_epochs=50,
         report_to=None,
         remove_unused_columns=False,
+        # deepspeed="/workspace/Prakhar/ds_config.json"
     )
 
     peft_config = LoraConfig(
@@ -176,7 +178,7 @@ def train_reward_model(
             "gate_proj",
             "up_proj",
         ],
-        layers_to_transform=[25, 26, 27],
+        layers_to_transform=list(range(13, 28)),
         r=16,
         lora_alpha=16,
         lora_dropout=0.1,
