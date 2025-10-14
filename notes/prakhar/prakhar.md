@@ -13,3 +13,10 @@ accelerate launch --config_file deepspeed_zero.yaml -m rmsearch.train.lora_examp
   --num-gpus 2 \
   --output-dir ./exp1/model1 \
   --base-dir ./exp1
+
+  Error with deepspeed, run with device_map auto in config (no acelerate):
+
+  training starts, 
+  All layers (0-28) 
+  Batch size: 8 (10 works too)
+ Fit in 48 GB GPU

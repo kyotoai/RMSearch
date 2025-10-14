@@ -153,7 +153,7 @@ def train_reward_model(
 
     training_args = RewardConfig(
         output_dir=str(output_dir),
-        per_device_train_batch_size=1,
+        per_device_train_batch_size=8,
         per_device_eval_batch_size=4,
         eval_strategy="steps",
         eval_steps=40,
@@ -179,7 +179,7 @@ def train_reward_model(
             "gate_proj",
             "up_proj",
         ],
-        layers_to_transform=list(range(13, 28)),
+        layers_to_transform=list(range(0, 28)),
         r=16,
         lora_alpha=16,
         lora_dropout=0.1,

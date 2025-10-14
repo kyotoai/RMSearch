@@ -79,6 +79,7 @@ class RMTrainer:
 
         quantization_config = BitsAndBytesConfig(
                             load_in_8bit=True,
+
                         )
         
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_eos_token=True, add_bos_token=True)
@@ -90,6 +91,7 @@ class RMTrainer:
         self.model = AutoModelForSequenceClassification.from_pretrained(
                                                     model_name,
                                                     quantization_config=quantization_config,
+                                                     device_map="auto" ,
                                                     num_labels=1)
 
         self.model = prepare_model_for_kbit_training(self.model)
