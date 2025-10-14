@@ -1,0 +1,1777 @@
+[
+  {
+    "task_id": "gkvp:extra_tools/backup/performance_analysis/calc_scaling.sh:4-5-7",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_0_extra_tools__backup__performance_analysis__calc_scaling_sh",
+    "file_path": "extra_tools/backup/performance_analysis/calc_scaling.sh",
+    "dropped_lines": [
+      4,
+      5,
+      7
+    ],
+    "tasks": [
+      "Restore the missing code in extra_tools/backup/performance_analysis/calc_scaling.sh around lines 4-7.",
+      "Fill the removed implementation near line 4 in extra_tools/backup/performance_analysis/calc_scaling.sh."
+    ],
+    "removed_source": [
+      {
+        "lineno": 4,
+        "source": "arrange_name(){"
+      },
+      {
+        "lineno": 5,
+        "source": "tail -n 58 $1/log/*.0000.log.001 > wrk.txt"
+      },
+      {
+        "lineno": 7,
+        "source": "awk '{name[NR]=$1}"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/performance_analysis/fujitsu_fapppx.sh:3-4-6",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_1_extra_tools__backup__performance_analysis__fujitsu_fapppx_sh",
+    "file_path": "extra_tools/backup/performance_analysis/fujitsu_fapppx.sh",
+    "dropped_lines": [
+      3,
+      4,
+      6
+    ],
+    "tasks": [
+      "Restore the missing code in extra_tools/backup/performance_analysis/fujitsu_fapppx.sh around lines 3-6.",
+      "Fill the removed implementation near line 3 in extra_tools/backup/performance_analysis/fujitsu_fapppx.sh."
+    ],
+    "removed_source": [
+      {
+        "lineno": 3,
+        "source": "rm -rf proftxt"
+      },
+      {
+        "lineno": 4,
+        "source": "mkdir proftxt"
+      },
+      {
+        "lineno": 6,
+        "source": "fapppx -A -d Fprofd_Stati -Impi,hwm -p0,limit=4 -o proftxt/prof_stati.txt"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/performance_analysis/fujitsu_fipppx.sh:3-4-6",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_2_extra_tools__backup__performance_analysis__fujitsu_fipppx_sh",
+    "file_path": "extra_tools/backup/performance_analysis/fujitsu_fipppx.sh",
+    "dropped_lines": [
+      3,
+      4,
+      6
+    ],
+    "tasks": [
+      "Restore the missing code in extra_tools/backup/performance_analysis/fujitsu_fipppx.sh around lines 3-6.",
+      "Fill the removed implementation near line 3 in extra_tools/backup/performance_analysis/fujitsu_fipppx.sh."
+    ],
+    "removed_source": [
+      {
+        "lineno": 3,
+        "source": "rm -rf proftxt"
+      },
+      {
+        "lineno": 4,
+        "source": "mkdir proftxt"
+      },
+      {
+        "lineno": 6,
+        "source": "fipppx -A -d Fprofd_Stati -Icpu -p0,limit=4 -o proftxt/prof_cpu.txt"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/performance_analysis/v08create_rankmap.f90:1-3-5",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_3_extra_tools__backup__performance_analysis__v08create_rankmap_f90",
+    "file_path": "extra_tools/backup/performance_analysis/v08create_rankmap.f90",
+    "dropped_lines": [
+      1,
+      3,
+      5
+    ],
+    "tasks": [
+      "Restore the missing code in extra_tools/backup/performance_analysis/v08create_rankmap.f90 around lines 1-5.",
+      "Fill the removed implementation near line 1 in extra_tools/backup/performance_analysis/v08create_rankmap.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE parameters"
+      },
+      {
+        "lineno": 3,
+        "source": "  implicit none"
+      },
+      {
+        "lineno": 5,
+        "source": "  integer, parameter :: nprocw = 8, &"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/performance_analysis/v08create_rankmap.py:2-3-4",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_4_extra_tools__backup__performance_analysis__v08create_rankmap_py",
+    "file_path": "extra_tools/backup/performance_analysis/v08create_rankmap.py",
+    "dropped_lines": [
+      2,
+      3,
+      4
+    ],
+    "tasks": [
+      "Restore the missing code in extra_tools/backup/performance_analysis/v08create_rankmap.py around lines 2-4.",
+      "Fill the removed implementation near line 2 in extra_tools/backup/performance_analysis/v08create_rankmap.py."
+    ],
+    "removed_source": [
+      {
+        "lineno": 2,
+        "source": "nprocw = 4"
+      },
+      {
+        "lineno": 3,
+        "source": "nprocz = 5"
+      },
+      {
+        "lineno": 4,
+        "source": "nprocv = 4"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/scripts/chparam.sh:18-19-20",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_5_extra_tools__backup__scripts__chparam_sh",
+    "file_path": "extra_tools/backup/scripts/chparam.sh",
+    "dropped_lines": [
+      18,
+      19,
+      20
+    ],
+    "tasks": [
+      "Fix the script to correctly update the work directory path in multiple files using sed, ensuring that the path substitution does not break file references or cause missing dependencies.",
+      "Verify that the work directory path is consistently updated across go.sh, sub.q, and the namelist file without introducing syntax errors or path mismatches."
+    ],
+    "removed_source": [
+      {
+        "lineno": 18,
+        "source": "  sed -i -e \"s/${OLD_WKDIR}/${NEW_WKDIR}/g\" ${NEW_RUNDIR}/run/go.sh"
+      },
+      {
+        "lineno": 19,
+        "source": "  sed -i -e \"s/${OLD_WKDIR}/${NEW_WKDIR}/g\" ${NEW_RUNDIR}/run/sub.q"
+      },
+      {
+        "lineno": 20,
+        "source": "  sed -i -e \"s/${OLD_WKDIR}/${NEW_WKDIR}/g\" ${NEW_RUNDIR}/run/gkvp_f0.52_namelist.001"
+      }
+    ],
+    "difficulties": [
+      "Hard",
+      "Unknown"
+    ],
+    "answer_notes": "These lines are critical for maintaining correct file paths across multiple configuration files; incorrect substitution could lead to runtime failures or missing dependencies."
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/scripts/chparam.sh:25-26",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_6_extra_tools__backup__scripts__chparam_sh",
+    "file_path": "extra_tools/backup/scripts/chparam.sh",
+    "dropped_lines": [
+      25,
+      26
+    ],
+    "tasks": [
+      "Reimplement the parameter update logic to modify the s_hat and beta values in the namelist file, ensuring the new values (0.786d0 and 0.01d0) are correctly applied without altering other parameters.",
+      "Validate that the namelist file remains syntactically valid after parameter changes and that the simulation will run with the intended physical parameters."
+    ],
+    "removed_source": [
+      {
+        "lineno": 25,
+        "source": "  sed -i -e \"s/${OLD_PARAM1}/${NEW_PARAM1}/g\" ${NEW_RUNDIR}/run/gkvp_f0.52_namelist.001"
+      },
+      {
+        "lineno": 26,
+        "source": "  "
+      }
+    ],
+    "difficulties": [
+      "Hard",
+      "Unknown"
+    ],
+    "answer_notes": "These lines directly control simulation parameters; incorrect updates could lead to invalid physical models or incorrect simulation behavior."
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/scripts/chparam.sh:33-34",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_7_extra_tools__backup__scripts__chparam_sh",
+    "file_path": "extra_tools/backup/scripts/chparam.sh",
+    "dropped_lines": [
+      33,
+      34
+    ],
+    "tasks": [
+      "Restore the execution step to run the go.sh script after directory and parameter changes, ensuring the simulation starts with the updated configuration.",
+      "Ensure that the script correctly transitions back to the original directory after execution, preventing unintended side effects in the working environment."
+    ],
+    "removed_source": [
+      {
+        "lineno": 33,
+        "source": "  cd ${NEW_RUNDIR}/run"
+      },
+      {
+        "lineno": 34,
+        "source": "  #./go.sh"
+      }
+    ],
+    "difficulties": [
+      "Medium",
+      "Unknown"
+    ],
+    "answer_notes": "The execution and directory transition steps are pivotal for the script's workflow; dropping them would prevent the intended simulation from running."
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/scripts/cp_for_ch_res.sh:9-10",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_8_extra_tools__backup__scripts__cp_for_ch_res_sh",
+    "file_path": "extra_tools/backup/scripts/cp_for_ch_res.sh",
+    "dropped_lines": [
+      9,
+      10
+    ],
+    "tasks": [
+      "Fix the script to correctly generate the destination paths in wk2 by ensuring the sed commands properly replace the input directory and file extension without introducing syntax errors or incorrect path construction.",
+      "Identify and correct the bug where the path transformation in wk2 fails to handle edge cases like empty directories or missing files, leading to incorrect or missing output files."
+    ],
+    "removed_source": [
+      {
+        "lineno": 9,
+        "source": "cat wk | sed -e \"s/$indir/cp $indir/\" > wk1"
+      },
+      {
+        "lineno": 10,
+        "source": "cat wk | sed -e \"s/$indir/ $outdir/\" | sed -e \"s/.cnt.$innum/.cnt.$outnum/\" > wk2"
+      }
+    ],
+    "difficulties": [
+      "Hard",
+      "Unknown"
+    ],
+    "answer_notes": "Lines 9 and 10 are critical for path transformation logic. Dropping them removes the core functionality of generating correct destination paths, which is essential for the script's purpose of copying and renaming files with proper directory and file number substitutions."
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/scripts/cp_for_ch_res.sh:14-15",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_9_extra_tools__backup__scripts__cp_for_ch_res_sh",
+    "file_path": "extra_tools/backup/scripts/cp_for_ch_res.sh",
+    "dropped_lines": [
+      14,
+      15
+    ],
+    "tasks": [
+      "Ensure the script correctly creates the output directory structure and makes the log script executable before execution, preventing runtime errors due to missing directories or permission issues.",
+      "Implement robust error handling to detect if the directory creation or executable permission assignment fails, and log appropriate error messages for debugging."
+    ],
+    "removed_source": [
+      {
+        "lineno": 14,
+        "source": "mkdir -p $outdir/cnt"
+      },
+      {
+        "lineno": 15,
+        "source": "chmod +x cp_for_ch_res.log"
+      }
+    ],
+    "difficulties": [
+      "Medium",
+      "Unknown"
+    ],
+    "answer_notes": "Lines 14 and 15 manage output directory creation and script executability. Removing them breaks the execution flow, as the script cannot run the generated log file without proper directory setup and permissions."
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/scripts/cp_for_ch_res.sh:16",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_10_extra_tools__backup__scripts__cp_for_ch_res_sh",
+    "file_path": "extra_tools/backup/scripts/cp_for_ch_res.sh",
+    "dropped_lines": [
+      16
+    ],
+    "tasks": [
+      "Fix the script so that it executes the generated cp_for_ch_res.log file correctly, ensuring that all file copies are performed as intended and that no errors are silently ignored.",
+      "Verify that the script handles potential failures during execution (e.g., missing files, permission errors) and logs meaningful error messages to aid in debugging."
+    ],
+    "removed_source": [
+      {
+        "lineno": 16,
+        "source": "./cp_for_ch_res.log"
+      }
+    ],
+    "difficulties": [
+      "Hard",
+      "Unknown"
+    ],
+    "answer_notes": "Line 16 is the execution point of the generated script. Dropping it removes the final action of the pipeline, making the entire script ineffective despite correct path generation and file creation."
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/scripts/reduction/reduction.sh:4-5-6",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_11_extra_tools__backup__scripts__reduction__reduction_sh",
+    "file_path": "extra_tools/backup/scripts/reduction/reduction.sh",
+    "dropped_lines": [
+      4,
+      5,
+      6
+    ],
+    "tasks": [
+      "Restore the missing code in extra_tools/backup/scripts/reduction/reduction.sh around lines 4-6.",
+      "Fill the removed implementation near line 4 in extra_tools/backup/scripts/reduction/reduction.sh."
+    ],
+    "removed_source": [
+      {
+        "lineno": 4,
+        "source": "snum=1"
+      },
+      {
+        "lineno": 5,
+        "source": "enum=1"
+      },
+      {
+        "lineno": 6,
+        "source": "loopskip=10"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/scripts/rename.sh:3-4-6",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_12_extra_tools__backup__scripts__rename_sh",
+    "file_path": "extra_tools/backup/scripts/rename.sh",
+    "dropped_lines": [
+      3,
+      4,
+      6
+    ],
+    "tasks": [
+      "Restore the missing code in extra_tools/backup/scripts/rename.sh around lines 3-6.",
+      "Fill the removed implementation near line 3 in extra_tools/backup/scripts/rename.sh."
+    ],
+    "removed_source": [
+      {
+        "lineno": 3,
+        "source": "old=f0.51"
+      },
+      {
+        "lineno": 4,
+        "source": "new=f0.52"
+      },
+      {
+        "lineno": 6,
+        "source": "rm -f rename.log"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/scripts/scan_Nref.sh:3-5-7",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_13_extra_tools__backup__scripts__scan_Nref_sh",
+    "file_path": "extra_tools/backup/scripts/scan_Nref.sh",
+    "dropped_lines": [
+      3,
+      5,
+      7
+    ],
+    "tasks": [
+      "Restore the missing code in extra_tools/backup/scripts/scan_Nref.sh around lines 3-7.",
+      "Fill the removed implementation near line 3 in extra_tools/backup/scripts/scan_Nref.sh."
+    ],
+    "removed_source": [
+      {
+        "lineno": 3,
+        "source": "CURRENTDIR=`pwd`"
+      },
+      {
+        "lineno": 5,
+        "source": "param=\"9.0\""
+      },
+      {
+        "lineno": 7,
+        "source": "OLD_RUNDIR=`echo ${param} | awk '{printf(\"%s%05.2fd20\",\"Nref\",$1)}'`"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/scripts/scan_ky.sh:3-5-7",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_14_extra_tools__backup__scripts__scan_ky_sh",
+    "file_path": "extra_tools/backup/scripts/scan_ky.sh",
+    "dropped_lines": [
+      3,
+      5,
+      7
+    ],
+    "tasks": [
+      "Restore the missing code in extra_tools/backup/scripts/scan_ky.sh around lines 3-7.",
+      "Fill the removed implementation near line 3 in extra_tools/backup/scripts/scan_ky.sh."
+    ],
+    "removed_source": [
+      {
+        "lineno": 3,
+        "source": "CURRENTDIR=`pwd`"
+      },
+      {
+        "lineno": 5,
+        "source": "param=\"1.0\""
+      },
+      {
+        "lineno": 7,
+        "source": "OLD_RUNDIR=`echo ${param} | awk '{printf(\"%s%05.2f\",\"ky\",$1)}'`"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:extra_tools/backup/scripts/scan_shatbeta.sh:3-5-7",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_15_extra_tools__backup__scripts__scan_shatbeta_sh",
+    "file_path": "extra_tools/backup/scripts/scan_shatbeta.sh",
+    "dropped_lines": [
+      3,
+      5,
+      7
+    ],
+    "tasks": [
+      "Restore the missing code in extra_tools/backup/scripts/scan_shatbeta.sh around lines 3-7.",
+      "Fill the removed implementation near line 3 in extra_tools/backup/scripts/scan_shatbeta.sh."
+    ],
+    "removed_source": [
+      {
+        "lineno": 3,
+        "source": "for param2 in `seq 50 50 300`; do # beta scan  ( beta = param2 * 1d-4)"
+      },
+      {
+        "lineno": 5,
+        "source": "  for param1 in `seq 100 100 600`; do # shat scan  (s_hat = param1 * 1d-3)"
+      },
+      {
+        "lineno": 7,
+        "source": "    CURRENTDIR=`pwd`"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:lib/Bessel0_Zeros.f90:1-2-3-4-5",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_16_lib__Bessel0_Zeros_f90",
+    "file_path": "lib/Bessel0_Zeros.f90",
+    "dropped_lines": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "tasks": [
+      "Re-implement the first 5 Bessel zeros for j0 using a numerical root-finding algorithm instead of hardcoded values. Ensure the implementation matches the precision of the original values.",
+      "Verify that the first 5 zeros of the Bessel function J0 are correctly computed and match the known values in the table. Implement error checks for deviations beyond 1e-12."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "        j0zeros(1) = 2.404825557695770666e+00"
+      },
+      {
+        "lineno": 2,
+        "source": "        j0zeros(2) = 5.520078110286304351e+00"
+      },
+      {
+        "lineno": 3,
+        "source": "        j0zeros(3) = 8.653727912911024944e+00"
+      },
+      {
+        "lineno": 4,
+        "source": "        j0zeros(4) = 1.179153443901426179e+01"
+      },
+      {
+        "lineno": 5,
+        "source": "        j0zeros(5) = 1.493091770848781330e+01"
+      }
+    ],
+    "difficulties": [
+      "Hard",
+      "Unknown"
+    ],
+    "answer_notes": "The first few zeros are critical for algorithm validation; dropping them removes the ground truth for testing numerical root-finding implementations."
+  },
+  {
+    "task_id": "gkvp:lib/Bessel0_Zeros.f90:250-251-252-253-254",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_17_lib__Bessel0_Zeros_f90",
+    "file_path": "lib/Bessel0_Zeros.f90",
+    "dropped_lines": [
+      250,
+      251,
+      252,
+      253,
+      254
+    ],
+    "tasks": [
+      "Re-implement the zeros from index 250 to 254 using a numerical method. Validate against the original hardcoded values with tolerance 1e-12.",
+      "Detect and report any inconsistencies in the Bessel zero sequence beyond index 250. Ensure the sequence remains monotonic and physically meaningful."
+    ],
+    "removed_source": [
+      {
+        "lineno": 250,
+        "source": "        j0zeros(250) = 7.846129245481409953e+02"
+      },
+      {
+        "lineno": 251,
+        "source": "        j0zeros(251) = 7.877545165663817670e+02"
+      },
+      {
+        "lineno": 252,
+        "source": "        j0zeros(252) = 7.908961085896700069e+02"
+      },
+      {
+        "lineno": 253,
+        "source": "        j0zeros(253) = 7.940377006179458022e+02"
+      },
+      {
+        "lineno": 254,
+        "source": "        j0zeros(254) = 7.971792926511502628e+02"
+      }
+    ],
+    "difficulties": [
+      "Hard",
+      "Unknown"
+    ],
+    "answer_notes": "These values represent a transition into higher-order zeros; their correctness is essential for stability in downstream computations involving Bessel functions."
+  },
+  {
+    "task_id": "gkvp:lib/Bessel0_Zeros.f90:199-200-201-202-203",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_18_lib__Bessel0_Zeros_f90",
+    "file_path": "lib/Bessel0_Zeros.f90",
+    "dropped_lines": [
+      199,
+      200,
+      201,
+      202,
+      203
+    ],
+    "tasks": [
+      "Implement a robust interpolation method to compute the zeros between 199 and 203 using the known values. Ensure the interpolated values are smooth and monotonic.",
+      "Validate the interpolated zeros against the original values and ensure no numerical drift occurs in the sequence."
+    ],
+    "removed_source": [
+      {
+        "lineno": 199,
+        "source": "        j0zeros(199) = 6.243917400955366475e+02"
+      },
+      {
+        "lineno": 200,
+        "source": "        j0zeros(200) = 6.275333317469040821e+02"
+      },
+      {
+        "lineno": 201,
+        "source": "        j0zeros(201) = 6.306749234082564044e+02"
+      },
+      {
+        "lineno": 202,
+        "source": "        j0zeros(202) = 6.338165150794449119e+02"
+      },
+      {
+        "lineno": 203,
+        "source": "        j0zeros(203) = 6.369581067603240854e+02"
+      }
+    ],
+    "difficulties": [
+      "Medium",
+      "Unknown"
+    ],
+    "answer_notes": "This range bridges low and mid-range zeros; dropping it creates a gap that requires interpolation, testing numerical continuity and accuracy."
+  },
+  {
+    "task_id": "gkvp:lib/gkvp_math_MATRIX.f90:1-13-15",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_19_lib__gkvp_math_MATRIX_f90",
+    "file_path": "lib/gkvp_math_MATRIX.f90",
+    "dropped_lines": [
+      1,
+      13,
+      15
+    ],
+    "tasks": [
+      "Restore the missing code in lib/gkvp_math_MATRIX.f90 around lines 1-15.",
+      "Fill the removed implementation near line 1 in lib/gkvp_math_MATRIX.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_math"
+      },
+      {
+        "lineno": 13,
+        "source": "  implicit none"
+      },
+      {
+        "lineno": 15,
+        "source": "  private"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:lib/gkvp_math_MKLNAG.f90:1-13-15",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_20_lib__gkvp_math_MKLNAG_f90",
+    "file_path": "lib/gkvp_math_MKLNAG.f90",
+    "dropped_lines": [
+      1,
+      13,
+      15
+    ],
+    "tasks": [
+      "Restore the missing code in lib/gkvp_math_MKLNAG.f90 around lines 1-15.",
+      "Fill the removed implementation near line 1 in lib/gkvp_math_MKLNAG.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_math"
+      },
+      {
+        "lineno": 13,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 15,
+        "source": "  implicit none"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:lib/gkvp_math_SSL2.f90:1-13-15",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_21_lib__gkvp_math_SSL2_f90",
+    "file_path": "lib/gkvp_math_SSL2.f90",
+    "dropped_lines": [
+      1,
+      13,
+      15
+    ],
+    "tasks": [
+      "Restore the missing code in lib/gkvp_math_SSL2.f90 around lines 1-15.",
+      "Fill the removed implementation near line 1 in lib/gkvp_math_SSL2.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_math"
+      },
+      {
+        "lineno": 13,
+        "source": "  implicit none"
+      },
+      {
+        "lineno": 15,
+        "source": "  private"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:lib/gkvp_math_portable.f90:1-15-17",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_22_lib__gkvp_math_portable_f90",
+    "file_path": "lib/gkvp_math_portable.f90",
+    "dropped_lines": [
+      1,
+      15,
+      17
+    ],
+    "tasks": [
+      "Restore the missing code in lib/gkvp_math_portable.f90 around lines 1-17.",
+      "Fill the removed implementation near line 1 in lib/gkvp_math_portable.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_math"
+      },
+      {
+        "lineno": 15,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 17,
+        "source": "  implicit none"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:run/backup/old/compile.sh:4",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_23_run__backup__old__compile_sh",
+    "file_path": "run/backup/old/compile.sh",
+    "dropped_lines": [
+      4
+    ],
+    "tasks": [
+      "Restore the missing code in run/backup/old/compile.sh around lines 4-4.",
+      "Fill the removed implementation near line 4 in run/backup/old/compile.sh."
+    ],
+    "removed_source": [
+      {
+        "lineno": 4,
+        "source": "make 2>&1 | tee CompileList.txt"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:run/backup/old/go.sh:9-14-18",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_24_run__backup__old__go_sh",
+    "file_path": "run/backup/old/go.sh",
+    "dropped_lines": [
+      9,
+      14,
+      18
+    ],
+    "tasks": [
+      "Restore the missing code in run/backup/old/go.sh around lines 9-18.",
+      "Fill the removed implementation near line 9 in run/backup/old/go.sh."
+    ],
+    "removed_source": [
+      {
+        "lineno": 9,
+        "source": "HPC="
+      },
+      {
+        "lineno": 14,
+        "source": "IGSDIR="
+      },
+      {
+        "lineno": 18,
+        "source": "if [[ -z ${HPC} ]]; then"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_advnc.f90:1-20-21",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_25_src__gkvp_advnc_f90",
+    "file_path": "src/gkvp_advnc.f90",
+    "dropped_lines": [
+      1,
+      20,
+      21
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_advnc.f90 around lines 1-21.",
+      "Fill the removed implementation near line 1 in src/gkvp_advnc.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_advnc"
+      },
+      {
+        "lineno": 20,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 21,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_bndry.f90:1-16-17",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_26_src__gkvp_bndry_f90",
+    "file_path": "src/gkvp_bndry.f90",
+    "dropped_lines": [
+      1,
+      16,
+      17
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_bndry.f90 around lines 1-17.",
+      "Fill the removed implementation near line 1 in src/gkvp_bndry.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_bndry"
+      },
+      {
+        "lineno": 16,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 17,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_clock.f90:1-13-14",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_27_src__gkvp_clock_f90",
+    "file_path": "src/gkvp_clock.f90",
+    "dropped_lines": [
+      1,
+      13,
+      14
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_clock.f90 around lines 1-14.",
+      "Fill the removed implementation near line 1 in src/gkvp_clock.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_clock"
+      },
+      {
+        "lineno": 13,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 14,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_colli.f90:1-16-17",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_28_src__gkvp_colli_f90",
+    "file_path": "src/gkvp_colli.f90",
+    "dropped_lines": [
+      1,
+      16,
+      17
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_colli.f90 around lines 1-17.",
+      "Fill the removed implementation near line 1 in src/gkvp_colli.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_colli"
+      },
+      {
+        "lineno": 16,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 17,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_colliimp.f90:1-17-18",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_29_src__gkvp_colliimp_f90",
+    "file_path": "src/gkvp_colliimp.f90",
+    "dropped_lines": [
+      1,
+      17,
+      18
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_colliimp.f90 around lines 1-18.",
+      "Fill the removed implementation near line 1 in src/gkvp_colliimp.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_colliimp"
+      },
+      {
+        "lineno": 17,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 18,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_colliimp_SoA.f90:1-17-18",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_30_src__gkvp_colliimp_SoA_f90",
+    "file_path": "src/gkvp_colliimp_SoA.f90",
+    "dropped_lines": [
+      1,
+      17,
+      18
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_colliimp_SoA.f90 around lines 1-18.",
+      "Fill the removed implementation near line 1 in src/gkvp_colliimp_SoA.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_colliimp"
+      },
+      {
+        "lineno": 17,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 18,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_dtc.f90:1-15-16",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_31_src__gkvp_dtc_f90",
+    "file_path": "src/gkvp_dtc.f90",
+    "dropped_lines": [
+      1,
+      15,
+      16
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_dtc.f90 around lines 1-16.",
+      "Fill the removed implementation near line 1 in src/gkvp_dtc.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_dtc"
+      },
+      {
+        "lineno": 15,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 16,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_exb.f90:1-13-14",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_32_src__gkvp_exb_f90",
+    "file_path": "src/gkvp_exb.f90",
+    "dropped_lines": [
+      1,
+      13,
+      14
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_exb.f90 around lines 1-14.",
+      "Fill the removed implementation near line 1 in src/gkvp_exb.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_exb"
+      },
+      {
+        "lineno": 13,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 14,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_f0.56_advnc_tune_nec1.f90:1-10-11",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_33_src__gkvp_f0_56_advnc_tune_nec1_f90",
+    "file_path": "src/gkvp_f0.56_advnc_tune_nec1.f90",
+    "dropped_lines": [
+      1,
+      10,
+      11
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_f0.56_advnc_tune_nec1.f90 around lines 1-11.",
+      "Fill the removed implementation near line 1 in src/gkvp_f0.56_advnc_tune_nec1.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_advnc"
+      },
+      {
+        "lineno": 10,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 11,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_f0.56_bndry_tune_nec1.f90:1-10-11",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_34_src__gkvp_f0_56_bndry_tune_nec1_f90",
+    "file_path": "src/gkvp_f0.56_bndry_tune_nec1.f90",
+    "dropped_lines": [
+      1,
+      10,
+      11
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_f0.56_bndry_tune_nec1.f90 around lines 1-11.",
+      "Fill the removed implementation near line 1 in src/gkvp_f0.56_bndry_tune_nec1.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_bndry"
+      },
+      {
+        "lineno": 10,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 11,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_f0.56_colli_tune_nifs.f90:1-10-11",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_35_src__gkvp_f0_56_colli_tune_nifs_f90",
+    "file_path": "src/gkvp_f0.56_colli_tune_nifs.f90",
+    "dropped_lines": [
+      1,
+      10,
+      11
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_f0.56_colli_tune_nifs.f90 around lines 1-11.",
+      "Fill the removed implementation near line 1 in src/gkvp_f0.56_colli_tune_nifs.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_colli"
+      },
+      {
+        "lineno": 10,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 11,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_f0.56_exb_tune2r_0813.f90:1-10-11",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_36_src__gkvp_f0_56_exb_tune2r_0813_f90",
+    "file_path": "src/gkvp_f0.56_exb_tune2r_0813.f90",
+    "dropped_lines": [
+      1,
+      10,
+      11
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_f0.56_exb_tune2r_0813.f90 around lines 1-11.",
+      "Fill the removed implementation near line 1 in src/gkvp_f0.56_exb_tune2r_0813.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_exb"
+      },
+      {
+        "lineno": 10,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 11,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_f0.56_fft_fftw_tune2r_0813.f90:1-10-11",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_37_src__gkvp_f0_56_fft_fftw_tune2r_0813_f90",
+    "file_path": "src/gkvp_f0.56_fft_fftw_tune2r_0813.f90",
+    "dropped_lines": [
+      1,
+      10,
+      11
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_f0.56_fft_fftw_tune2r_0813.f90 around lines 1-11.",
+      "Fill the removed implementation near line 1 in src/gkvp_f0.56_fft_fftw_tune2r_0813.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_fft"
+      },
+      {
+        "lineno": 10,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 11,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_f0.56_zfilter_tune_nec1.f90:1-10-11",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_38_src__gkvp_f0_56_zfilter_tune_nec1_f90",
+    "file_path": "src/gkvp_f0.56_zfilter_tune_nec1.f90",
+    "dropped_lines": [
+      1,
+      10,
+      11
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_f0.56_zfilter_tune_nec1.f90 around lines 1-11.",
+      "Fill the removed implementation near line 1 in src/gkvp_f0.56_zfilter_tune_nec1.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_zfilter"
+      },
+      {
+        "lineno": 10,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 11,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_fft_fftw.f90:1-13-14",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_39_src__gkvp_fft_fftw_f90",
+    "file_path": "src/gkvp_fft_fftw.f90",
+    "dropped_lines": [
+      1,
+      13,
+      14
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_fft_fftw.f90 around lines 1-14.",
+      "Fill the removed implementation near line 1 in src/gkvp_fft_fftw.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_fft"
+      },
+      {
+        "lineno": 13,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 14,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_fileio_fortran.f90:1-13-14",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_40_src__gkvp_fileio_fortran_f90",
+    "file_path": "src/gkvp_fileio_fortran.f90",
+    "dropped_lines": [
+      1,
+      13,
+      14
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_fileio_fortran.f90 around lines 1-14.",
+      "Fill the removed implementation near line 1 in src/gkvp_fileio_fortran.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_fileio"
+      },
+      {
+        "lineno": 13,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 14,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_fileio_netcdf.f90:1-15-16",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_41_src__gkvp_fileio_netcdf_f90",
+    "file_path": "src/gkvp_fileio_netcdf.f90",
+    "dropped_lines": [
+      1,
+      15,
+      16
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_fileio_netcdf.f90 around lines 1-16.",
+      "Fill the removed implementation near line 1 in src/gkvp_fileio_netcdf.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_fileio"
+      },
+      {
+        "lineno": 15,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 16,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_fileio_zarr.f90:1-13-14",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_42_src__gkvp_fileio_zarr_f90",
+    "file_path": "src/gkvp_fileio_zarr.f90",
+    "dropped_lines": [
+      1,
+      13,
+      14
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_fileio_zarr.f90 around lines 1-14.",
+      "Fill the removed implementation near line 1 in src/gkvp_fileio_zarr.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_fileio"
+      },
+      {
+        "lineno": 13,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 14,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_fld.f90:1-15-16",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_43_src__gkvp_fld_f90",
+    "file_path": "src/gkvp_fld.f90",
+    "dropped_lines": [
+      1,
+      15,
+      16
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_fld.f90 around lines 1-16.",
+      "Fill the removed implementation near line 1 in src/gkvp_fld.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_fld"
+      },
+      {
+        "lineno": 15,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 16,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_freq.f90:1-15-16",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_44_src__gkvp_freq_f90",
+    "file_path": "src/gkvp_freq.f90",
+    "dropped_lines": [
+      1,
+      15,
+      16
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_freq.f90 around lines 1-16.",
+      "Fill the removed implementation near line 1 in src/gkvp_freq.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_freq"
+      },
+      {
+        "lineno": 15,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 16,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_geom.f90:1-24-25",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_45_src__gkvp_geom_f90",
+    "file_path": "src/gkvp_geom.f90",
+    "dropped_lines": [
+      1,
+      24,
+      25
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_geom.f90 around lines 1-25.",
+      "Fill the removed implementation near line 1 in src/gkvp_geom.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_geom"
+      },
+      {
+        "lineno": 24,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 25,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_header.f90:1-35-37",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_46_src__gkvp_header_f90",
+    "file_path": "src/gkvp_header.f90",
+    "dropped_lines": [
+      1,
+      35,
+      37
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_header.f90 around lines 1-37.",
+      "Fill the removed implementation near line 1 in src/gkvp_header.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_header"
+      },
+      {
+        "lineno": 35,
+        "source": "  implicit none"
+      },
+      {
+        "lineno": 37,
+        "source": "  public"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_igs.f90:1-23-24",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_47_src__gkvp_igs_f90",
+    "file_path": "src/gkvp_igs.f90",
+    "dropped_lines": [
+      1,
+      23,
+      24
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_igs.f90 around lines 1-24.",
+      "Fill the removed implementation near line 1 in src/gkvp_igs.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_igs"
+      },
+      {
+        "lineno": 23,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 24,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_intgrl.f90:1-15-16",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_48_src__gkvp_intgrl_f90",
+    "file_path": "src/gkvp_intgrl.f90",
+    "dropped_lines": [
+      1,
+      15,
+      16
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_intgrl.f90 around lines 1-16.",
+      "Fill the removed implementation near line 1 in src/gkvp_intgrl.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_intgrl"
+      },
+      {
+        "lineno": 15,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 16,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_main.f90:1-42-43",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_49_src__gkvp_main_f90",
+    "file_path": "src/gkvp_main.f90",
+    "dropped_lines": [
+      1,
+      42,
+      43
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_main.f90 around lines 1-43.",
+      "Fill the removed implementation near line 1 in src/gkvp_main.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "PROGRAM GKV_main"
+      },
+      {
+        "lineno": 42,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 43,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_mpienv.f90:1-16-17",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_50_src__gkvp_mpienv_f90",
+    "file_path": "src/gkvp_mpienv.f90",
+    "dropped_lines": [
+      1,
+      16,
+      17
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_mpienv.f90 around lines 1-17.",
+      "Fill the removed implementation near line 1 in src/gkvp_mpienv.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_mpienv"
+      },
+      {
+        "lineno": 16,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 17,
+        "source": "  implicit none"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_out.f90:1-17-18",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_51_src__gkvp_out_f90",
+    "file_path": "src/gkvp_out.f90",
+    "dropped_lines": [
+      1,
+      17,
+      18
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_out.f90 around lines 1-18.",
+      "Fill the removed implementation near line 1 in src/gkvp_out.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_out"
+      },
+      {
+        "lineno": 17,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 18,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_ring.f90:1-3-5",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_52_src__gkvp_ring_f90",
+    "file_path": "src/gkvp_ring.f90",
+    "dropped_lines": [
+      1,
+      3,
+      5
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_ring.f90 around lines 1-5.",
+      "Fill the removed implementation near line 1 in src/gkvp_ring.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE ring_header"
+      },
+      {
+        "lineno": 3,
+        "source": "  implicit none"
+      },
+      {
+        "lineno": 5,
+        "source": "  integer, parameter :: DP = selected_real_kind(14)"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_set.f90:1-27-28",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_53_src__gkvp_set_f90",
+    "file_path": "src/gkvp_set.f90",
+    "dropped_lines": [
+      1,
+      27,
+      28
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_set.f90 around lines 1-28.",
+      "Fill the removed implementation near line 1 in src/gkvp_set.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_set"
+      },
+      {
+        "lineno": 27,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 28,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_shearflow.f90:1-15-16",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_54_src__gkvp_shearflow_f90",
+    "file_path": "src/gkvp_shearflow.f90",
+    "dropped_lines": [
+      1,
+      15,
+      16
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_shearflow.f90 around lines 1-16.",
+      "Fill the removed implementation near line 1 in src/gkvp_shearflow.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_shearflow"
+      },
+      {
+        "lineno": 15,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 16,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_tips.f90:1-15-16",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_55_src__gkvp_tips_f90",
+    "file_path": "src/gkvp_tips.f90",
+    "dropped_lines": [
+      1,
+      15,
+      16
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_tips.f90 around lines 1-16.",
+      "Fill the removed implementation near line 1 in src/gkvp_tips.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_tips"
+      },
+      {
+        "lineno": 15,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 16,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_trans.f90:1-15-16",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_56_src__gkvp_trans_f90",
+    "file_path": "src/gkvp_trans.f90",
+    "dropped_lines": [
+      1,
+      15,
+      16
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_trans.f90 around lines 1-16.",
+      "Fill the removed implementation near line 1 in src/gkvp_trans.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_trans"
+      },
+      {
+        "lineno": 15,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 16,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_vmecbzx.f90:1-17-18",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_57_src__gkvp_vmecbzx_f90",
+    "file_path": "src/gkvp_vmecbzx.f90",
+    "dropped_lines": [
+      1,
+      17,
+      18
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_vmecbzx.f90 around lines 1-18.",
+      "Fill the removed implementation near line 1 in src/gkvp_vmecbzx.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_vmecbzx"
+      },
+      {
+        "lineno": 17,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 18,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_vmecin.f90:1-14-15",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_58_src__gkvp_vmecin_f90",
+    "file_path": "src/gkvp_vmecin.f90",
+    "dropped_lines": [
+      1,
+      14,
+      15
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_vmecin.f90 around lines 1-15.",
+      "Fill the removed implementation near line 1 in src/gkvp_vmecin.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_vmecin"
+      },
+      {
+        "lineno": 14,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 15,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  },
+  {
+    "task_id": "gkvp:src/gkvp_zfilter.f90:1-13-14",
+    "code_dir": "gkvp",
+    "dir_path": "__tasks__/task_59_src__gkvp_zfilter_f90",
+    "file_path": "src/gkvp_zfilter.f90",
+    "dropped_lines": [
+      1,
+      13,
+      14
+    ],
+    "tasks": [
+      "Restore the missing code in src/gkvp_zfilter.f90 around lines 1-14.",
+      "Fill the removed implementation near line 1 in src/gkvp_zfilter.f90."
+    ],
+    "removed_source": [
+      {
+        "lineno": 1,
+        "source": "MODULE GKV_zfilter"
+      },
+      {
+        "lineno": 13,
+        "source": "  use GKV_header"
+      },
+      {
+        "lineno": 14,
+        "source": "  use GKV_mpienv"
+      }
+    ]
+  }
+]
