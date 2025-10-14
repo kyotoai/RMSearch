@@ -349,6 +349,8 @@ def call_planner(
         prompts.append(build_file_prompt(project_name, code_file, max_file_tokens))
         rel_paths.append(code_file.relative_path)
 
+    print("Number of prompts: ", len(prompts))
+
     responses = generate(
         model=model,
         prompts=prompts,
@@ -648,7 +650,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--dtype", type=str, default="bfloat16")
     parser.add_argument("--trust-remote-code", action="store_true")
     parser.add_argument("--worker-batch-size", type=int, default=1)
-    parser.add_argument("--timeout", type=float, default=120.0)
+    parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--top-p", type=float, default=0.95)
     parser.add_argument("--max-tokens", type=int, default=512)

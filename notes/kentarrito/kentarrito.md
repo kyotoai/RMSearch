@@ -291,6 +291,7 @@
       - [x] add algorism to readme
       - [x] modify the file with the algorism
       - [x] debug it
+      * -> This only generates easy problems. Modify prompt to make more difficult and unobvious problems
     - [ ] llm_inference.py
 
 - [ ] Develop rmsearch/graph
