@@ -5,6 +5,7 @@ import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from textwrap import shorten
 from typing import Dict, List, Optional, Sequence
 
 from vllm import SamplingParams
@@ -222,6 +223,11 @@ class TaskSelection:
     rel_file: Path
     dropped_lines: List[int]
     tasks: List[str]
+    # Optional enhancements captured from the LLM output:
+    # - difficulties: one label per task (e.g., Easy/Medium/Hard/VeryHard)
+    # - answer_notes: short rationale for why these lines are impactful
+    difficulties: Optional[List[str]] = None
+    answer_notes: Optional[str] = None
 
 
 def discover_projects(root: Path) -> List[Path]:
@@ -289,6 +295,86 @@ def tokens_to_char_budget(token_budget: int) -> int:
     return max(token_budget * 4, 0)
 
 
+def _dir_context_for_file(code_file: "CodeFile", max_items: int = 40) -> str:
+    """
+    Build a compact, budget-friendly directory snapshot for the file's folder.
+    Shows siblings and subdirs (one level), with language + line counts where possible.
+    """
+    folder = code_file.absolute_path.parent
+    entries: List[str] = []
+
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        names = []
+
+    count = 0
+    for name in names:
+        if count >= max_items:
+            entries.append("… (truncated)")
+            break
+        p = folder / name
+        try:
+            if p.is_dir():
+                entries.append(f"[DIR] {p.name}/")
+                count += 1
+                continue
+            # file:
+            ext = p.suffix.lower()
+            lang = LANGUAGE_BY_EXTENSION.get(ext, ext.lstrip(".") or "text")
+            # quick line count without loading too much:
+            n_lines = 0
+            try:
+                with p.open("r", encoding="utf-8", errors="ignore") as fh:
+                    for n_lines, _ in enumerate(fh, 1):
+                        if n_lines >= 10_000:
+                            break
+            except OSError:
+                n_lines = 0
+            marker = " (focus)" if p == code_file.absolute_path else ""
+            entries.append(f"     {p.name}  [{lang}]  ~{n_lines} lines{marker}")
+            count += 1
+        except OSError:
+            continue
+
+    return "\n".join(entries) if entries else "(folder not readable)"
+
+
+def _nearby_file_summaries(code_file: "CodeFile", max_files: int = 10, max_len: int = 90) -> str:
+    """
+    Provide quick summaries of sibling files: first non-empty, non-whitespace line.
+    Keeps it language-agnostic and cheap to compute.
+    """
+    folder = code_file.absolute_path.parent
+    summaries: List[str] = []
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        return "(no summaries)"
+
+    for name in names:
+        p = folder / name
+        if p == code_file.absolute_path or not p.is_file():
+            continue
+        if len(summaries) >= max_files:
+            summaries.append("… (truncated)")
+            break
+        try:
+            first = ""
+            with p.open("r", encoding="utf-8", errors="ignore") as fh:
+                for line in fh:
+                    s = line.strip()
+                    if s:
+                        first = s
+                        break
+            ext = p.suffix.lower()
+            lang = LANGUAGE_BY_EXTENSION.get(ext, ext.lstrip(".") or "text")
+            summaries.append(f"- {p.name} [{lang}]: {shorten(first, width=max_len, placeholder='…')}")
+        except OSError:
+            continue
+    return "\n".join(summaries) if summaries else "(no sibling files)"
+
+
 def build_file_prompt(
     project_name: str,
     code_file: CodeFile,
@@ -296,12 +382,27 @@ def build_file_prompt(
 ) -> str:
     char_budget = tokens_to_char_budget(max_file_tokens)
     header_lines = [
-        f"You are curating coding evaluation tasks for project '{project_name}'.",
+        f"You are curating *high-impact* coding evaluation tasks for project '{project_name}'.",
         f"Focus on file '{code_file.relative_path.as_posix()}' ({code_file.language}).",
-        "Identify up to 3 meaningful places where removing code would create a useful bug-fix or implementation task.",
-        'Return a JSON array. Each object must include: "dropped_lines" (array of 1-based line numbers) and "tasks" (2-3 varied natural language prompts).',
-        'Optional fields: "file_path" (defaults to this file) and "answer_notes".',
-        "Use contiguous ranges where possible. Respond with JSON only.",
+        "",
+        "Context — directory snapshot (current folder):",
+        _dir_context_for_file(code_file),
+        "",
+        "Context — nearby file summaries:",
+        _nearby_file_summaries(code_file),
+        "",
+        "Goal:",
+        "- Identify up to 3 *critical* locations where dropping code lines would create challenging, realistic bug-fix or implementation tasks.",
+        "- Prefer lines that are pivotal to algorithm correctness, IO boundaries, API contracts, error handling, state management, security, or inter-file dependencies.",
+        "- Avoid trivial edits (e.g., cosmetic prints, simple wrappers). Use contiguous ranges where possible.",
+        "",
+        "Output format (JSON array): For each task object include:",
+        '  - "dropped_lines": array of 1-based line numbers (use contiguous ranges where possible),',
+        '  - "tasks": 2–3 concise, high-impact prompts written like real tickets,',
+        '  - "difficulties": array of labels (one per task) from {"Easy","Medium","Hard","VeryHard"},',
+        '  - Optional "file_path" (defaults to this file), and optional "answer_notes" giving a 1–2 sentence rationale for why these lines are critical.',
+        "",
+        "Respond with JSON only. Do not include prose outside JSON.",
         "",
         "File content:",
     ]
@@ -390,6 +491,7 @@ def call_planner(
 
 
 def placeholder_for_extension(ext: str, override: Optional[str]) -> str:
+    # Placeholder is no longer used; keep function to preserve surface area.
     if override:
         return override
     if ext in HASH_COMMENT_EXTS or ext in {".yaml", ".yml"}:
@@ -410,6 +512,10 @@ def replace_code_lines(
     line_numbers: List[int],
     placeholder: str,
 ) -> List[Dict[str, object]]:
+    """
+    Do NOT modify the file content anymore. Only collect and return the removed source
+    lines so that the dataset captures the ground truth without inserting placeholders.
+    """
     try:
         text = file_path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
@@ -421,16 +527,11 @@ def replace_code_lines(
         if 1 <= lineno <= len(lines):
             original = lines[lineno - 1]
             replaced.append({"lineno": lineno, "source": original})
-            match = re.match(r"[ \t]*", original)
-            indent = match.group(0) if match else ""
-            lines[lineno - 1] = f"{indent}{placeholder}" if indent else placeholder
 
-    if not replaced:
-        return []
-
-    newline = "\n" if text.endswith("\n") else ""
-    updated = "\n".join(lines) + newline
-    #file_path.write_text(updated, encoding="utf-8")
+    # We deliberately do not write back to disk and do not modify the file.
+    # newline = "\n" if text.endswith("\n") else ""
+    # updated = "\n".join(lines) + newline
+    # file_path.write_text(updated, encoding="utf-8")
     return replaced
 
 
@@ -542,7 +643,35 @@ def normalize_selection(
         fallback = f"Restore the missing logic in {rel_file.as_posix()} around lines {line_numbers[0]}-{line_numbers[-1]}."
         tasks = [fallback]
 
-    return TaskSelection(rel_file=rel_file, dropped_lines=line_numbers, tasks=tasks)
+    # Difficulties: accept "difficulties" (list) or "difficulty" (str)
+    raw_diffs = selection.get("difficulties")
+    difficulties: Optional[List[str]] = None
+    if isinstance(raw_diffs, list):
+        difficulties = [str(x).strip() for x in raw_diffs if str(x).strip()]
+    else:
+        single = selection.get("difficulty")
+        if isinstance(single, str) and single.strip():
+            difficulties = [single.strip()] * len(tasks)
+
+    # Ensure alignment if lengths mismatch
+    if difficulties and len(difficulties) != len(tasks):
+        diffs = (difficulties + ["Unknown"] * len(tasks))[: len(tasks)]
+        difficulties = diffs
+
+    answer_notes = None
+    raw_notes = selection.get("answer_notes")
+    if isinstance(raw_notes, list):
+        answer_notes = " ".join([str(x).strip() for x in raw_notes if str(x).strip()]) or None
+    elif isinstance(raw_notes, str):
+        answer_notes = raw_notes.strip() or None
+
+    return TaskSelection(
+        rel_file=rel_file,
+        dropped_lines=line_numbers,
+        tasks=tasks,
+        difficulties=difficulties,
+        answer_notes=answer_notes,
+    )
 
 
 def fallback_selection_for_file(
@@ -605,7 +734,6 @@ def build_dataset_entry(
     task_dir: Path,
     selection: TaskSelection,
     dropped_content: List[Dict[str, object]],
-    placeholder: str,
 ) -> Dict[str, object]:
     rel_task_dir = task_dir.relative_to(project)
     dropped_lines_text = "-".join(str(num) for num in selection.dropped_lines)
@@ -616,8 +744,9 @@ def build_dataset_entry(
         "file_path": selection.rel_file.as_posix(),
         "dropped_lines": selection.dropped_lines,
         "tasks": selection.tasks,
-        "placeholder": placeholder,
         "removed_source": dropped_content,
+        **({"difficulties": selection.difficulties} if selection.difficulties else {}),
+        **({"answer_notes": selection.answer_notes} if selection.answer_notes else {}),
     }
 
 
@@ -677,7 +806,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         "--placeholder",
         type=str,
         default=None,
-        help="Optional override placeholder text inserted on dropped lines.",
+        help="Optional override placeholder text inserted on dropped lines (unused).",
     )
     args = parser.parse_args(argv)
 
@@ -755,11 +884,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                     target_file = task_dir / selection.rel_file
                     if not target_file.exists():
                         continue
-                    placeholder = placeholder_for_extension(
-                        target_file.suffix.lower(), args.placeholder
-                    )
                     dropped_content = replace_code_lines(
-                        target_file, selection.dropped_lines, placeholder
+                        # placeholder argument retained but ignored
+                        target_file, selection.dropped_lines, placeholder=""
                     )
                     if not dropped_content:
                         continue
@@ -768,7 +895,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         task_dir=task_dir,
                         selection=selection,
                         dropped_content=dropped_content,
-                        placeholder=placeholder,
                     )
                     dataset.append(entry)
     finally:

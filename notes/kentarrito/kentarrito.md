@@ -280,7 +280,7 @@
 
   ```
 
-## Oct 13
+## Oct 13, 14
 
 - [ ] Make rmsearch/agents
   - [x] Design workflow and make readme in rmsearch/agents
@@ -292,6 +292,7 @@
       - [x] modify the file with the algorism
       - [x] debug it
       * -> This only generates easy problems. Modify prompt to make more difficult and unobvious problems
+      - [x] Improve prompt in make_evaluation_dataset_code.py
     - [ ] llm_inference.py
 
 - [ ] Develop rmsearch/graph
