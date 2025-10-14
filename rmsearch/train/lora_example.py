@@ -163,6 +163,7 @@ def train_reward_model(
         num_train_epochs=50,
         report_to=None,
         remove_unused_columns=False,
+        gradient_checkpointing=False,
         # deepspeed="/workspace/Prakhar/ds_config.json"
     )
 

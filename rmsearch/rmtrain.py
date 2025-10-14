@@ -1,7 +1,7 @@
 from trl import RewardTrainer, RewardConfig
 from peft import LoraConfig, TaskType
 import accelerate
-from peft import get_peft_model
+from peft import get_peft_model , prepare_model_for_kbit_training
 
 import json
 import os
@@ -13,7 +13,7 @@ import torch.nn as nn
 import warnings
 warnings.filterwarnings('ignore')
 from datasets import Dataset, load_dataset, load_from_disk
-from transformers import AutoModelForSequenceClassification,AutoTokenizer,TrainingArguments,AutoConfig,AutoModelForCausalLM
+from transformers import AutoModelForSequenceClassification,AutoTokenizer,TrainingArguments,AutoConfig,AutoModelForCausalLM, BitsAndBytesConfig
 
 
 from transformers import TrainerCallback, TrainingArguments, Trainer
@@ -77,6 +77,9 @@ class RMTrainer:
         self.num_gpus = num_gpus
         self.model_name = model_name
 
+        quantization_config = BitsAndBytesConfig(
+                            load_in_8bit=True,
+                        )
         
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_eos_token=True, add_bos_token=True)
         if tokenizer.pad_token is None:
@@ -84,7 +87,12 @@ class RMTrainer:
             #config.pad_token_id = config.eos_token_id
         self.tokenizer = tokenizer
         
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+                                                    model_name,
+                                                    quantization_config=quantization_config,
+                                                    num_labels=1)
+
+        self.model = prepare_model_for_kbit_training(self.model)
 
 
     def prepare_dataset(self,

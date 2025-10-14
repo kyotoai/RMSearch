@@ -8,3 +8,6 @@ matplotlib
 vllm
 evaluate
 sentence_transformers
+accelerate
+bitsnadbytes
+deepspeed
