@@ -204,10 +204,8 @@ LANGUAGE_BY_EXTENSION: Dict[str, str] = {
     ".rspec": "ruby",
 }
 
-MAX_PROMPT_CHARS = 12_000
-MAX_LINES_PER_FILE_IN_PROMPT = 120
+DEFAULT_MAX_FILE_TOKENS = 4_096
 MAX_LINE_LENGTH_IN_PROMPT = 160
-MAX_CODE_FILES_FOR_PROMPT = 40
 MAX_FILE_BYTES = 200_000
 
 
@@ -284,120 +282,109 @@ def collect_code_files(project_root: Path) -> List[CodeFile]:
     return code_files
 
 
-def build_project_snapshot(
+def tokens_to_char_budget(token_budget: int) -> int:
+    if token_budget <= 0:
+        return 0
+    # Rough heuristic: assume 1 token ~= 4 characters.
+    return max(token_budget * 4, 0)
+
+
+def build_file_prompt(
     project_name: str,
-    code_files: List[CodeFile],
-    max_chars: int = MAX_PROMPT_CHARS,
+    code_file: CodeFile,
+    max_file_tokens: int,
 ) -> str:
+    char_budget = tokens_to_char_budget(max_file_tokens)
     header_lines = [
         f"You are curating coding evaluation tasks for project '{project_name}'.",
-        "Identify up to 3 places where removing a few lines would create a meaningful bug-fix or implementation task.",
-        'Return a JSON array. Each object must contain: "file_path", "dropped_lines", "tasks".',
-        '"file_path": relative path from the project root.',
-        '"dropped_lines": array of 1-based line numbers to blank out (prefer contiguous runs, max 12 numbers).',
-        '"tasks": array of 2-3 natural language prompts with varied phrasing describing the missing implementation.',
-        "Respond with JSON only.",
+        f"Focus on file '{code_file.relative_path.as_posix()}' ({code_file.language}).",
+        "Identify up to 3 meaningful places where removing code would create a useful bug-fix or implementation task.",
+        'Return a JSON array. Each object must include: "dropped_lines" (array of 1-based line numbers) and "tasks" (2-3 varied natural language prompts).',
+        'Optional fields: "file_path" (defaults to this file) and "answer_notes".',
+        "Use contiguous ranges where possible. Respond with JSON only.",
         "",
-        "Project snapshot:",
+        "File content:",
     ]
+
     parts: List[str] = []
-    total_chars = sum(len(line) + 1 for line in header_lines)
+    header_text = "\n".join(header_lines) + "\n"
+    total_chars = len(header_text)
+    unlimited = char_budget == 0
     truncated = False
 
-    for code_file in code_files[:MAX_CODE_FILES_FOR_PROMPT]:
-        file_header = f"=== {code_file.relative_path.as_posix()} ({code_file.language}) ==="
-        total_chars += len(file_header) + 1
-        if total_chars > max_chars:
+    for idx, raw_line in enumerate(code_file.lines, start=1):
+        sanitized = raw_line.replace("\t", "    ")
+        if len(sanitized) > MAX_LINE_LENGTH_IN_PROMPT:
+            sanitized = sanitized[: MAX_LINE_LENGTH_IN_PROMPT - 1] + "…"
+        formatted = f"{idx:5d}: {sanitized}"
+        projected = total_chars + len(formatted) + 1
+        if not unlimited and projected > char_budget:
             truncated = True
             break
-        parts.append(file_header)
-        for idx, raw_line in enumerate(
-            code_file.lines[:MAX_LINES_PER_FILE_IN_PROMPT], start=1
-        ):
-            sanitized = raw_line.replace("\t", "    ")
-            if len(sanitized) > MAX_LINE_LENGTH_IN_PROMPT:
-                sanitized = sanitized[: MAX_LINE_LENGTH_IN_PROMPT - 1] + "…"
-            formatted = f"{idx:4d}: {sanitized}"
-            if total_chars + len(formatted) + 1 > max_chars:
-                truncated = True
-                break
-            parts.append(formatted)
-            total_chars += len(formatted) + 1
-        if truncated:
-            break
+        parts.append(formatted)
+        total_chars = projected
 
     if truncated:
-        parts.append("... (truncated snapshot)")
+        parts.append("... (truncated due to prompt budget)")
 
-    return "\n".join(header_lines + parts)
+    return header_text + "\n".join(parts)
 
 
 def call_planner(
+    model,
     project_name: str,
     code_files: List[CodeFile],
-    model_name: str,
-    tensor_parallel_size: int,
-    num_instances: int,
-    gpu_memory_utilization: float,
-    max_model_len: int,
-    dtype: str,
-    trust_remote_code: bool,
+    sampling_params: SamplingParams,
     worker_batch_size: int,
     timeout: float,
-    temperature: float,
-    top_p: float,
-    max_tokens: int,
-) -> List[Dict[str, object]]:
+    max_file_tokens: int,
+) -> Dict[str, List[Dict[str, object]]]:
     if not code_files:
-        return []
+        return {}
 
-    prompt = build_project_snapshot(project_name, code_files, MAX_PROMPT_CHARS)
-    sampling_params = SamplingParams(
-        temperature=temperature,
-        top_p=top_p,
-        max_tokens=max_tokens,
+    prompts: List[str] = []
+    rel_paths: List[Path] = []
+
+    for code_file in code_files:
+        prompts.append(build_file_prompt(project_name, code_file, max_file_tokens))
+        rel_paths.append(code_file.relative_path)
+
+    responses = generate(
+        model=model,
+        prompts=prompts,
+        batch_size=worker_batch_size,
+        timeout_s=timeout,
+        sampling_params=sampling_params,
     )
 
-    model = build_llm(
-        model_name=model_name,
-        tensor_parallel_size=tensor_parallel_size,
-        num_instances=num_instances,
-        gpu_memory_utilization=gpu_memory_utilization,
-        max_model_len=max_model_len,
-        dtype=dtype,
-        trust_remote_code=trust_remote_code,
-    )
+    selections: Dict[str, List[Dict[str, object]]] = {}
+    if responses is None:
+        responses = []
 
-    try:
-        responses = generate(
-            model=model,
-            prompts=[prompt],
-            batch_size=worker_batch_size,
-            timeout_s=timeout,
-            sampling_params=sampling_params,
-        )
-    finally:
-        model.close()
+    for index, rel_file in enumerate(rel_paths):
+        response = responses[index] if index < len(responses) else ""
+        if not response:
+            selections[rel_file.as_posix()] = []
+            continue
+        start = response.find("[")
+        end = response.rfind("]")
+        if start == -1 or end == -1:
+            selections[rel_file.as_posix()] = []
+            continue
+        payload = response[start : end + 1]
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            selections[rel_file.as_posix()] = []
+            continue
+        if isinstance(data, list):
+            selections[rel_file.as_posix()] = [
+                item for item in data if isinstance(item, dict)
+            ]
+        else:
+            selections[rel_file.as_posix()] = []
 
-    if not responses:
-        return []
-
-    response = responses[0]
-    start = response.find("[")
-    end = response.rfind("]")
-    if start == -1 or end == -1:
-        return []
-
-    payload = response[start : end + 1]
-    try:
-        data = json.loads(payload)
-    except json.JSONDecodeError:
-        return []
-
-    if not isinstance(data, list):
-        return []
-
-    return [item for item in data if isinstance(item, dict)]
+    return selections
 
 
 def placeholder_for_extension(ext: str, override: Optional[str]) -> str:
@@ -441,7 +428,7 @@ def replace_code_lines(
 
     newline = "\n" if text.endswith("\n") else ""
     updated = "\n".join(lines) + newline
-    file_path.write_text(updated, encoding="utf-8")
+    #file_path.write_text(updated, encoding="utf-8")
     return replaced
 
 
@@ -528,9 +515,16 @@ def parse_tasks(raw_tasks: object) -> List[str]:
 def normalize_selection(
     selection: Dict[str, object],
     max_lines_per_task: int,
+    default_rel_file: Optional[Path] = None,
 ) -> Optional[TaskSelection]:
     rel_file_value = selection.get("file_path") or selection.get("path")
-    rel_file = sanitize_relative_path(str(rel_file_value)) if rel_file_value else None
+    rel_file: Optional[Path]
+    if rel_file_value:
+        rel_file = sanitize_relative_path(str(rel_file_value))
+    elif default_rel_file is not None:
+        rel_file = default_rel_file
+    else:
+        rel_file = None
     if rel_file is None:
         return None
 
@@ -549,41 +543,40 @@ def normalize_selection(
     return TaskSelection(rel_file=rel_file, dropped_lines=line_numbers, tasks=tasks)
 
 
-def fallback_selections(
-    code_files: List[CodeFile],
+def fallback_selection_for_file(
+    code_file: CodeFile,
     fallback_lines: int,
-) -> List[Dict[str, object]]:
+) -> Optional[Dict[str, object]]:
     if fallback_lines <= 0:
         fallback_lines = 1
-    for code_file in code_files:
-        candidates: List[int] = []
-        for idx, line in enumerate(code_file.lines, start=1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if stripped.startswith(("#", "//", "/*", "*", "!", "--")):
-                continue
-            candidates.append(idx)
-            if len(candidates) >= fallback_lines:
-                break
-        if not candidates:
+
+    candidates: List[int] = []
+    for idx, line in enumerate(code_file.lines, start=1):
+        stripped = line.strip()
+        if not stripped:
             continue
-        description = (
-            f"Restore the missing code in {code_file.relative_path.as_posix()} "
-            f"around lines {candidates[0]}-{candidates[-1]}."
-        )
-        return [
-            {
-                "file_path": code_file.relative_path.as_posix(),
-                "dropped_lines": candidates,
-                "tasks": [
-                    description,
-                    f"Fill the removed implementation near line {candidates[0]} "
-                    f"in {code_file.relative_path.as_posix()}.",
-                ],
-            }
-        ]
-    return []
+        if stripped.startswith(("#", "//", "/*", "*", "!", "--")):
+            continue
+        candidates.append(idx)
+        if len(candidates) >= fallback_lines:
+            break
+
+    if not candidates:
+        return None
+
+    description = (
+        f"Restore the missing code in {code_file.relative_path.as_posix()} "
+        f"around lines {candidates[0]}-{candidates[-1]}."
+    )
+    return {
+        "file_path": code_file.relative_path.as_posix(),
+        "dropped_lines": candidates,
+        "tasks": [
+            description,
+            f"Fill the removed implementation near line {candidates[0]} "
+            f"in {code_file.relative_path.as_posix()}.",
+        ],
+    }
 
 
 def ensure_task_workspace(project: Path, suffix: str) -> Path:
@@ -659,6 +652,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--top-p", type=float, default=0.95)
     parser.add_argument("--max-tokens", type=int, default=512)
+    parser.add_argument(
+        "--max-file-tokens",
+        type=int,
+        default=DEFAULT_MAX_FILE_TOKENS,
+        help="Approximate token budget per file prompt (<=0 to include entire file).",
+    )
     parser.add_argument("--max-projects", type=int, default=None)
     parser.add_argument(
         "--max-lines-per-task",
@@ -685,60 +684,94 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         projects = projects[: args.max_projects]
 
     dataset: List[Dict[str, object]] = []
+    sampling_params = SamplingParams(
+        temperature=args.temperature,
+        top_p=args.top_p,
+        max_tokens=args.max_tokens,
+    )
+    model = None
 
-    for project in projects:
-        code_files = collect_code_files(project)
-        if not code_files:
-            continue
-
-        selections_raw = call_planner(
-            project_name=project.name,
-            code_files=code_files,
-            model_name=args.model_name,
-            tensor_parallel_size=args.tensor_parallel_size,
-            num_instances=args.num_instances,
-            gpu_memory_utilization=args.gpu_memory_utilization,
-            max_model_len=args.max_model_len,
-            dtype=args.dtype,
-            trust_remote_code=args.trust_remote_code,
-            worker_batch_size=args.worker_batch_size,
-            timeout=args.timeout,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            max_tokens=args.max_tokens,
-        )
-
-        if not selections_raw:
-            selections_raw = fallback_selections(code_files, args.fallback_lines)
-
-        normalized: List[TaskSelection] = []
-        for selection in selections_raw:
-            normalized_selection = normalize_selection(selection, args.max_lines_per_task)
-            if normalized_selection:
-                normalized.append(normalized_selection)
-
-        for index, selection in enumerate(normalized):
-            suffix = make_task_suffix(index, selection.rel_file)
-            task_dir = ensure_task_workspace(project, suffix=suffix)
-            target_file = task_dir / selection.rel_file
-            if not target_file.exists():
+    try:
+        for project in projects:
+            code_files = collect_code_files(project)
+            if not code_files:
                 continue
-            placeholder = placeholder_for_extension(
-                target_file.suffix.lower(), args.placeholder
+
+            if model is None:
+                model = build_llm(
+                    model_name=args.model_name,
+                    tensor_parallel_size=args.tensor_parallel_size,
+                    num_instances=args.num_instances,
+                    gpu_memory_utilization=args.gpu_memory_utilization,
+                    max_model_len=args.max_model_len,
+                    dtype=args.dtype,
+                    trust_remote_code=args.trust_remote_code,
+                )
+
+            selections_by_file = call_planner(
+                model=model,
+                project_name=project.name,
+                code_files=code_files,
+                sampling_params=sampling_params,
+                worker_batch_size=args.worker_batch_size,
+                timeout=args.timeout,
+                max_file_tokens=args.max_file_tokens,
             )
-            dropped_content = replace_code_lines(
-                target_file, selection.dropped_lines, placeholder
-            )
-            if not dropped_content:
-                continue
-            entry = build_dataset_entry(
-                project=project,
-                task_dir=task_dir,
-                selection=selection,
-                dropped_content=dropped_content,
-                placeholder=placeholder,
-            )
-            dataset.append(entry)
+
+            task_index = 0
+            for code_file in code_files:
+                rel_posix = code_file.relative_path.as_posix()
+                raw_selections = selections_by_file.get(rel_posix, [])
+
+                normalized_entries: List[TaskSelection] = []
+                for raw_selection in raw_selections:
+                    normalized_selection = normalize_selection(
+                        raw_selection,
+                        args.max_lines_per_task,
+                        default_rel_file=code_file.relative_path,
+                    )
+                    if normalized_selection:
+                        normalized_entries.append(normalized_selection)
+
+                if not normalized_entries:
+                    fallback_payload = fallback_selection_for_file(
+                        code_file, args.fallback_lines
+                    )
+                    if fallback_payload:
+                        fallback_selection = normalize_selection(
+                            fallback_payload,
+                            args.max_lines_per_task,
+                            default_rel_file=code_file.relative_path,
+                        )
+                        if fallback_selection:
+                            normalized_entries.append(fallback_selection)
+
+                for selection in normalized_entries:
+                    suffix = make_task_suffix(task_index, selection.rel_file)
+                    task_index += 1
+                    task_dir = ensure_task_workspace(project, suffix=suffix)
+                    target_file = task_dir / selection.rel_file
+                    if not target_file.exists():
+                        continue
+                    placeholder = placeholder_for_extension(
+                        target_file.suffix.lower(), args.placeholder
+                    )
+                    dropped_content = replace_code_lines(
+                        target_file, selection.dropped_lines, placeholder
+                    )
+                    if not dropped_content:
+                        continue
+                    entry = build_dataset_entry(
+                        project=project,
+                        task_dir=task_dir,
+                        selection=selection,
+                        dropped_content=dropped_content,
+                        placeholder=placeholder,
+                    )
+                    dataset.append(entry)
+    finally:
+        if model is not None:
+            model.close()
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as handle:

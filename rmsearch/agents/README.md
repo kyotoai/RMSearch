@@ -63,6 +63,7 @@ python -m rmsearch.agents.make_evaluation_dataset_code \
   --code-dir ./code \
   --output ./agents/dataset.json \
   --model-name /workspace/qwen4b \
+  --worker-batch-size 5 \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --max-model-len 10_000
