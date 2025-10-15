@@ -112,6 +112,15 @@ code
 **Notices**
 
 
+## `make_evaluation_dataset_code_v3.py`
+
+```bash
+python -m rmsearch.agents.make_evaluation_dataset_code_v3 \
+  --code-dir ./code \
+  --output ./agents/dataset.json \
+  --model-name gpt-5-mini \
+  --worker-batch-size 5 \
+```
 
 
 ## `llm_inference.py`

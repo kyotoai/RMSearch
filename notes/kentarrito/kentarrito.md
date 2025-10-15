@@ -292,7 +292,8 @@
       - [x] modify the file with the algorism
       - [x] debug it
       * -> This only generates easy problems. Modify prompt to make more difficult and unobvious problems
-      - [x] Improve prompt in make_evaluation_dataset_code.py
+      - [x] Improve prompt in make_evaluation_dataset_code_v1.py -> Created v2
+      - [x] Improve it by implementing gpt api call and by summarizing other files with llm
     - [ ] llm_inference.py
 
 - [ ] Develop rmsearch/graph
