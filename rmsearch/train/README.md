@@ -41,7 +41,7 @@ python -m rmsearch.train.process_data \
   --dataset-name HuggingFaceTB/smollm-corpus \
   --output-dir ./data/smollm-corpus \
   --dataset-config cosmopedia-v2 \
-  --n-sample 10 \
+  --n-sample 100 \
   --stream
 ```
 Omit `--n-sample` entirely if you want to materialise the full split.

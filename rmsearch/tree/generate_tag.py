@@ -88,6 +88,12 @@ def build_pool_from_settings(model_name: str, settings: Dict[str, Any]) -> LLMWo
     """Backward-compatible alias for older imports."""
     return build_model_from_settings(model_name, settings)
 
+def extract_text(textC: str, textB: str) -> str | None:
+    # Build a non-greedy pattern like r'<tag>(.*?)</tag>'
+    pattern = rf"<{re.escape(textB)}>(.*?)</{re.escape(textB)}>"
+    match = re.search(pattern, textC, flags=re.DOTALL)
+    return match.group(1) if match else None
+
 
 def generate_tag(
     keys: Iterable[str],
@@ -110,12 +116,16 @@ def generate_tag(
 
     prompts = [
         (
+            f"Key: \n'''\n{key}\n'''\n\n"
             "You are a tagging assistant.\n"
-            "Task: Create 3–6 short, specific tags (1–3 words each) "
-            "that describe the following key/phrase.\n"
-            "Output ONLY a JSON array of strings. No commentary.\n\n"
-            f"Key: \"{key}\"\n\n"
-            'Example Output: ["LLM Inference", "Vector Search", "RAG"]'
+            "Task: Create 3–6 short, specific tags (1–3 sentences each) from the provided key above.\n"
+            "Following the instructions below, output a JSON array of strings by enclosing the list with <tags></tags>.\n\n"
+            'Instructions\n'
+            '1. Read the key carefully\n'
+            '2. Think what are the tags which represents the key most.\n'
+            '3. Answer your output list of tag by enclosing it with <tags></tags>\n'
+            '4. Example Output: <tags>["LLM Inference", "Vector Search", "RAG"]</tags>\n\n'
+            "Let's think step by step following the instructions."
         )
         for key in key_list
     ]
@@ -147,7 +157,8 @@ def generate_tag(
 
     cleaned_batches: List[List[str]] = []
     for response in outputs:
-        tags = _json_list_from_text(response)
+        tags_text = extract_text(response, "tags")
+        tags = _json_list_from_text(tags_text)
         seen, unique_tags = set(), []
         for tag in tags:
             tag = re.sub(r"[^\w\-&/ +]", "", tag).strip()

@@ -138,20 +138,38 @@ def _prepare_requests(
                 sampled_contrast = random.sample(contrast_pool, max_sample_other)
             else:
                 sampled_contrast = contrast_pool
-        else:
-            sampled_contrast = ["general"]
 
-        child_lines = "\n".join(f"- {tag}" for tag in sampled_children)
-        contrast_lines = "\n".join(f"- {tag}" for tag in sampled_contrast)
-        prompt = (
-            "You are curating a hierarchical taxonomy. Review the child tags belonging to a single cluster\n"
-            "and craft ONE descriptive representative tag (7-12 words) that captures their shared theme.\n"
-            "Use the contrast tags to avoid overly generic wording. Return only the representative tag text,\n"
-            "without punctuation or additional commentary.\n\n"
-            f"Child sample tags:\n{child_lines}\n\n"
-            f"Contrast tags from other clusters:\n{contrast_lines}\n\n"
-            "Representative tag:"
-        )
+            child_lines = "\n".join(f"- {tag}" for tag in sampled_children)
+            contrast_lines = "\n".join(f"- {tag}" for tag in sampled_contrast)
+            prompt = (
+                "You are curating a hierarchical taxonomy. Review the child tags belonging to a single cluster\n"
+                "and craft ONE descriptive representative tag (1-3 sentences) that captures their shared theme.\n"
+                "Use the contrast tags to avoid overly generic wording. Return the representative tag text by enclosing the representative tag with <tag></tag>.\n\n"
+                f"Child sample tags:\n{child_lines}\n\n"
+                f"Contrast tags from other clusters:\n{contrast_lines}\n\n"
+                "Following the instructions.\n"
+                '1. Read the child tags and contrast tags carefully.\n'
+                '2. Think what are the tag which represent the child tags apart from the contrast tags most.\n'
+                '3. Answer your tag output by enclosing it with <tag></tag>\n'
+                '4. Example Output: <tag>LLM Inference</tag>\n\n'
+                "Let's think step by step following the instructions."
+            )
+
+        else:
+            child_lines = "\n".join(f"- {tag}" for tag in sampled_children)
+            prompt = (
+                "You are curating a hierarchical taxonomy. Review the child tags belonging to a single cluster\n"
+                "and craft ONE descriptive representative tag (1-3 sentences) that captures their shared theme.\n"
+                "Use the contrast tags to avoid overly generic wording. Return the representative tag text by enclosing the representative tag with <tag></tag>.\n\n"
+                f"Child sample tags:\n{child_lines}\n\n"
+                "Following the instructions.\n"
+                '1. Read the child tags and contrast tags carefully.\n'
+                '2. Think what are the tag which represent the child tags most.\n'
+                '3. Answer your tag output by enclosing it with <tag></tag>\n'
+                '4. Example Output: <tag>LLM Inference</tag>\n\n'
+                "Let's think step by step following the instructions."
+            )
+
         pending.append({"path": path, "prompt": prompt})
 
     enqueue(tag_tree_recs, [])
@@ -189,6 +207,8 @@ def _run_iteration(
             raise RuntimeError("vLLM worker returned mismatched number of outputs")
 
         for entry, output_text in zip(pending, outputs):
+            print()
+            print(output_text)
             tag_text = extract_text(output_text, "tag") or output_text.strip()
             tag_text = tag_text or "general"
             set_representative_tag(tag_tree_recs, entry["path"], tag_text)
@@ -325,7 +345,7 @@ if __name__ == "__main__":
     parser.add_argument("--timeout", type=float, default=None, help="Optional timeout (s) for each worker batch.")
     parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature for prompt generation.")
     parser.add_argument("--top-p", type=float, default=0.9, help="Sampling top_p value.")
-    parser.add_argument("--max-tokens", type=int, default=32, help="Maximum tokens generated per prompt.")
+    parser.add_argument("--max-tokens", type=int, default=5000, help="Maximum tokens generated per prompt.")
     parser.add_argument(
         "--max-sample-children",
         type=int,

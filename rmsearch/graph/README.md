@@ -81,6 +81,8 @@ python -m rmsearch.tree.embed_tags \
 - Set `--device-groups` to pin embedding workers to specific GPUs if you launch
   more than one instance.
 
+
+
 ## `make_tag_tree.py`
 
 Cluster tag embeddings into a hierarchical k-means tree.
@@ -90,7 +92,7 @@ python -m rmsearch.tree.make_tag_tree \
   --working-dir . \
   --data-name smollm-corpus \
   --branching-factor 10 \
-  --max-leaf-size 60 \
+  --max-leaf-size 10 \
   --random-state 0
 ```
 
@@ -126,8 +128,9 @@ tree so the model produces longer, more specific labels.
 python -m rmsearch.graph.build_representative_tags_v2 \
   --tag-tree ./data/smollm-corpus/tag_tree_recs.json \
   --model-name /workspace/qwen4b \
-  --max-sample-children 20 \
-  --max-sample-other 20 \
+  --max-sample-children 10 \
+  --max-tokens 1000 \
+  --max-sample-other 10 \
   --max-model-len 10_000 \
   --output ./data/smollm-corpus/tag_tree_recs.json
 ```
@@ -172,7 +175,7 @@ python -m rmsearch.graph.build_representative_tags_v2 \
 Convert tag_tree_recs.json created in make_tag_tree.py into tag_graph.parquet.
 
 ```bash
-python -m rmsearch.tree.convert_tree_to_graph \
+python -m rmsearch.graph.convert_tree_to_graph \
   --tag-tree ./data/smollm-corpus/tag_tree_recs.json \
   --output ./data/smollm-corpus/tag_graph.parquet
 ```
