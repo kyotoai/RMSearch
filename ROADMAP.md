@@ -50,6 +50,8 @@ TODO for Minimal Experiment to write the paper
 
 TODO for Better benchmark result
 - [ ] GPU parallel for training with deepspeed
+  - [ ] accumulate batches
+  - [ ] 
 - [ ] Collect more dataset
 - [ ] Make more various queries (which is necessary for stable training)
 - [ ] Advanced DPO batch (ask kentarrito about this)
@@ -57,4 +59,24 @@ TODO for Better benchmark result
 
 TODO for better paper
 - [ ] Collect same proportion of mteb benchmark
+
+
+## Oct 15
+
+* ToDo (all -> do it with everyone collaboration, later -> decide the detail later)
+  * Improve Tag graph -> kentarrito
+  * Advanced DPO batching -> kentarrito
+  * GPU parallel for training with deepspeed -> Prakhar
+  * Implement gpt-oss -> Prakhar
+  * Make system to set aruguana as test dataset -> Mingk
+  * Add more dataset -> Mingk
+  * Code to train rm for tag search -> later
+  * Write papers and blogs -> all
+  * Make web service -> kentarrito & roshia
+  * design seimei -> all
+  * make agents for analying directory, implementing knowledge graph and improving system real-time -> kentarrito, Cameron
+  * make agents for nuclear fusion simulation automation -> kentarrito, Cameron
+  * Make seimei library -> later
+  * Write papers about seimei -> later
+  * Expand business over a lot of companies based on these technology!
 

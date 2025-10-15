@@ -294,12 +294,16 @@
       * -> This only generates easy problems. Modify prompt to make more difficult and unobvious problems
       - [x] Improve prompt in make_evaluation_dataset_code_v1.py -> Created v2
       - [x] Improve it by implementing gpt api call and by summarizing other files with llm
-    - [ ] llm_inference.py
+
+
+## Oct 15
 
 - [ ] Develop rmsearch/graph
   - [x] Modify rmsearch/graph/README.md
   - [x] Code files by codex
   - [ ] Debug them
+
+* I gotta probably assign job to cameron on this Saturday. Need to make sure that llm_inference.py work on the agents.
 
 
 
