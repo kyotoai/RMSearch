@@ -380,21 +380,25 @@ def summarize_code_files_with_gpt(
         )
         prompts.append(prompt)
 
+    print("Number of prompts: ", len(prompts))
+
     responses: List[str] = []
     batch_size = max(1, worker_batch_size)
     for start in range(0, len(prompts), batch_size):
+        print(f"{start+1}th generation now")
         batch = prompts[start : start + batch_size]
         try:
             for prompt in batch:
                 request_kwargs = {
                     "model": model_name,
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": summary_temperature,
-                    "top_p": top_p,
-                    "max_tokens": completion_max_tokens,
+                    #temperature": summary_temperature,
+                    #"top_p": top_p,
+                    #"max_tokens": completion_max_tokens,
                 }
                 if timeout:
-                    request_kwargs["timeout"] = timeout
+                    pass
+                    #request_kwargs["timeout"] = timeout
                 completion = client.chat.completions.create(**request_kwargs)
                 if (
                     completion.choices
@@ -588,18 +592,20 @@ def call_planner(
     responses: List[str] = []
     batch_size = max(1, worker_batch_size)
     for start in range(0, len(prompts), batch_size):
+        print(f"{start+1}th generation now")
         batch = prompts[start : start + batch_size]
         try:
             for prompt in batch:
                 request_kwargs = {
                     "model": model_name,
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": temperature,
-                    "top_p": top_p,
-                    "max_tokens": max_tokens,
+                    #"temperature": temperature,
+                    #"top_p": top_p,
+                    #"max_tokens": max_tokens,
                 }
                 if timeout:
-                    request_kwargs["timeout"] = timeout
+                    pass
+                    #request_kwargs["timeout"] = timeout
                 completion = client.chat.completions.create(**request_kwargs)
                 if (
                     completion.choices

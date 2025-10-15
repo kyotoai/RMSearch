@@ -115,11 +115,14 @@ code
 ## `make_evaluation_dataset_code_v3.py`
 
 ```bash
+export OPENAI_API_KEY="your_api_key_here"
+```
+
+```bash
 python -m rmsearch.agents.make_evaluation_dataset_code_v3 \
   --code-dir ./code \
-  --output ./agents/dataset.json \
-  --model-name gpt-5-mini \
-  --worker-batch-size 5 \
+  --output ./agents/dataset_v3.json \
+  --model-name gpt-5-nano
 ```
 
 
