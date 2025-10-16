@@ -441,23 +441,26 @@ python -m rmsearch.train.lora_example \
   --dataset-list-train ./exp2/dataset_list_train.json \
   --dataset-list-test ./exp2/dataset_list_test.json \
   --model-name /workspace/llama3b-rm \
-  --num-gpus 2 \
   --output-dir ./exp2/model1 \
-  --base-dir ./exp2
+  --wandb-project rmsearch \
+  --wandb-run-name exp2-lora
 ```
 
 **Arguments**
-- `--dataset-list-train`: The preference dataset produced by `judge_dataset.py` (`dataset_list_train.json`).
-- `--dataset-list-test`: The preference dataset produced by `judge_dataset.py` (`dataset_list_test.json`).
-- `--model-name`: Base reward model checkpoint.
-- `--num-gpus`: Number of GPUs available for training (passed to `RMTrainer`).
-- `--output-dir`: Directory where LoRA checkpoints and logs are written.
-- `--base-dir`: Working directory for intermediate preprocessed datasets.
+- `--dataset-list-train`: Training preference pairs produced by `judge_dataset.py` (`dataset_list_train.json`).
+- `--dataset-list-test`: Optional evaluation preference pairs (`dataset_list_test.json`). When omitted, training runs without evaluation.
+- `--model-name`: Base reward model checkpoint or HF Hub path.
+- `--output-dir`: Directory where LoRA checkpoints, logs, and tokenizer config are written.
+- `--max-length`: Token limit applied during chat-template tokenisation (default `4000`).
+- `--max-characters`: Character cap per message before tokenisation (default `4000`).
+- `--per-device-train-batch-size` / `--per-device-eval-batch-size`: Batch sizes fed to TRL's `RewardTrainer`.
+- `--evaluation-steps`, `--save-steps`, `--logging-steps`, `--num-train-epochs`: Standard TRL scheduling knobs.
+- `--wandb-project`, `--wandb-run-name`, `--wandb-tags`: Enable Weights & Biases tracking for the run (omit the project to disable W&B entirely).
 
 **Outputs**
-- Checkpoints under `output-dir` (e.g. `checkpoint-XXXX`).
-- Preprocessed dataset shards in `base-dir`.
-- TRL training logs under `output-dir`.
+- Saved checkpoints under `output-dir` (e.g. `checkpoint-XXXX`).
+- `trainer_state.json` / `trainer_config.json` emitted by TRL in `output-dir`.
+- When W&B is enabled, a run with the provided project/run name containing loss curves and evaluation metrics.
 - Example dataset entry fed to TRL:
   ```json
   {
@@ -470,8 +473,9 @@ python -m rmsearch.train.lora_example \
 
 **Notices**
 - Expects the base reward model weights and tokenizer to reside locally.
-- Training parameters mirror the notebook; adjust inside the script if you need different LoRA or training hyperparameters.
-- Long-running GPU job – monitor disk space for checkpoints.
+- Data is tokenised on the fly—no cached `train_ids`/`test_ids` or dataset directories are created.
+- Adjust LoRA modules or training hyperparameters directly in `rmsearch/train/lora_example.py`.
+- Long-running GPU job – monitor disk space for checkpoints and keep W&B logging disabled if offline.
 
 
 

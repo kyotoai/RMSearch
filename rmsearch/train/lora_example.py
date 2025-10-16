@@ -1,11 +1,14 @@
-"""LoRA reward-model training helpers."""
+"""LoRA reward-model training helpers with built-in dataset prep and W&B logging."""
 
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, List, Optional, Sequence
+
+from datasets import Dataset
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from .utils import extract_int, extract_text
 
@@ -14,8 +17,100 @@ __all__ = ["make_dataset_list", "train_reward_model"]
 _PROMPT_TEMPLATE = (
     "Give me relevant score between query and sentence;\n\n"
     "Query:{query}\n\n"
-    "Sentence:```{sentence}```"
+    'Sentence:```{sentence}```'
 )
+
+
+def _truncate_message(content: str, limit: int) -> str:
+    text = str(content)
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "..."
+
+
+def _format_preference_pair(
+    example: Dict[str, object],
+    tokenizer,
+    *,
+    max_length: int,
+    max_characters: int,
+) -> Dict[str, List[int]]:
+    chosen_msg = example["chosen_msg"]
+    rejected_msg = example["rejected_msg"]
+
+    if not isinstance(chosen_msg, list) or not isinstance(rejected_msg, list):
+        raise ValueError("Both 'chosen_msg' and 'rejected_msg' must be chat message lists.")
+
+    trimmed_chosen = [
+        {**message, "content": _truncate_message(message.get("content", ""), max_characters)}
+        for message in chosen_msg
+    ]
+    trimmed_rejected = [
+        {**message, "content": _truncate_message(message.get("content", ""), max_characters)}
+        for message in rejected_msg
+    ]
+
+    prompt_plus_chosen = tokenizer.apply_chat_template(trimmed_chosen, tokenize=False)
+    prompt_plus_rejected = tokenizer.apply_chat_template(trimmed_rejected, tokenize=False)
+
+    chosen_tokens = tokenizer(
+        [prompt_plus_chosen],
+        padding="max_length",
+        truncation=True,
+        max_length=max_length,
+        add_special_tokens=False,
+    )
+    rejected_tokens = tokenizer(
+        [prompt_plus_rejected],
+        padding="max_length",
+        truncation=True,
+        max_length=max_length,
+        add_special_tokens=False,
+    )
+
+    return {
+        "input_ids_chosen": chosen_tokens["input_ids"][0],
+        "attention_mask_chosen": chosen_tokens["attention_mask"][0],
+        "input_ids_rejected": rejected_tokens["input_ids"][0],
+        "attention_mask_rejected": rejected_tokens["attention_mask"][0],
+    }
+
+
+def _build_dataset_split(
+    records: Sequence[Dict[str, object]],
+    tokenizer,
+    *,
+    max_length: int,
+    max_characters: int,
+) -> Optional[Dataset]:
+    if not records:
+        return None
+
+    dataset = Dataset.from_list(list(records))
+
+    def format_example(example: Dict[str, object]) -> Dict[str, List[int]]:
+        return _format_preference_pair(
+            example,
+            tokenizer,
+            max_length=max_length,
+            max_characters=max_characters,
+        )
+
+    tokenized = dataset.map(format_example)
+
+    keep_columns = {
+        "input_ids_chosen",
+        "attention_mask_chosen",
+        "input_ids_rejected",
+        "attention_mask_rejected",
+        "chosen_sentence_id",
+        "rejected_sentence_id",
+    }
+    columns_to_remove = [column for column in tokenized.column_names if column not in keep_columns]
+    if columns_to_remove:
+        tokenized = tokenized.remove_columns(columns_to_remove)
+
+    return tokenized
 
 
 def make_dataset_list(
@@ -86,97 +181,35 @@ def make_dataset_list(
 
 
 def train_reward_model(
-    dataset_list: Sequence[Dict[str, object]],
+    dataset_list_train: Sequence[Dict[str, object]],
     *,
     dataset_list_test: Sequence[Dict[str, object]] | None = None,
     model_name: str,
-    num_gpus: int = 2,
     output_dir: Path = Path("./rm_model"),
-    base_dir: Path = Path("./rm_exp"),
+    max_length: int = 4000,
+    max_characters: int = 4000,
+    per_device_train_batch_size: int = 3,
+    per_device_eval_batch_size: int = 2,
+    evaluation_steps: int = 40,
+    save_steps: int = 20,
+    logging_steps: int = 1,
+    num_train_epochs: int = 50,
+    wandb_project: Optional[str] = None,
+    wandb_run_name: Optional[str] = None,
+    wandb_tags: Optional[Sequence[str]] = None,
 ) -> None:
     """Train a reward model using TRL's RewardTrainer with LoRA adapters."""
 
-    from peft import LoraConfig, TaskType
-    from rmsearch import RMTrainer
+    from peft import LoraConfig, TaskType, get_peft_model
     from trl import RewardConfig, RewardTrainer
 
-    base_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    rmtrainer = RMTrainer(model_name=model_name, num_gpus=num_gpus)
-    tokenizer = rmtrainer.tokenizer
-    train_records: List[Dict[str, object]] = list(dataset_list)
-    test_records: List[Dict[str, object]] = list(dataset_list_test) if dataset_list_test is not None else []
-    combined_dataset: List[Dict[str, object]] = train_records + test_records
+    tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_bos_token=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
-    if dataset_list_test is not None:
-        train_ids_path = base_dir / "train_ids.json"
-        test_ids_path = base_dir / "test_ids.json"
-        train_indices = list(range(len(train_records)))
-        test_indices = list(range(len(train_records), len(combined_dataset)))
-        with train_ids_path.open("w") as handle:
-            json.dump(train_indices, handle)
-        with test_ids_path.open("w") as handle:
-            json.dump(test_indices, handle)
-
-    def formatting_func(examples):
-        kwargs = {
-            "padding": "max_length",
-            "truncation": True,
-            "max_length": 4000,
-            "return_tensors": "pt",
-            "add_special_tokens": False,
-        }
-        chosen_msg = examples["chosen_msg"]
-        rejected_msg = examples["rejected_msg"]
-
-        if len(chosen_msg[0]["content"]) > 4000:
-            chosen_msg[0]["content"] = chosen_msg[0]["content"][:4000] + "..."
-        if len(rejected_msg[0]["content"]) > 4000:
-            rejected_msg[0]["content"] = rejected_msg[0]["content"][:4000] + "..."
-
-        prompt_plus_chosen = tokenizer.apply_chat_template(chosen_msg, tokenize=False)
-        prompt_plus_rejected = tokenizer.apply_chat_template(rejected_msg, tokenize=False)
-
-        chosen_tokens = tokenizer.encode_plus(prompt_plus_chosen, **kwargs)
-        rejected_tokens = tokenizer.encode_plus(prompt_plus_rejected, **kwargs)
-
-        return {
-            "input_ids_chosen": chosen_tokens["input_ids"][0],
-            "attention_mask_chosen": chosen_tokens["attention_mask"][0],
-            "input_ids_rejected": rejected_tokens["input_ids"][0],
-            "attention_mask_rejected": rejected_tokens["attention_mask"][0],
-        }
-
-    formatted_dataset = rmtrainer.prepare_dataset(
-        combined_dataset,
-        base_dir=base_dir,
-        test_size=len(test_records) if dataset_list_test is not None else 100,
-        formatting_func=formatting_func,
-    )
-
-    class CustomRewardTrainer(RewardTrainer):
-        _tag_names = ["trl", "reward-trainer"]
-
-        def train(self, *args, **kwargs):  # type: ignore[override]
-            return super().train(*args, **kwargs)
-
-        def evaluate(self, *args, **kwargs):  # type: ignore[override]
-            return super().evaluate(num_print_samples=1, *args, **kwargs)
-
-    training_args = RewardConfig(
-        output_dir=str(output_dir),
-        per_device_train_batch_size=3,
-        per_device_eval_batch_size=2,
-        eval_strategy="steps",
-        eval_steps=40,
-        eval_on_start=True,
-        save_steps=20,
-        logging_steps=1,
-        num_train_epochs=50,
-        report_to=None,
-        remove_unused_columns=False,
-    )
+    model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
 
     peft_config = LoraConfig(
         task_type=TaskType.SEQ_CLS,
@@ -195,25 +228,93 @@ def train_reward_model(
         lora_alpha=16,
         lora_dropout=0.1,
     )
+    model = get_peft_model(model, peft_config)
 
-    rmtrainer.train(
-        formatted_dataset,
-        training_args=training_args,
-        peft_config=peft_config,
-        trainer_cls=CustomRewardTrainer,
+    train_dataset = _build_dataset_split(
+        dataset_list_train,
+        tokenizer,
+        max_length=max_length,
+        max_characters=max_characters,
     )
+    if train_dataset is None:
+        raise ValueError("Training dataset is empty; provide at least one preference pair.")
+
+    eval_dataset = _build_dataset_split(
+        dataset_list_test or [],
+        tokenizer,
+        max_length=max_length,
+        max_characters=max_characters,
+    )
+
+    wandb_run = None
+    report_to: List[str] = []
+    if wandb_project:
+        try:
+            import wandb
+        except ImportError as exc:
+            raise RuntimeError("wandb is required when --wandb-project is specified.") from exc
+
+        wandb_run = wandb.init(
+            project=wandb_project,
+            name=wandb_run_name,
+            tags=list(wandb_tags) if wandb_tags else None,
+            config={
+                "model_name": model_name,
+                "max_length": max_length,
+                "max_characters": max_characters,
+                "per_device_train_batch_size": per_device_train_batch_size,
+                "per_device_eval_batch_size": per_device_eval_batch_size,
+                "num_train_epochs": num_train_epochs,
+                "evaluation_steps": evaluation_steps,
+                "save_steps": save_steps,
+                "logging_steps": logging_steps,
+            },
+        )
+        report_to = ["wandb"]
+
+    evaluation_strategy = "steps" if eval_dataset is not None else "no"
+    training_args = RewardConfig(
+        output_dir=str(output_dir),
+        run_name=wandb_run_name,
+        per_device_train_batch_size=per_device_train_batch_size,
+        per_device_eval_batch_size=per_device_eval_batch_size,
+        evaluation_strategy=evaluation_strategy,
+        eval_steps=evaluation_steps,
+        eval_on_start=bool(eval_dataset),
+        save_strategy="steps",
+        save_steps=save_steps,
+        logging_steps=logging_steps,
+        num_train_epochs=num_train_epochs,
+        report_to=report_to,
+        remove_unused_columns=False,
+    )
+
+    trainer = RewardTrainer(
+        model=model,
+        args=training_args,
+        tokenizer=tokenizer,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+    )
+
+    trainer.train()
+
+    if eval_dataset is not None:
+        trainer.evaluate()
+
+    if wandb_project:
+        # Close the W&B run so metrics are flushed.
+        import wandb
+
+        wandb.finish()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a reward model using LoRA adapters.")
     parser.add_argument(
-        "--dataset-list",
-        type=Path,
-        help="Path to dataset_list.json produced by make_dataset_list.",
-    )
-    parser.add_argument(
         "--dataset-list-train",
         type=Path,
+        required=True,
         help="Path to dataset_list_train.json produced by judge_dataset.py.",
     )
     parser.add_argument(
@@ -228,59 +329,103 @@ if __name__ == "__main__":
         help="Base reward model name or path.",
     )
     parser.add_argument(
-        "--num-gpus",
-        type=int,
-        default=2,
-        help="Number of GPUs available for training.",
-    )
-    parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("./rm_model"),
         help="Directory where the trained model checkpoints will be stored.",
     )
     parser.add_argument(
-        "--base-dir",
-        type=Path,
-        default=Path("./rm_exp"),
-        help="Working directory used for intermediate datasets.",
+        "--max-length",
+        type=int,
+        default=4000,
+        help="Maximum number of tokens per preference pair after tokenization.",
+    )
+    parser.add_argument(
+        "--max-characters",
+        type=int,
+        default=4000,
+        help="Maximum number of characters kept from each message before tokenization.",
+    )
+    parser.add_argument(
+        "--per-device-train-batch-size",
+        type=int,
+        default=3,
+        help="Batch size per device for the training split.",
+    )
+    parser.add_argument(
+        "--per-device-eval-batch-size",
+        type=int,
+        default=2,
+        help="Batch size per device for the evaluation split.",
+    )
+    parser.add_argument(
+        "--evaluation-steps",
+        type=int,
+        default=40,
+        help="Frequency (in steps) to evaluate the model when a test split is provided.",
+    )
+    parser.add_argument(
+        "--save-steps",
+        type=int,
+        default=20,
+        help="Frequency (in steps) to save checkpoints.",
+    )
+    parser.add_argument(
+        "--logging-steps",
+        type=int,
+        default=1,
+        help="Frequency (in steps) to log training metrics.",
+    )
+    parser.add_argument(
+        "--num-train-epochs",
+        type=int,
+        default=50,
+        help="Number of epochs to train the reward model.",
+    )
+    parser.add_argument(
+        "--wandb-project",
+        type=str,
+        help="Weights & Biases project name; if omitted, W&B logging is disabled.",
+    )
+    parser.add_argument(
+        "--wandb-run-name",
+        type=str,
+        help="Optional name for the W&B run.",
+    )
+    parser.add_argument(
+        "--wandb-tags",
+        nargs="*",
+        help="Optional list of tags to attach to the W&B run.",
     )
     args = parser.parse_args()
 
-    if args.dataset_list and (args.dataset_list_train or args.dataset_list_test):
-        parser.error("Use either --dataset-list or the pair --dataset-list-train/--dataset-list-test, not both.")
-    if args.dataset_list_test and not args.dataset_list_train:
-        parser.error("--dataset-list-test requires --dataset-list-train.")
+    if not args.dataset_list_train.exists():
+        raise FileNotFoundError(f"Dataset list not found: {args.dataset_list_train}")
 
-    dataset_list_train_path: Path
-    dataset_list_test_path: Path | None
-    if args.dataset_list:
-        dataset_list_train_path = args.dataset_list
-        dataset_list_test_path = None
-    elif args.dataset_list_train:
-        dataset_list_train_path = args.dataset_list_train
-        dataset_list_test_path = args.dataset_list_test
-    else:
-        parser.error("Provide either --dataset-list or --dataset-list-train.")
-
-    if not dataset_list_train_path.exists():
-        raise FileNotFoundError(f"Dataset list not found: {dataset_list_train_path}")
-
-    with dataset_list_train_path.open() as handle:
+    with args.dataset_list_train.open() as handle:
         dataset_list_train = json.load(handle)
 
     dataset_list_test = None
-    if dataset_list_test_path is not None:
-        if not dataset_list_test_path.exists():
-            raise FileNotFoundError(f"Dataset list not found: {dataset_list_test_path}")
-        with dataset_list_test_path.open() as handle:
+    if args.dataset_list_test is not None:
+        if not args.dataset_list_test.exists():
+            raise FileNotFoundError(f"Dataset list not found: {args.dataset_list_test}")
+        with args.dataset_list_test.open() as handle:
             dataset_list_test = json.load(handle)
 
     train_reward_model(
         dataset_list_train,
         dataset_list_test=dataset_list_test,
         model_name=args.model_name,
-        num_gpus=args.num_gpus,
         output_dir=args.output_dir,
-        base_dir=args.base_dir,
+        max_length=args.max_length,
+        max_characters=args.max_characters,
+        per_device_train_batch_size=args.per_device_train_batch_size,
+        per_device_eval_batch_size=args.per_device_eval_batch_size,
+        evaluation_steps=args.evaluation_steps,
+        save_steps=args.save_steps,
+        logging_steps=args.logging_steps,
+        num_train_epochs=args.num_train_epochs,
+        wandb_project=args.wandb_project,
+        wandb_run_name=args.wandb_run_name,
+        wandb_tags=args.wandb_tags,
     )

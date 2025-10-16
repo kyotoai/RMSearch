@@ -347,7 +347,15 @@ Rough Roadmap From Now
 
 kentarrito todo
 - [x] Make system to set arguana as test dataset 1h
-- [ ] Debug all the training 2h  -> Pass this to Mingk tmrw morning and get more dataset.
+- [x] Debug all the training 2h  -> Pass this to Mingk tmrw morning and get more dataset.
+- [x] Make better rmtrain system
+  ```
+  Now rmsearch/rmtrain.py and rmsearch/train/lora_example.py are so complex and hard to understand. I want you to make it much simpler. Follow
+  1. I don't need rmtrain.py anymore. Migrate all important functions to lora_example.py
+  2. Implement wandb so that I can track training history.
+  3. Remove train_ids, test_ids thingy. That's probably causing bugs. Prepare train and test dataset separately.
+  4. All update argument of lora_example.py for the modification. Also update train/README.md for your modification.
+  ```
 - [ ] Make advanced DPO coding 3h -> Pass this to prakhar tmrw and conduct training with different batch size, layers
 - [ ] Make baseline to create agent system (rmsearch/agents/) 1day -> pass it to cameron
 
