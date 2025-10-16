@@ -24,6 +24,27 @@ pip install -e RMSearch/.
 ```
 
 
+## Minimal Experiment - Training
+
+### `process_data.py`
+
+Download a dataset from HuggingFace, shuffle it, and materialise convenient CSV
+slices.
+
+```bash
+python -m rmsearch.train.process_data \
+  --dataset-name HuggingFaceTB/smollm-corpus \
+  --output-dir ./data/smollm-corpus \
+  --dataset-config cosmopedia-v2 \
+  --n-sample 100 \
+  --stream
+```
+Omit `--n-sample` entirely if you want to materialise the full split.
+
+
+
+
+
 Both classes assume you have locally available model checkpoints and a GPU
 environment with CUDA-visible devices.
 
@@ -142,12 +163,16 @@ asyncio.run(main())
 
 ## Download Reference Checkpoints (GPU environment)
 
+### llama 3b Reward Model
+
 ```bash
 cd /workspace
 pip install "huggingface_hub[hf_transfer]"
 pip install hf_transfer
 HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Ray2333/GRM-Llama3.2-3B-rewardmodel-ft --local-dir ./llama3b-rm/
 ```
+
+### Qwen3 4b Instruct Model
 
 ```bash
 cd /workspace
@@ -157,9 +182,26 @@ HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Qwen/Qwen3-4B-Instruct-2507
 ```
 
 
+### e5 Mistral 7b Model
+
 ```bash
 cd /workspace
 pip install "huggingface_hub[hf_transfer]"
 pip install hf_transfer
 HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download intfloat/e5-mistral-7b-instruct --local-dir ./e5-mistral7b/
+```
+
+### e5 Mistral 7b Model (float16)
+
+```bash
+cd /workspace
+pip install -U "huggingface_hub[hf_transfer]" && pip install -U hf_transfer
+export HF_HUB_ENABLE_HF_TRANSFER=1
+huggingface-cli download intfloat/e5-mistral-7b-instruct \
+  --local-dir ./e5-mistral7b \
+  --include "model-*.safetensors" "model.safetensors.index.json" \
+           "config.json" "config_sentence_transformers.json" \
+           "tokenizer.json" "tokenizer.model" "tokenizer_config.json" \
+           "special_tokens_map.json" "added_tokens.json" \
+           "sentence_bert_config.json" "modules.json" "1_Pooling/*"
 ```

@@ -303,10 +303,10 @@
   - [x] Code files by codex
   - [ ] Debug them
 
+* prakhar should be doing tag search dataset generation. Make readme for that and finish debugging graph thingy before that. 
 * I gotta probably assign job to cameron on this Saturday. Need to make sure that llm_inference.py work on the agents.
 
-
-
+* build_representative_tag_v2 has problem. All the tags become general
 
 
 
