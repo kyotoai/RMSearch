@@ -278,7 +278,7 @@ def train_reward_model(
         run_name=wandb_run_name,
         per_device_train_batch_size=per_device_train_batch_size,
         per_device_eval_batch_size=per_device_eval_batch_size,
-        #evaluation_strategy=evaluation_strategy,
+        eval_strategy=evaluation_strategy,
         eval_steps=evaluation_steps,
         eval_on_start=bool(eval_dataset),
         save_strategy="steps",
@@ -361,7 +361,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--evaluation-steps",
         type=int,
-        default=40,
+        default=20,
         help="Frequency (in steps) to evaluate the model when a test split is provided.",
     )
     parser.add_argument(
