@@ -80,3 +80,38 @@ TODO for better paper
   * Write papers about seimei -> later
   * Expand business over a lot of companies based on these technology!
 
+
+## Oct 16
+
+Rough Roadmap From Now
+
+- [ ] Update LLM call system (rmsearch/utils)
+  - [ ] Implement gpt-oss instead of qwen (qwen7b has sometimes lower performance in tag generation)
+  - [ ] Implement vllm serve
+  - [ ] Implement llm api call
+  - [ ] Implement rm api call
+  - [ ] update rmsearch.py
+
+- [ ] Improve Graph system
+  - [ ] Graph topology optimization
+
+- [ ] Train reward model for rmsearch paper
+  - [ ] Make system to set aruguana as test dataset
+  - [ ] Code to add tag search dataset
+  - [ ] Add more dataset (rmsearch/train/process_data.py: modify argument and get dataset from multiple source)
+  - [ ] Advanced DPO batching
+  - [ ] GPU parallel for training with deepspeed
+
+- [ ] Agents system
+  - [ ] Make baseline to create agent system (rmsearch/agents/)
+  - [ ] Make concrete agents
+    - [ ] Agents for realtime knowledge graph update
+    - [ ] Agents for excel analysis
+    - [ ] Agents for code analysis
+
+- [ ] Goals
+  - [ ] RMSearch paper
+    - [ ] Achieve better nDCG than e5-mistral by reward model without graph (reranker) -> minimal result to write a paper
+    - [ ] Achieve better nDCG than e5-mistral by reward model with graph (rmsearch) -> this is something new. Favorable result for the paper.
+  - [ ] SEIMEI paper
+    - [ ] Get good evaluation for any task

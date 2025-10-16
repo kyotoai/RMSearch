@@ -69,7 +69,7 @@ python -m rmsearch.agents.make_evaluation_dataset_code \
   --max-model-len 12_100
 ```
 
-**Algorism**
+**Algorithm**
 1. Walk inside the code_dir and get all code files in any language.
 2. LLM decides lines to drop in all the files inside the code_dir, and output list of task to fill the dropped lines. 
 3. Dropped lines typically include:

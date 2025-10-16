@@ -88,6 +88,7 @@ def make_dataset_list(
 def train_reward_model(
     dataset_list: Sequence[Dict[str, object]],
     *,
+    dataset_list_test: Sequence[Dict[str, object]] | None = None,
     model_name: str,
     num_gpus: int = 2,
     output_dir: Path = Path("./rm_model"),
@@ -104,6 +105,19 @@ def train_reward_model(
 
     rmtrainer = RMTrainer(model_name=model_name, num_gpus=num_gpus)
     tokenizer = rmtrainer.tokenizer
+    train_records: List[Dict[str, object]] = list(dataset_list)
+    test_records: List[Dict[str, object]] = list(dataset_list_test) if dataset_list_test is not None else []
+    combined_dataset: List[Dict[str, object]] = train_records + test_records
+
+    if dataset_list_test is not None:
+        train_ids_path = base_dir / "train_ids.json"
+        test_ids_path = base_dir / "test_ids.json"
+        train_indices = list(range(len(train_records)))
+        test_indices = list(range(len(train_records), len(combined_dataset)))
+        with train_ids_path.open("w") as handle:
+            json.dump(train_indices, handle)
+        with test_ids_path.open("w") as handle:
+            json.dump(test_indices, handle)
 
     def formatting_func(examples):
         kwargs = {
@@ -135,9 +149,9 @@ def train_reward_model(
         }
 
     formatted_dataset = rmtrainer.prepare_dataset(
-        dataset_list,
+        combined_dataset,
         base_dir=base_dir,
-        test_size=100,
+        test_size=len(test_records) if dataset_list_test is not None else 100,
         formatting_func=formatting_func,
     )
 
@@ -195,8 +209,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset-list",
         type=Path,
-        required=True,
-        help="Path to dataset_list.json produced by make_dataset_list",
+        help="Path to dataset_list.json produced by make_dataset_list.",
+    )
+    parser.add_argument(
+        "--dataset-list-train",
+        type=Path,
+        help="Path to dataset_list_train.json produced by judge_dataset.py.",
+    )
+    parser.add_argument(
+        "--dataset-list-test",
+        type=Path,
+        help="Optional dataset_list_test.json produced by judge_dataset.py.",
     )
     parser.add_argument(
         "--model-name",
@@ -224,14 +247,38 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    if not args.dataset_list.exists():
-        raise FileNotFoundError(f"Dataset list not found: {args.dataset_list}")
+    if args.dataset_list and (args.dataset_list_train or args.dataset_list_test):
+        parser.error("Use either --dataset-list or the pair --dataset-list-train/--dataset-list-test, not both.")
+    if args.dataset_list_test and not args.dataset_list_train:
+        parser.error("--dataset-list-test requires --dataset-list-train.")
 
-    with args.dataset_list.open() as handle:
-        dataset_list = json.load(handle)
+    dataset_list_train_path: Path
+    dataset_list_test_path: Path | None
+    if args.dataset_list:
+        dataset_list_train_path = args.dataset_list
+        dataset_list_test_path = None
+    elif args.dataset_list_train:
+        dataset_list_train_path = args.dataset_list_train
+        dataset_list_test_path = args.dataset_list_test
+    else:
+        parser.error("Provide either --dataset-list or --dataset-list-train.")
+
+    if not dataset_list_train_path.exists():
+        raise FileNotFoundError(f"Dataset list not found: {dataset_list_train_path}")
+
+    with dataset_list_train_path.open() as handle:
+        dataset_list_train = json.load(handle)
+
+    dataset_list_test = None
+    if dataset_list_test_path is not None:
+        if not dataset_list_test_path.exists():
+            raise FileNotFoundError(f"Dataset list not found: {dataset_list_test_path}")
+        with dataset_list_test_path.open() as handle:
+            dataset_list_test = json.load(handle)
 
     train_reward_model(
-        dataset_list,
+        dataset_list_train,
+        dataset_list_test=dataset_list_test,
         model_name=args.model_name,
         num_gpus=args.num_gpus,
         output_dir=args.output_dir,
