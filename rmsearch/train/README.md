@@ -37,6 +37,8 @@ pip install -e RMSearch/.
 Download a dataset from HuggingFace, shuffle it, and materialise convenient CSV
 slices.
 
+### For training dataset (smollm-corpus)
+
 ```bash
 python -m rmsearch.train.process_data \
   --dataset-name HuggingFaceTB/smollm-corpus \
@@ -46,6 +48,46 @@ python -m rmsearch.train.process_data \
   --stream
 ```
 Omit `--n-sample` entirely if you want to materialise the full split.
+
+
+### For test dataset (arguana)
+
+```bash
+curl -L https://huggingface.co/datasets/mteb/arguana/resolve/main/corpus.jsonl -o data/arguana/corpus.jsonl
+curl -L https://huggingface.co/datasets/mteb/arguana/resolve/main/queries.jsonl -o data/arguana/queries.jsonl
+```
+
+```bash
+python -m rmsearch.train.process_data \
+  --dataset-name mteb/arguana \
+  --split test \
+  --n-sample 100 \
+  --output-dir ./data/arguana \
+  --stream
+```
+
+```bash
+python3 - <<'PY'
+import json
+import pandas as pd
+
+df_corpus = pd.read_json('data/arguana/corpus.jsonl', lines=True)
+df_queries = pd.read_json('data/arguana/queries.jsonl', lines=True)
+df = pd.read_csv("./data/arguana/df.csv")
+
+# Ensure matching dtypes for IDs (optional but safe)
+df['_qid'] = df['query-id'].astype(str)
+df['_cid'] = df['corpus-id'].astype(str)
+q_map = df_queries.assign(_id=df_queries['_id'].astype(str)).set_index('_id')['text']
+c_map = df_corpus.assign(_id=df_corpus['_id'].astype(str)).set_index('_id')['text']
+
+df['query'] = df['_qid'].map(q_map)
+df['corpus'] = df['_cid'].map(c_map)
+df = df.drop(columns=['_qid', '_cid'])
+
+df.to_csv("./data/arguana/df2.csv")
+PY
+```
 
 **Arguments**
 - `--dataset-name`: HuggingFace dataset identifier.
@@ -289,13 +331,68 @@ python -m rmsearch.train.sample_dpo_batch \
 
 **Outputs**
 - `{output}`: JSON list where each entry includes `query`, `query_id`, `keys`, `key_ids`, and the propagated `query-type` when available. When no relevance file is provided, a single placeholder query with two randomly sampled keys is emitted.
+- Example:
+```
+[
+  {
+    "query_id": 0,
+    "query": "...",
+    "key_ids": [0,1],
+    "keys": [
+      "sentence1",
+      "sentence2"
+    ]
+  }
+]
+```
 
 **Notices**
 - Sampling picks one key from the relevance results and one from the original df_id (when available); if no relevance file is supplied, two keys are drawn uniformly from the entire source CSV.
 
 
 
+## `Direct sampled_query_key_set.json -> dataset_list.json`
 
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import json
+query_key_set_path = "data/arguana/sampled_query_key_set.json"
+output_path = Path("exp1/dataset_list.json")
+
+with open(query_key_set_path) as f:
+  query_key_set = json.load(f)
+
+def _format_prompt(text: str) -> str:
+  return (
+      "Give me relevant score between query and sentence;\n\n"
+      f"Query:{question}\n\n"
+      f"Sentence:```{text}```"
+  )
+
+dataset_list = []
+for query_key_dict in query_key_set:
+  query_id = query_key_dict["query_id"]
+  query = query_key_dict["query"]
+  keys = query_key_dict["keys"]
+  key_ids = query_key_dict["key_ids"]
+
+  dataset_list.append(
+      {
+          "query": query,
+          "query_id": query_id,
+          "chosen_msg": [{"role": "user", "content": _format_prompt(keys[0])}],
+          "rejected_msg": [{"role": "user", "content": _format_prompt(keys[1])}],
+          "chosen_sentence_id": key_ids[0],
+          "rejected_sentence_id": key_ids[1],
+      }
+  )
+
+args.output.parent.mkdir(parents=True, exist_ok=True)
+args.output.write_text(json.dumps(dataset_list, ensure_ascii=False, indent=2))
+print(f"Wrote dataset list with {len(dataset_list)} entries to {args.output}")
+PY
+```
 
 
 ## `judge_dataset.py`
