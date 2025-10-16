@@ -346,7 +346,7 @@ Rough Roadmap From Now
 
 
 kentarrito todo
-- [ ] Make system to set arguana as test dataset 1h
+- [x] Make system to set arguana as test dataset 1h
 - [ ] Debug all the training 2h  -> Pass this to Mingk tmrw morning and get more dataset.
 - [ ] Make advanced DPO coding 3h -> Pass this to prakhar tmrw and conduct training with different batch size, layers
 - [ ] Make baseline to create agent system (rmsearch/agents/) 1day -> pass it to cameron
