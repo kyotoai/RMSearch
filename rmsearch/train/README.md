@@ -19,8 +19,9 @@ with the appropriate models available locally.
 7. `sample_dpo_batch.py`: Sample data rows from query_recs
 8. `judge_dataset.py`: From query_key_set created from `sample_dpo_batch.py`, make dpo dataset by judging which key is more relevant to query.
 9. `lora_example.py`: Train reward model for the training.
+10. `combine_data.py`: combine multiple dataframe and create more various data (not implemented yet)
 
-* Running order: 1 -> 3 -> 4 -> (5 or 6) -> 7 -> 8 -> 9
+* Running order: 1 -> (10) -> 3 -> 4 -> (5 or 6) -> 7 -> 8 -> 9
 
 
 ## Install rmsearch
@@ -340,7 +341,8 @@ Fine-tune a reward model using TRL's `RewardTrainer` with LoRA adapters.
 
 ```bash
 python -m rmsearch.train.lora_example \
-  --dataset-list ./exp2/dataset_list.json \
+  --dataset-list-train ./exp2/dataset_list_train.json \
+  --dataset-list-test ./exp2/dataset_list_test.json \
   --model-name /workspace/llama3b-rm \
   --num-gpus 2 \
   --output-dir ./exp2/model1 \
@@ -348,7 +350,8 @@ python -m rmsearch.train.lora_example \
 ```
 
 **Arguments**
-- `--dataset-list`: The preference dataset produced by `judge_dataset.py` (`dataset_list.json`).
+- `--dataset-list-train`: The preference dataset produced by `judge_dataset.py` (`dataset_list_train.json`).
+- `--dataset-list-test`: The preference dataset produced by `judge_dataset.py` (`dataset_list_test.json`).
 - `--model-name`: Base reward model checkpoint.
 - `--num-gpus`: Number of GPUs available for training (passed to `RMTrainer`).
 - `--output-dir`: Directory where LoRA checkpoints and logs are written.
