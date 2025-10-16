@@ -216,10 +216,10 @@ for query_key_dict in query_key_set:
   dataset_list.append(
       {
           "query_id": query_id,
-          "chosen_msg": [{"role": "user", "content": _format_prompt(query, keys[0])}],
-          "rejected_msg": [{"role": "user", "content": _format_prompt(query, keys[1])}],
-          "chosen_sentence_id": key_ids[0],
-          "rejected_sentence_id": key_ids[1],
+          "chosen_msg": [{"role": "user", "content": _format_prompt(query, keys[1])}],
+          "rejected_msg": [{"role": "user", "content": _format_prompt(query, keys[0])}],
+          "chosen_sentence_id": key_ids[1],
+          "rejected_sentence_id": key_ids[0],
       }
   )
 
@@ -240,9 +240,9 @@ python -m rmsearch.train.lora_example \
   --dataset-list-train ./exp1/dataset_list_train.json \
   --dataset-list-test ./exp1/dataset_list_test.json \
   --model-name /workspace/llama3b-rm \
-  --num-gpus 1 \
   --output-dir ./exp1/model1 \
-  --base-dir ./exp1
+  --wandb-project rmsearch \
+  --wandb-run-name exp1-lora
 ```
 
 **Arguments**

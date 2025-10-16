@@ -438,12 +438,12 @@ Fine-tune a reward model using TRL's `RewardTrainer` with LoRA adapters.
 
 ```bash
 python -m rmsearch.train.lora_example \
-  --dataset-list-train ./exp2/dataset_list_train.json \
-  --dataset-list-test ./exp2/dataset_list_test.json \
+  --dataset-list-train ./exp1/dataset_list_train.json \
+  --dataset-list-test ./exp1/dataset_list_test.json \
   --model-name /workspace/llama3b-rm \
-  --output-dir ./exp2/model1 \
+  --output-dir ./exp1/model1 \
   --wandb-project rmsearch \
-  --wandb-run-name exp2-lora
+  --wandb-run-name exp1-lora
 ```
 
 **Arguments**
