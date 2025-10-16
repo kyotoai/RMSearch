@@ -309,20 +309,47 @@
 
 
 
+## Oct 16
 
-- [ ] Implement gpt-oss instead of qwen7b (qwen7b has sometimes lower performance in tag generation)
-- [ ] Implement vllm serve
-- [ ] Implement llm api call
-- [ ] Implement rm api call
-- [ ] update rmsearch.py
+Rough Roadmap From Now
 
-- [ ] Train reward model
-  - [ ] (Mingk) Make system to set aruguana as test dataset
-  - [ ] Code to train rm for tag search
-  - [ ] Add more dataset
+- [ ] Update LLM call system (rmsearch/utils)
+  - [ ] Implement gpt-oss instead of qwen (qwen7b has sometimes lower performance in tag generation)
+  - [ ] Implement vllm serve
+  - [ ] Implement llm api call
+  - [ ] Implement rm api call
+  - [ ] update rmsearch.py
+
+- [ ] Improve Graph system
+  - [ ] Graph topology optimization
+
+- [ ] Train reward model for rmsearch paper
+  - [ ] Make system to set aruguana as test dataset
+  - [ ] Code to add tag search dataset
+  - [ ] Add more dataset (rmsearch/train/process_data.py: modify argument and get dataset from multiple source)
   - [ ] Advanced DPO batching
   - [ ] GPU parallel for training with deepspeed
 
+- [ ] Agents system
+  - [ ] Make baseline to create agent system (rmsearch/agents/)
+  - [ ] Make concrete agents
+    - [ ] Agents for realtime knowledge graph update
+    - [ ] Agents for excel analysis
+    - [ ] Agents for code analysis
+
+- [ ] Goals
+  - [ ] RMSearch paper
+    - [ ] Achieve better nDCG than e5-mistral by reward model without graph (reranker) -> minimal result to write a paper
+    - [ ] Achieve better nDCG than e5-mistral by reward model with graph (rmsearch) -> this is something new. Favorable result for the paper.
+  - [ ] SEIMEI paper
+    - [ ] Get good evaluation for any task
+
+
+kentarrito todo
+- [ ] Make system to set arguana as test dataset 1h
+- [ ] Debug all the training 2h  -> Pass this to Mingk tmrw morning and get more dataset.
+- [ ] Make advanced DPO coding 3h -> Pass this to prakhar tmrw and conduct training with different batch size, layers
+- [ ] Make baseline to create agent system (rmsearch/agents/) 1day -> pass it to cameron
 
 
 
