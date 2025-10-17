@@ -1,3 +1,4 @@
+
 """LoRA reward-model training helpers with built-in dataset prep and W&B logging."""
 
 from __future__ import annotations
@@ -57,6 +58,7 @@ from transformers import (
     PreTrainedTokenizerBase,
     ProcessorMixin,
     Trainer,
+    TrainingArguments,
     is_wandb_available,
 )
 from transformers.trainer_callback import TrainerCallback
@@ -501,12 +503,12 @@ def train_reward_model(
         report_to = ["wandb"]
 
     evaluation_strategy = "steps" if eval_dataset is not None else "no"
-    training_args = RewardConfig(
+    training_args = TrainingArguments(
         output_dir=str(output_dir),
         run_name=wandb_run_name,
         per_device_train_batch_size=per_device_train_batch_size,
         per_device_eval_batch_size=per_device_eval_batch_size,
-        #evaluation_strategy=evaluation_strategy,
+        evaluation_strategy=evaluation_strategy,
         eval_steps=evaluation_steps,
         eval_on_start=bool(eval_dataset),
         save_strategy="steps",
@@ -517,12 +519,38 @@ def train_reward_model(
         remove_unused_columns=False,
     )
 
-    trainer = RewardTrainer(
+    def custom_data_collator(features):
+        batch = {}
+        
+        # For fields that are tensors, we stack them.
+        
+        tensor_fields = [
+            "input_ids", "attention_mask",
+        ]
+        '''
+        tensor_fields = [
+            "input_ids_chosen", "attention_mask_chosen",
+            "input_ids_rejected", "attention_mask_rejected"
+        ]
+        '''
+        
+        for field in tensor_fields:
+            batch[field] = torch.stack([torch.tensor(f[field]) for f in features])  #[num_gpus, num_advice_per_batch, max_length]
+        
+        # For the original prompts (strings), we simply collect them in a list.
+        non_tensor_fields = ["num_chosen", "num_rejected", "problem_id"]
+        for field in non_tensor_fields:
+            batch[field] = [f[field] for f in features]
+        
+        return batch
+
+    trainer = CustomRewardTrainer(
         model=model,
         args=training_args,
         tokenizer=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        data_collator=custom_data_collator,
     )
 
     trainer.train()
