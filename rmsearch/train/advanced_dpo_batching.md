@@ -144,16 +144,17 @@ python -m rmsearch.train.get_top_relevant_keys_embed \
 
 
 
-## `sample_dpo_batch.py`
+## `sample_advanced_dpo_batch.py`
 
 Sample pairs of relevant/df-sourced keys for DPO-style preference datasets.
 
 ```bash
-python -m rmsearch.train.sample_dpo_batch \
+python -m rmsearch.train.sample_advanced_dpo_batch \
   --relevance-json ./data/arguana/relevance_records_embed.json \
   --filtered-queries-json ./data/arguana/query_recs.json \
   --source-csv ./data/arguana/df2.csv \
   --source-column corpus \
+  --n-sampled-keys 5 \
   --output ./data/arguana/sampled_query_key_set.json
 ```
 
@@ -172,11 +173,15 @@ python -m rmsearch.train.sample_dpo_batch \
 [
   {
     "query_id": 0,
-    "query": "...",
-    "key_ids": [0,1],
-    "keys": [
-      "sentence1",
-      "sentence2"
+    "query": "query0",
+    "correspond_key_ids":[0],
+    "sampled_key_ids": [10,12],
+    "correspond_keys": [
+      "key0",
+    ],
+    "sampled_keys": [
+      "key10",
+      "key12"
     ]
   }
 ]
@@ -215,11 +220,16 @@ for query_key_dict in query_key_set:
 
   dataset_list.append(
       {
-          "query_id": query_id,
-          "chosen_msg": [{"role": "user", "content": _format_prompt(query, keys[1])}],
-          "rejected_msg": [{"role": "user", "content": _format_prompt(query, keys[0])}],
-          "chosen_sentence_id": key_ids[1],
-          "rejected_sentence_id": key_ids[0],
+          "batch":[
+            {"msg": [{"role": "user", "content": _format_prompt(query, keys[1])}], "query_id":, "key_id":},
+            {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":, "key_id":},
+            {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":, "key_id":}
+          ],
+          "dpo_pairs":[
+            [0,1],  # [(chosen_msg_id), (rejected_msg_id)]
+            [0,2],
+            [1,2]
+          ]
       }
   )
 

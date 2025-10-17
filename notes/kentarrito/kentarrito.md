@@ -360,9 +360,15 @@ kentarrito todo
 
 ## Oct 17
 
-- [ ] Make advanced DPO coding 3h -> Pass this to prakhar and conduct training with different batch size, layers
+- [ ] Make advanced DPO coding 3h -> Pass this to prakhar and conduct training with different batch size, 
+  - [x] CustomRewardTrainer
+  - [ ] Make dataset_list.json
 - [ ] Make baseline to create agent system (rmsearch/agents/) 1day -> pass it to cameron
 
+
+
+runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguana_dataset.md
+        /workspace/kentarrito/exp2 -> custom_trainer_lora_example.py, advanced_dpo_batching.md
 
 
 
