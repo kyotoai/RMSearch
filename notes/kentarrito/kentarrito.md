@@ -356,7 +356,11 @@ kentarrito todo
   3. Remove train_ids, test_ids thingy. That's probably causing bugs. Prepare train and test dataset separately.
   4. All update argument of lora_example.py for the modification. Also update train/README.md for your modification.
   ```
-- [ ] Make advanced DPO coding 3h -> Pass this to prakhar tmrw and conduct training with different batch size, layers
+
+
+## Oct 17
+
+- [ ] Make advanced DPO coding 3h -> Pass this to prakhar and conduct training with different batch size, layers
 - [ ] Make baseline to create agent system (rmsearch/agents/) 1day -> pass it to cameron
 
 

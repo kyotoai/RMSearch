@@ -6,6 +6,8 @@ import argparse
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
+from peft import LoraConfig, TaskType, get_peft_model
+from trl import RewardConfig, RewardTrainer
 
 from datasets import Dataset
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -20,6 +22,235 @@ _PROMPT_TEMPLATE = (
     'Sentence:```{sentence}```'
 )
 
+# Copyright 2025 The HuggingFace Team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import inspect
+import os
+import warnings
+from collections import defaultdict
+from dataclasses import FrozenInstanceError, replace
+from typing import Any, Callable, Optional, Union
+
+import pandas as pd
+import torch
+import torch.nn as nn
+from accelerate import PartialState
+from accelerate.utils import gather_object
+from datasets import Dataset
+from transformers import (
+    BaseImageProcessor,
+    DataCollator,
+    FeatureExtractionMixin,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
+    ProcessorMixin,
+    Trainer,
+    is_wandb_available,
+)
+from transformers.trainer_callback import TrainerCallback
+from transformers.trainer_pt_utils import nested_detach
+from transformers.trainer_utils import EvalPrediction
+from transformers.utils import is_peft_available
+
+from transformers import Trainer
+from trl.trainer.utils import compute_accuracy
+
+#class CustomRewardTrainer(RewardTrainer):
+class CustomRewardTrainer(Trainer):
+    _tag_names = ["trl", "reward-trainer"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(compute_metrics=compute_accuracy, *args, **kwargs)
+
+    def compute_loss(
+        self,
+        model: Union[PreTrainedModel, nn.Module],
+        inputs: dict[str, Union[torch.Tensor, Any]],
+        return_outputs=False,
+        num_items_in_batch=None,
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, dict[str, torch.Tensor]]]:
+
+        n_chosens = inputs["num_chosen"]  #[num_gpus]
+        n_rejecteds = inputs["num_rejected"]  #[num_gpus]
+        chosen_reject_similarities = inputs["chosen_reject_similarities"]  #[num_gpus, n_chosens, n_rejecteds]
+
+        #print(inputs["input_ids_chosen"].shape)
+        #print(inputs["input_ids_rejected"].shape)
+
+        num_gpus, num_advice, max_length = inputs["input_ids"].shape
+        input_ids = inputs["input_ids"].reshape(num_gpus*num_advice, max_length)
+        attention_mask = inputs["attention_mask"].reshape(num_gpus*num_advice, max_length)
+        #print(inputs["input_ids"].shape)
+        #attention_mask = inputs["attention_mask"].reshape(inputs["attention_mask"].shape[0]*inputs["attention_mask"].shape[1], inputs["attention_mask"].shape[2])
+
+        all_rewards = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            return_dict=True,
+        )["logits"]
+
+        #print("1", all_rewards.shape)
+        all_rewards = all_rewards.reshape(num_gpus,num_advice)
+        #print("2", all_rewards.shape)
+        
+        all_chosen_idx = []
+        all_rejected_idx = []
+        total_loss = 0
+        for i in range(num_gpus):
+            rewards = all_rewards[i]
+            
+            n_chosen = n_chosens[i]
+            n_rejected = n_rejecteds[i]
+            n_rows = n_chosen * n_rejected
+            n_cols = n_chosen + n_rejected
+            chosen_idx = torch.arange(n_chosen).repeat_interleave(n_rejected)   # shape: [n_rows]
+            rejected_idx = torch.arange(n_rejected).repeat(n_chosen)   # shape: [n_rows]
+            all_chosen_idx.append(chosen_idx)
+            all_rejected_idx.append(rejected_idx)
+            
+            # Create cr_matrix
+            cr_matrix = torch.zeros(n_rows, n_cols)
+            rows = torch.arange(n_rows)
+            cr_matrix[rows, chosen_idx] = 1
+            cr_matrix[rows, n_chosen + rejected_idx] = -1
+            cr_matrix = cr_matrix.to(rewards.device)
+
+            # Create coe_vector
+            sims = chosen_reject_similarities[chosen_idx, rejected_idx] # shape: [n_rows]
+            coe_vector = 1-sims
+
+            print(coe_vector.shape)
+            print(coe_vector)
+
+            # Test cr_matrix
+            test_tensor = torch.ones(rewards.shape).to(cr_matrix.device)
+            result_tensor = torch.matmul(cr_matrix, test_tensor)
+            #print("result_tensor.shape: ", result_tensor.shape)
+            #print("result_tensor.mean() : ", result_tensor.mean())
+            
+            # calculate loss, optionally modulate with margin
+            if "margin" in inputs:
+                loss = -nn.functional.logsigmoid(coe_vector * torch.matmul(cr_matrix, rewards) - inputs["margin"]).mean()
+            else:
+                loss = -nn.functional.logsigmoid(coe_vector * torch.matmul(cr_matrix, rewards)).mean()
+
+            total_loss += loss
+            #all_losses.append(loss)
+
+        #total_loss = torch.tensor(all_losses).mean()
+        
+        if return_outputs:
+            return total_loss, {
+                "all_rewards": all_rewards,
+                "all_chosen_idx": all_chosen_idx,
+                "all_rejected_idx": all_rejected_idx,
+                "n_chosen":n_chosen,
+                "n_rejected":n_rejected,
+            }
+        return total_loss
+
+    def prediction_step(
+        self,
+        model: Union[PreTrainedModel, nn.Module],
+        inputs: dict[str, Union[torch.Tensor, Any]],
+        prediction_loss_only: bool,
+        ignore_keys: Optional[list[str]] = None,
+    ) -> tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
+        
+        inputs = self._prepare_inputs(inputs)
+        if ignore_keys is None:
+            if hasattr(self.model, "config"):
+                ignore_keys = getattr(self.model.config, "keys_to_ignore_at_inference", [])
+            else:
+                ignore_keys = []
+
+        with torch.no_grad():
+            loss, logits_dict = self.compute_loss(model, inputs, return_outputs=True)
+
+        '''
+        chosen_rewards = logits_dict["chosen_rewards"]
+        rejected_rewards = logits_dict["rejected_rewards"]
+        chosen_idx = logits_dict["chosen_idx"]
+        rejected_idx = logits_dict["rejected_idx"]
+        '''
+
+        all_rewards = logits_dict["all_rewards"]
+        all_chosen_idx = logits_dict["all_chosen_idx"]
+        all_rejected_idx = logits_dict["all_rejected_idx"]
+        n_chosen = logits_dict["n_chosen"]
+        n_rejected = logits_dict["n_rejected"]
+        
+        if prediction_loss_only:
+            return (loss, None, None)
+
+        loss = loss.detach()
+        all_logits = torch.tensor([])
+        for i in range(len(all_rewards)):
+            rewards = all_rewards[i]
+            #print("rewards.shape: ", rewards.shape)
+            #print("all_chosen_idx[i]: ", all_chosen_idx[i])
+            chosen_logits = rewards[all_chosen_idx[i]].unsqueeze(-1)
+            rejected_logits = rewards[n_chosen + all_rejected_idx[i]].unsqueeze(-1)
+            logits = torch.cat((chosen_logits, rejected_logits), dim=1)
+            #print("logits.shape: ", logits.shape)
+            all_logits = all_logits.to(logits.device)
+            all_logits = torch.cat((all_logits, logits), dim=0)
+
+        all_logits = all_logits.softmax(dim=1).detach()
+        #print("all_logits: ", all_logits)
+        #print("all_logits.shape: ", all_logits.shape)
+        #logits = torch.cat((chosen_rewards[chosen_idx], rejected_rewards[rejected_idx]), dim=1)
+        #logits = logits.softmax(dim=1).detach()
+        '''
+        logits = tuple(v for k, v in logits_dict.items() if k not in ignore_keys)
+        logits = nested_detach(logits)
+        # Stack accepted against rejected, mean over logits
+        # and softmax to get preferences between accepted and rejected to sum to 1
+        logits = torch.stack(logits).mean(dim=2).softmax(dim=0).T
+        '''
+
+        labels = torch.zeros(all_logits.shape[0])
+        labels = self._prepare_inputs(labels)
+
+        return loss, all_logits, labels
+
+    def train(self, *args, **kwargs): # You need this because it will use RewardTrainer compute_loss method without this. To use a subclass function, some method in the subclass must be called from main directly. 
+        return super().train(*args, **kwargs)
+
+    def evaluate(self, *args, **kwargs):
+        return super().evaluate(*args, **kwargs)
+        #return super(RewardTrainer, self).evaluate(*args, **kwargs)
+        #return super().evaluate(num_print_samples=1, *args, **kwargs) # this fell in an error for some reason
+
+
+
+'''
+# CustomRewardTrainer example
+class CustomRewardTrainer(RewardTrainer):
+    _tag_names = ["trl", "reward-trainer"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def train(self, *args, **kwargs): # You need this because it will use RewardTrainer compute_loss method without this. To use a subclass function, some method in the subclass must be called from main directly. 
+        return super().train(*args, **kwargs)
+
+    def evaluate(self, *args, **kwargs):
+        return super().evaluate(num_print_samples=1, *args, **kwargs)
+
+'''
 
 def _truncate_message(content: str, limit: int) -> str:
     text = str(content)
@@ -199,9 +430,6 @@ def train_reward_model(
     wandb_tags: Optional[Sequence[str]] = None,
 ) -> None:
     """Train a reward model using TRL's RewardTrainer with LoRA adapters."""
-
-    from peft import LoraConfig, TaskType, get_peft_model
-    from trl import RewardConfig, RewardTrainer
 
     output_dir.mkdir(parents=True, exist_ok=True)
 

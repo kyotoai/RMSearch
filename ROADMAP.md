@@ -85,6 +85,8 @@ TODO for better paper
 
 Rough Roadmap From Now
 
+- [ ] Implement docker in Runpod API call
+
 - [ ] Update LLM call system (rmsearch/utils)
   - [ ] Implement gpt-oss instead of qwen (qwen7b has sometimes lower performance in tag generation)
   - [ ] Implement vllm serve
@@ -93,21 +95,21 @@ Rough Roadmap From Now
   - [ ] update rmsearch.py
 
 - [ ] Improve Graph system
-  - [ ] Graph topology optimization
+  - [ ] Graph topology optimization. (8h)
 
 - [ ] Train reward model for rmsearch paper
-  - [ ] Make system to set aruguana as test dataset
-  - [ ] Code to add tag search dataset
-  - [ ] Add more dataset (rmsearch/train/process_data.py: modify argument and get dataset from multiple source)
-  - [ ] Advanced DPO batching
-  - [ ] GPU parallel for training with deepspeed
+  - [x] Make system to set aruguana as test dataset. (5h). (kentarrito)
+  - [ ] Code to add tag search dataset. (7h)
+  - [ ] Add more dataset (rmsearch/train/process_data.py: modify argument and get dataset from multiple source). (5h)
+  - [ ] Advanced DPO batching. (3h)
+  - [ ] GPU parallel for training with deepspeed. (5h)
 
 - [ ] Agents system
-  - [ ] Make baseline to create agent system (rmsearch/agents/)
+  - [ ] Make baseline to create agent system (rmsearch/agents/). (4h)
   - [ ] Make concrete agents
-    - [ ] Agents for realtime knowledge graph update
-    - [ ] Agents for excel analysis
-    - [ ] Agents for code analysis
+    - [ ] Agents for realtime knowledge graph update. (6h)
+    - [ ] Agents for excel analysis. (5h)
+    - [ ] Agents for code analysis. (8h)
 
 - [ ] Goals
   - [ ] RMSearch paper
@@ -115,3 +117,6 @@ Rough Roadmap From Now
     - [ ] Achieve better nDCG than e5-mistral by reward model with graph (rmsearch) -> this is something new. Favorable result for the paper.
   - [ ] SEIMEI paper
     - [ ] Get good evaluation for any task
+
+
+
