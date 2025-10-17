@@ -84,16 +84,18 @@ class CustomRewardTrainer(Trainer):
         num_items_in_batch=None,
     ) -> Union[torch.Tensor, tuple[torch.Tensor, dict[str, torch.Tensor]]]:
 
-        n_chosens = inputs["num_chosen"]  #[num_gpus]
-        n_rejecteds = inputs["num_rejected"]  #[num_gpus]
-        chosen_reject_similarities = inputs["chosen_reject_similarities"]  #[num_gpus, n_chosens, n_rejecteds]
+        dpo_pairs_list = inputs["dpo_pairs"]   #[num_gpus]
+
+        #n_chosens = inputs["num_chosen"]  #[num_gpus]
+        #n_rejecteds = inputs["num_rejected"]  #[num_gpus]
+        #chosen_reject_similarities = inputs["chosen_reject_similarities"]  #[num_gpus, n_chosens, n_rejecteds]
 
         #print(inputs["input_ids_chosen"].shape)
         #print(inputs["input_ids_rejected"].shape)
 
-        num_gpus, num_advice, max_length = inputs["input_ids"].shape
-        input_ids = inputs["input_ids"].reshape(num_gpus*num_advice, max_length)
-        attention_mask = inputs["attention_mask"].reshape(num_gpus*num_advice, max_length)
+        num_gpus, num_batch, max_length = inputs["input_ids"].shape
+        input_ids = inputs["input_ids"].reshape(num_gpus*num_batch, max_length)
+        attention_mask = inputs["attention_mask"].reshape(num_gpus*num_batch, max_length)
         #print(inputs["input_ids"].shape)
         #attention_mask = inputs["attention_mask"].reshape(inputs["attention_mask"].shape[0]*inputs["attention_mask"].shape[1], inputs["attention_mask"].shape[2])
 
@@ -104,7 +106,7 @@ class CustomRewardTrainer(Trainer):
         )["logits"]
 
         #print("1", all_rewards.shape)
-        all_rewards = all_rewards.reshape(num_gpus,num_advice)
+        all_rewards = all_rewards.reshape(num_gpus,num_batch)
         #print("2", all_rewards.shape)
         
         all_chosen_idx = []
@@ -112,7 +114,14 @@ class CustomRewardTrainer(Trainer):
         total_loss = 0
         for i in range(num_gpus):
             rewards = all_rewards[i]
+            dpo_pairs = dpo_pairs_list[i]
+
+            cr_matrix = torch.zeros(len(dpo_pairs), len(rewards))
+            for i, dpo_pair in enumerate(dpo_pairs):
+                cr_matrix[i, dpo_pair[0]] = 1
+                cr_matrix[i, dpo_pair[1]] = -1
             
+            '''
             n_chosen = n_chosens[i]
             n_rejected = n_rejecteds[i]
             n_rows = n_chosen * n_rejected
@@ -127,26 +136,28 @@ class CustomRewardTrainer(Trainer):
             rows = torch.arange(n_rows)
             cr_matrix[rows, chosen_idx] = 1
             cr_matrix[rows, n_chosen + rejected_idx] = -1
+            '''
+
             cr_matrix = cr_matrix.to(rewards.device)
 
             # Create coe_vector
-            sims = chosen_reject_similarities[chosen_idx, rejected_idx] # shape: [n_rows]
-            coe_vector = 1-sims
+            #sims = chosen_reject_similarities[chosen_idx, rejected_idx] # shape: [n_rows]
+            #coe_vector = 1-sims
 
-            print(coe_vector.shape)
-            print(coe_vector)
+            #print(coe_vector.shape)
+            #print(coe_vector)
 
             # Test cr_matrix
-            test_tensor = torch.ones(rewards.shape).to(cr_matrix.device)
-            result_tensor = torch.matmul(cr_matrix, test_tensor)
+            #test_tensor = torch.ones(rewards.shape).to(cr_matrix.device)
+            #result_tensor = torch.matmul(cr_matrix, test_tensor)
             #print("result_tensor.shape: ", result_tensor.shape)
             #print("result_tensor.mean() : ", result_tensor.mean())
             
             # calculate loss, optionally modulate with margin
             if "margin" in inputs:
-                loss = -nn.functional.logsigmoid(coe_vector * torch.matmul(cr_matrix, rewards) - inputs["margin"]).mean()
+                loss = -nn.functional.logsigmoid(torch.matmul(cr_matrix, rewards) - inputs["margin"]).mean()
             else:
-                loss = -nn.functional.logsigmoid(coe_vector * torch.matmul(cr_matrix, rewards)).mean()
+                loss = -nn.functional.logsigmoid(torch.matmul(cr_matrix, rewards)).mean()
 
             total_loss += loss
             #all_losses.append(loss)
@@ -268,33 +279,27 @@ def _format_preference_pair(
     max_length: int,
     max_characters: int,
 ) -> Dict[str, List[int]]:
-    chosen_msg = example["chosen_msg"]
-    rejected_msg = example["rejected_msg"]
+    batch = example["batch"]
+    #ex. batch = [
+    #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[1])}], "query_id":query_id, "key_id":},
+    #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":},
+    #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":}
+    #],
 
-    if not isinstance(chosen_msg, list) or not isinstance(rejected_msg, list):
-        raise ValueError("Both 'chosen_msg' and 'rejected_msg' must be chat message lists.")
+    dpo_pairs = example["dpo_pairs"]
+    #ex. dpo_pairs = [
+    #  [0,1],  # [(chosen_msg_id), (rejected_msg_id)]
+    #  [0,2],
+    #  [1,2]
+    #]
 
-    trimmed_chosen = [
-        {**message, "content": _truncate_message(message.get("content", ""), max_characters)}
-        for message in chosen_msg
-    ]
-    trimmed_rejected = [
-        {**message, "content": _truncate_message(message.get("content", ""), max_characters)}
-        for message in rejected_msg
-    ]
+    if not isinstance(batch, list) or not isinstance(dpo_pairs, list):
+        raise ValueError("Both 'batch' and 'dpo_pairs' must be lists.")
 
-    prompt_plus_chosen = tokenizer.apply_chat_template(trimmed_chosen, tokenize=False)
-    prompt_plus_rejected = tokenizer.apply_chat_template(trimmed_rejected, tokenize=False)
+    prompts = [tokenizer.apply_chat_template(batch_dict["msg"], tokenize=False) for batch_dict in batch]
 
-    chosen_tokens = tokenizer(
-        [prompt_plus_chosen],
-        padding="max_length",
-        truncation=True,
-        max_length=max_length,
-        add_special_tokens=False,
-    )
-    rejected_tokens = tokenizer(
-        [prompt_plus_rejected],
+    tokens = tokenizer(
+        prompts,
         padding="max_length",
         truncation=True,
         max_length=max_length,
@@ -302,10 +307,9 @@ def _format_preference_pair(
     )
 
     return {
-        "input_ids_chosen": chosen_tokens["input_ids"][0],
-        "attention_mask_chosen": chosen_tokens["attention_mask"][0],
-        "input_ids_rejected": rejected_tokens["input_ids"][0],
-        "attention_mask_rejected": rejected_tokens["attention_mask"][0],
+        "input_ids_chosen": tokens["input_ids"],
+        "attention_mask_chosen": tokens["attention_mask"],
+        "dpo_pairs": dpo_pairs,
     }
 
 
@@ -332,13 +336,11 @@ def _build_dataset_split(
     tokenized = dataset.map(format_example)
 
     keep_columns = {
-        "input_ids_chosen",
-        "attention_mask_chosen",
-        "input_ids_rejected",
-        "attention_mask_rejected",
-        "chosen_sentence_id",
-        "rejected_sentence_id",
+        "input_ids",
+        "attention_mask",
+        "dpo_pairs",
     }
+
     columns_to_remove = [column for column in tokenized.column_names if column not in keep_columns]
     if columns_to_remove:
         tokenized = tokenized.remove_columns(columns_to_remove)
@@ -538,7 +540,7 @@ def train_reward_model(
             batch[field] = torch.stack([torch.tensor(f[field]) for f in features])  #[num_gpus, num_advice_per_batch, max_length]
         
         # For the original prompts (strings), we simply collect them in a list.
-        non_tensor_fields = ["num_chosen", "num_rejected", "problem_id"]
+        non_tensor_fields = ["dpo_pairs"]
         for field in non_tensor_fields:
             batch[field] = [f[field] for f in features]
         

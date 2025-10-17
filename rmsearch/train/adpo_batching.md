@@ -146,7 +146,7 @@ python -m rmsearch.train.get_top_relevant_keys_embed \
 
 ## `sample_advanced_dpo_batch.py`
 
-Sample pairs of relevant/df-sourced keys for DPO-style preference datasets.
+Sample pairs of relevant/df-sourced keys for DPO-style preference datasets with explicit positive (`correspond`) and negative (`sampled`) keys.
 
 ```bash
 python -m rmsearch.train.sample_advanced_dpo_batch \
@@ -155,7 +155,7 @@ python -m rmsearch.train.sample_advanced_dpo_batch \
   --source-csv ./data/arguana/df2.csv \
   --source-column corpus \
   --n-sampled-keys 5 \
-  --output ./data/arguana/sampled_query_key_set.json
+  --output ./data/arguana/adpo_sampled_query_key_set.json
 ```
 
 **Arguments**
@@ -163,11 +163,12 @@ python -m rmsearch.train.sample_advanced_dpo_batch \
 - `--filtered-queries-json`: Optional metadata lookup (e.g. `filtered_query_recs.json`) to recover `df_id` / `query-type`.
 - `--source-csv`: DataFrame backing the df_id indices (defaults expect `df.csv`).
 - `--source-column`: Column within the DataFrame containing the key text (default `text`).
+- `--n-sampled-keys`: Number of negatives sampled from the relevance list per query (default `2`). The positive correspond key is always excluded from this pool.
 - `--output`: Destination JSON for the sampled pairs (default `./data/smollm-corpus/sampled_query_key_set.json`).
 - `--random-seed`: Sampling seed (default 42).
 
 **Outputs**
-- `{output}`: JSON list where each entry includes `query`, `query_id`, `keys`, `key_ids`, and the propagated `query-type` when available. When no relevance file is provided, a single placeholder query with two randomly sampled keys is emitted.
+- `{output}`: JSON list where each entry includes `query`, `query_id`, `correspond_keys`, `correspond_key_ids`, `sampled_keys`, `sampled_key_ids`, and the propagated `query-type` when available. When no relevance file is provided, the script emits a placeholder query with one correspond key and `n-sampled-keys` negatives chosen from the dataframe.
 - Example:
 ```
 [
@@ -188,18 +189,20 @@ python -m rmsearch.train.sample_advanced_dpo_batch \
 ```
 
 **Notices**
-- Sampling picks one key from the relevance results and one from the original df_id (when available); if no relevance file is supplied, two keys are drawn uniformly from the entire source CSV.
+- The correspond key always comes from the dataframe row aligned with `df_id`, and duplicates are filtered so that no correspond key appears in `sampled_keys`.
+- Queries lacking a valid correspond key or enough distinct negatives are skipped to avoid producing incomplete preference pairs.
+- Up to `n-sampled-keys` negatives are drawn without replacement from the relevance list; if no relevance file is supplied, negatives are drawn uniformly from the dataframe instead.
 
 
 
-## `Direct sampled_query_key_set.json -> dataset_list_test.json`
+## `Direct adpo_sampled_query_key_set.json -> dataset_list_test.json`
 
 ```bash
 python3 - <<'PY'
 from pathlib import Path
 import json
-query_key_set_path = "data/arguana/sampled_query_key_set.json"
-output_path = Path("exp1/dataset_list_test.json")
+query_key_set_path = "data/arguana/adpo_sampled_query_key_set.json"
+output_path = Path("exp2/dataset_list_test.json")
 
 with open(query_key_set_path) as f:
   query_key_set = json.load(f)
@@ -212,27 +215,49 @@ def _format_prompt(query: str, key: str) -> str:
   )
 
 dataset_list = []
+n_error = 0
 for query_key_dict in query_key_set:
-  query_id = query_key_dict["query_id"]
-  query = query_key_dict["query"]
-  keys = query_key_dict["keys"]
-  key_ids = query_key_dict["key_ids"]
+  try:
+    query_id = query_key_dict["query_id"]
+    query = query_key_dict["query"]
+    correspond_keys = query_key_dict["correspond_keys"]
+    correspond_key_ids = query_key_dict["correspond_key_ids"]
+    sampled_keys = query_key_dict["sampled_keys"]
+    sampled_key_ids = query_key_dict["sampled_key_ids"]
+    keys = correspond_keys + sampled_keys
+    key_ids = correspond_key_ids + sampled_key_ids
 
-  dataset_list.append(
-      {
-          "batch":[
-            {"msg": [{"role": "user", "content": _format_prompt(query, keys[1])}], "query_id":, "key_id":},
-            {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":, "key_id":},
-            {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":, "key_id":}
-          ],
-          "dpo_pairs":[
-            [0,1],  # [(chosen_msg_id), (rejected_msg_id)]
-            [0,2],
-            [1,2]
-          ]
-      }
-  )
+    batch = []
+    for i, key in enumerate(keys):
+      batch.append({"msg": [{"role": "user", "content": _format_prompt(query, key)}], "query_id":query_id, "key_id":key_ids[i]})
 
+    dpo_pairs = []
+    for c_id in range(len(correspond_key_ids)):
+      for s_id in range(len(sampled_key_ids)):
+        dpo_pairs.append([c_id, s_id + len(correspond_key_ids)])
+
+    dataset_list.append(
+        {
+            "batch": batch,
+            #[
+            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[1])}], "query_id":query_id, "key_id":},
+            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":},
+            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":}
+            #],
+            "dpo_pairs": dpo_pairs,
+            #[
+            #  [0,1],  # [(chosen_msg_id), (rejected_msg_id)]
+            #  [0,2],
+            #  [1,2]
+            #]
+        }
+    )
+  
+  except Exception as e:
+    n_error += 1
+    print(e)
+
+print("n_error: ", n_error)
 output_path.parent.mkdir(parents=True, exist_ok=True)
 output_path.write_text(json.dumps(dataset_list, ensure_ascii=False, indent=2))
 print(f"Wrote dataset list with {len(dataset_list)} entries to {output_path}")
@@ -241,18 +266,18 @@ PY
 
 
 
-## `lora_example.py`
+## `adpo_lora_example.py`
 
 Fine-tune a reward model using TRL's `RewardTrainer` with LoRA adapters.
 
 ```bash
-python -m rmsearch.train.lora_example \
-  --dataset-list-train ./exp1/dataset_list_train.json \
-  --dataset-list-test ./exp1/dataset_list_test.json \
+python -m rmsearch.train.adpo_lora_example \
+  --dataset-list-train ./exp2/dataset_list_train.json \
+  --dataset-list-test ./exp2/dataset_list_test.json \
   --model-name /workspace/llama3b-rm \
-  --output-dir ./exp1/model1 \
+  --output-dir ./exp2/model1 \
   --wandb-project rmsearch \
-  --wandb-run-name exp1-lora
+  --wandb-run-name exp2-adpo-lora
 ```
 
 **Arguments**
