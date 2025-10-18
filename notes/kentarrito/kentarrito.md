@@ -362,8 +362,11 @@ kentarrito todo
 
 - [ ] Make advanced DPO coding 3h -> Pass this to prakhar and conduct training with different batch size, 
   - [x] CustomRewardTrainer
-  - [ ] Make dataset_list.json
+  - [x] Make dataset_list.json
+  - [ ] Adjust functions in CustomRewardTrainer
+
 - [ ] Make baseline to create agent system (rmsearch/agents/) 1day -> pass it to cameron
+  - [ ] 
 
 
 

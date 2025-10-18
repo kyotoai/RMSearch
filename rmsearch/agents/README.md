@@ -101,7 +101,7 @@ code
 [
     {
         "tasks": ["Implement ...", "How to add ... ?", ...],
-        "code_dir": "code1"
+        "code_dir": "code1",
         "file_path": "./code/code1/fileA",
         "dropped_lines": [23, 24, ...],
     },
