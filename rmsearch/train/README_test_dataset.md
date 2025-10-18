@@ -15,7 +15,7 @@
 ## Install rmsearch
 
 ```bash
-git clone https://github.com/kyotoai/RMSearch.git
+git clone --branch develop https://github.com/kyotoai/RMSearch.git
 pip install -e RMSearch/
 ```
 

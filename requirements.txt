@@ -8,3 +8,4 @@ matplotlib
 vllm
 evaluate
 sentence_transformers
+wandb

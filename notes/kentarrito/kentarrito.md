@@ -366,7 +366,7 @@ kentarrito todo
   - [ ] Adjust functions in CustomRewardTrainer
 
 - [ ] Make baseline to create agent system (rmsearch/agents/) 1day -> pass it to cameron
-  - [ ] 
+- [ ] 
 
 
 
@@ -374,5 +374,14 @@ runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguan
         /workspace/kentarrito/exp2 -> custom_trainer_lora_example.py, advanced_dpo_batching.md
 
 
+## Oct 18
+
+- [ ] Make contract paper for Juan
+- [ ] Create better dataset accumulation system
+- [x] Make train/READMEs for processing both dataset and recreate the result
+- [ ] Finish adpo training debug
+- [ ] Start creating YC application
+
+- [ ] Focus on agent rmsearch demo
 
 
