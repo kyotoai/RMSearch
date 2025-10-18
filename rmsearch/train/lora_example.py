@@ -8,9 +8,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from datasets import Dataset
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer,BitsAndBytesConfig
 
 from .utils import extract_int, extract_text
+
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 __all__ = ["make_dataset_list", "train_reward_model"]
 
@@ -188,7 +191,7 @@ def train_reward_model(
     output_dir: Path = Path("./rm_model"),
     max_length: int = 4000,
     max_characters: int = 4000,
-    per_device_train_batch_size: int = 3,
+    per_device_train_batch_size: int = 8,
     per_device_eval_batch_size: int = 2,
     evaluation_steps: int = 40,
     save_steps: int = 20,
@@ -209,7 +212,15 @@ def train_reward_model(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
+    quantization_config = BitsAndBytesConfig(
+    load_in_8bit=True,          # Enable 8-bit quantization
+    # llm_int8_threshold=4.0,     
+)
+
+    model = AutoModelForSequenceClassification.from_pretrained(model_name,
+                                                                num_labels=1,
+                                                                quantization_config=quantization_config,
+                                                                device_map="auto" )
 
     peft_config = LoraConfig(
         task_type=TaskType.SEQ_CLS,
@@ -278,9 +289,10 @@ def train_reward_model(
         run_name=wandb_run_name,
         per_device_train_batch_size=per_device_train_batch_size,
         per_device_eval_batch_size=per_device_eval_batch_size,
+        gradient_accumulation_steps=4,
         eval_strategy=evaluation_strategy,
         eval_steps=evaluation_steps,
-        eval_on_start=bool(eval_dataset),
+        # eval_on_start=bool(eval_dataset),
         save_strategy="steps",
         save_steps=save_steps,
         logging_steps=logging_steps,
@@ -349,7 +361,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--per-device-train-batch-size",
         type=int,
-        default=3,
+        default=4,
         help="Batch size per device for the training split.",
     )
     parser.add_argument(
@@ -425,7 +437,7 @@ if __name__ == "__main__":
         save_steps=args.save_steps,
         logging_steps=args.logging_steps,
         num_train_epochs=args.num_train_epochs,
-        wandb_project=args.wandb_project,
-        wandb_run_name=args.wandb_run_name,
-        wandb_tags=args.wandb_tags,
+        # wandb_project=args.wandb_project,
+        # wandb_run_name=args.wandb_run_name,
+        # wandb_tags=args.wandb_tags,
     )
