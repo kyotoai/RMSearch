@@ -1,0 +1,40 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Package info
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+*.bak
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# IDE/editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Custom project ignores
+rmsearch.egg-info/
+rmsearch/__pycache__/
+rmsearch/train/__pycache__/
