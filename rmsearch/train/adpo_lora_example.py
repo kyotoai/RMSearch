@@ -109,8 +109,8 @@ class CustomRewardTrainer(Trainer):
         all_rewards = all_rewards.reshape(num_gpus,num_batch)
         #print("2", all_rewards.shape)
         
-        all_chosen_idx = []
-        all_rejected_idx = []
+        #all_chosen_idx = []
+        #all_rejected_idx = []
         total_loss = 0
         for i in range(num_gpus):
             rewards = all_rewards[i]
@@ -167,10 +167,11 @@ class CustomRewardTrainer(Trainer):
         if return_outputs:
             return total_loss, {
                 "all_rewards": all_rewards,
-                "all_chosen_idx": all_chosen_idx,
-                "all_rejected_idx": all_rejected_idx,
-                "n_chosen":n_chosen,
-                "n_rejected":n_rejected,
+                #"all_chosen_idx": all_chosen_idx,
+                #"all_rejected_idx": all_rejected_idx,
+                "dpo_pairs_list": dpo_pairs_list,
+                #"n_chosen":n_chosen,
+                #"n_rejected":n_rejected,
             }
         return total_loss
 
@@ -200,10 +201,11 @@ class CustomRewardTrainer(Trainer):
         '''
 
         all_rewards = logits_dict["all_rewards"]
-        all_chosen_idx = logits_dict["all_chosen_idx"]
-        all_rejected_idx = logits_dict["all_rejected_idx"]
-        n_chosen = logits_dict["n_chosen"]
-        n_rejected = logits_dict["n_rejected"]
+        dpo_pairs_list = logits_dict["dpo_pairs_list"]
+        #all_chosen_idx = logits_dict["all_chosen_idx"]
+        #all_rejected_idx = logits_dict["all_rejected_idx"]
+        #n_chosen = logits_dict["n_chosen"]
+        #n_rejected = logits_dict["n_rejected"]
         
         if prediction_loss_only:
             return (loss, None, None)
@@ -212,11 +214,16 @@ class CustomRewardTrainer(Trainer):
         all_logits = torch.tensor([])
         for i in range(len(all_rewards)):
             rewards = all_rewards[i]
+            dpo_pairs = dpo_pairs_list[i]
+
+            dpo_pairs_T = torch.tensor(dpo_pairs).transpose(0,1)
             #print("rewards.shape: ", rewards.shape)
             #print("all_chosen_idx[i]: ", all_chosen_idx[i])
-            chosen_logits = rewards[all_chosen_idx[i]].unsqueeze(-1)
-            rejected_logits = rewards[n_chosen + all_rejected_idx[i]].unsqueeze(-1)
-            logits = torch.cat((chosen_logits, rejected_logits), dim=1)
+            chosen_logits = rewards[dpo_pairs_T[i]].unsqueeze(-1)
+            rejected_logits = rewards[dpo_pairs_T[i]].unsqueeze(-1)
+            #chosen_logits = rewards[all_chosen_idx[i]].unsqueeze(-1)
+            #rejected_logits = rewards[n_chosen + all_rejected_idx[i]].unsqueeze(-1)
+            logits = torch.cat((chosen_logits, rejected_logits), dim=1)  # 
             #print("logits.shape: ", logits.shape)
             all_logits = all_logits.to(logits.device)
             all_logits = torch.cat((all_logits, logits), dim=0)
