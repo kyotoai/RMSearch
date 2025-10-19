@@ -71,6 +71,6 @@ You have 2 options to train reward model, normal DPO and advanced DPO. For more 
 
 ### 3. **Train Reward Model With Advanced DPO Batching Method**
 
-  * [`README_adpo_training.md`](README_adpo_training.md)
+  * [`README_adpo_train.md`](README_adpo_train.md)
 
 
