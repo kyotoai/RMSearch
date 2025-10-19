@@ -132,7 +132,7 @@ def _build_records(
     for query_id, (key_ids, score_row) in enumerate(zip(indices_cpu, scores_cpu)):
         query_meta = query_entries[query_id]
         entry: Dict[str, Any] = {
-            "query": query_meta["query"],
+            #"query": query_meta["query"],
             "query_id": query_id,
             "keys": [],
         }
@@ -147,7 +147,7 @@ def _build_records(
             kid_int = int(kid)
             item = {
                 "key_id": kid_int,
-                "key": keys[kid_int] if 0 <= kid_int < len(keys) else "",
+                #"key": keys[kid_int] if 0 <= kid_int < len(keys) else "",
                 "similarity": float(score),
             }
             entry["keys"].append(item)
