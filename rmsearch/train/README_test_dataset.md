@@ -9,7 +9,7 @@
 5. `Direct sampled_query_key_set.json -> dataset_list_test.json`: From query_key_set created from `sample_dpo_batch.py`, make dpo dataset.
 6. `lora_example.py`: Train reward model for the training.
 
-* Running order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
+* Running order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 
 ## Install rmsearch
