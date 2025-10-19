@@ -376,12 +376,16 @@ runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguan
 
 ## Oct 18
 
-- [ ] Make contract paper for Juan
 - [ ] Create better dataset accumulation system
 - [x] Make train/READMEs for processing both dataset and recreate the result
+
+
+
+
+## Oct 19
+
 - [ ] Finish adpo training debug
+- [ ] Make contract paper for Juan
 - [ ] Start creating YC application
-
 - [ ] Focus on agent rmsearch demo
-
 
