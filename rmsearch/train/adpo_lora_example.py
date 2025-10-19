@@ -116,6 +116,9 @@ class CustomRewardTrainer(Trainer):
             rewards = all_rewards[i]
             dpo_pairs = dpo_pairs_list[i]
 
+            #print("rewards: ", rewards)
+            #print("dpo_pairs: ", dpo_pairs)
+
             cr_matrix = torch.zeros(len(dpo_pairs), len(rewards))
             for i, dpo_pair in enumerate(dpo_pairs):
                 cr_matrix[i, dpo_pair[0]] = 1
@@ -314,8 +317,8 @@ def _format_preference_pair(
     )
 
     return {
-        "input_ids_chosen": tokens["input_ids"],
-        "attention_mask_chosen": tokens["attention_mask"],
+        "input_ids": tokens["input_ids"],
+        "attention_mask": tokens["attention_mask"],
         "dpo_pairs": dpo_pairs,
     }
 
@@ -517,7 +520,7 @@ def train_reward_model(
         run_name=wandb_run_name,
         per_device_train_batch_size=per_device_train_batch_size,
         per_device_eval_batch_size=per_device_eval_batch_size,
-        evaluation_strategy=evaluation_strategy,
+        eval_strategy=evaluation_strategy,
         eval_steps=evaluation_steps,
         eval_on_start=bool(eval_dataset),
         save_strategy="steps",
