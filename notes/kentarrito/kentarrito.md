@@ -385,7 +385,13 @@ runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguan
 ## Oct 19
 
 - [ ] Finish adpo training debug
+  - [ ] Fix train cuda oom error
+  - [ ] Fix num_gpu = 2 error
 - [ ] Make contract paper for Juan
 - [ ] Start creating YC application
 - [ ] Focus on agent rmsearch demo
+
+
+- [ ] relevance_record now take a lot of memory space, modifty this for rm too
+
 
