@@ -9,11 +9,15 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 from peft import LoraConfig, TaskType, get_peft_model
 from trl import RewardConfig, RewardTrainer
-
 from datasets import Dataset
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from .utils import extract_int, extract_text
+import os
+import random
+
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+random.seed(42)
 
 __all__ = ["make_dataset_list", "train_reward_model"]
 
@@ -116,11 +120,9 @@ class CustomRewardTrainer(Trainer):
             rewards = all_rewards[i]
             dpo_pairs = dpo_pairs_list[i]
 
-            #print("rewards: ", rewards)
-            #print("dpo_pairs: ", dpo_pairs)
 
-            cr_matrix = torch.zeros(len(dpo_pairs), len(rewards))
-            for i, dpo_pair in enumerate(dpo_pairs):
+            cr_matrix = torch.zeros(len(dpo_pairs), len(rewards)) 
+            for i, dpo_pair in enumerate(dpo_pairs):    #fix i 
                 cr_matrix[i, dpo_pair[0]] = 1
                 cr_matrix[i, dpo_pair[1]] = -1
             
@@ -329,11 +331,21 @@ def _build_dataset_split(
     *,
     max_length: int,
     max_characters: int,
+    sample_ratio: float=0.1 #subset 10%
 ) -> Optional[Dataset]:
     if not records:
         return None
 
     dataset = Dataset.from_list(list(records))
+
+    print("Before sampling",len(dataset))
+
+    if sample_ratio < 1.0:
+        subset_size = int(len(dataset) * sample_ratio)
+        indices = random.sample(range(len(dataset)), subset_size)
+        dataset = dataset.select(indices)
+
+    print("After sampling",len(dataset))
 
     def format_example(example: Dict[str, object]) -> Dict[str, List[int]]:
         return _format_preference_pair(
@@ -522,7 +534,7 @@ def train_reward_model(
         per_device_eval_batch_size=per_device_eval_batch_size,
         eval_strategy=evaluation_strategy,
         eval_steps=evaluation_steps,
-        eval_on_start=bool(eval_dataset),
+        # eval_on_start=bool(eval_dataset),
         save_strategy="steps",
         save_steps=save_steps,
         logging_steps=logging_steps,
@@ -617,7 +629,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--per-device-train-batch-size",
         type=int,
-        default=3,
+        default=1,
         help="Batch size per device for the training split.",
     )
     parser.add_argument(
@@ -693,7 +705,7 @@ if __name__ == "__main__":
         save_steps=args.save_steps,
         logging_steps=args.logging_steps,
         num_train_epochs=args.num_train_epochs,
-        wandb_project=args.wandb_project,
-        wandb_run_name=args.wandb_run_name,
-        wandb_tags=args.wandb_tags,
+        # wandb_project=args.wandb_project,
+        # wandb_run_name=args.wandb_run_name,
+        # wandb_tags=args.wandb_tags,
     )
