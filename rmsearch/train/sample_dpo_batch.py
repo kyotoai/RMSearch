@@ -104,13 +104,19 @@ def sample_dpo_batch(
         return samples
 
     for record in relevance_records:
-        query = record.get("query")
+        #query = record.get("query")
         query_id = record.get("query_id")
+        query = filtered_queries[query_id]["query"]
         df_id = record.get("df_id")
         query_type = record.get("query_type")
 
         if query is None or query_id is None:
             continue
+
+        for i in range(len(record["keys"])):
+            key_id = record["keys"][i]["key_id"]
+            record["keys"][i]["key"] = df_lookup[key_id]
+
 
         top_key = _sample_key_from_relevance(record, rng=rng)
         df_key = None
