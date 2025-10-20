@@ -37,14 +37,11 @@ def _load_filtered_queries(path: Path) -> Dict[int, Dict[str, Any]]:
     if not isinstance(data, list):
         raise ValueError(f"Expected list in {path}, found {type(data).__name__}")
     lookup: Dict[int, Dict[str, Any]] = {}
-    for entry in data:
+    for i, entry in enumerate(data):
         if not isinstance(entry, dict):
             continue
-        df_id = entry.get("df_id")
-        if df_id is None:
-            continue
         try:
-            lookup[int(df_id)] = entry
+            lookup[i] = entry
         except (TypeError, ValueError):
             continue
     return lookup
