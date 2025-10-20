@@ -25,7 +25,7 @@ def _load_relevance_records(path: Optional[Path]) -> List[Dict[str, Any]]:
         raise ValueError(f"Expected list in {path}, found {type(data).__name__}")
     records: List[Dict[str, Any]] = []
     for item in data:
-        if isinstance(item, dict) and "query" in item:
+        if isinstance(item, dict):
             records.append(item)
     if not records:
         raise ValueError(f"No valid query records found in {path}")
