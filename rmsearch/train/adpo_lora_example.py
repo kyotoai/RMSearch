@@ -15,6 +15,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from .utils import extract_int, extract_text
 import os
 import random
+import pandas as pd
 
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 random.seed(42)
@@ -88,7 +89,9 @@ class CustomRewardTrainer(Trainer):
         num_items_in_batch=None,
     ) -> Union[torch.Tensor, tuple[torch.Tensor, dict[str, torch.Tensor]]]:
 
+
         dpo_pairs_list = inputs["dpo_pairs"]   #[num_gpus]
+        print("inputs", len(inputs))
 
         #n_chosens = inputs["num_chosen"]  #[num_gpus]
         #n_rejecteds = inputs["num_rejected"]  #[num_gpus]
@@ -338,7 +341,31 @@ def _build_dataset_split(
 
     dataset = Dataset.from_list(list(records))
 
+    df = pd.DataFrame(dataset)
+
     print("Before sampling",len(dataset))
+    # print("First element:", dataset[0])
+    print("Top 5 rows:")
+    print(df.head())
+
+    # Show columns
+    print("\nColumns:")
+    print(df.columns)
+
+    # Show info about the DataFrame (types, non-null counts)
+    print("\nDataFrame info:")
+    print(df.info())
+
+    # Show basic statistics for numeric columns
+    print("\nDescriptive statistics:")
+    print(df.describe())
+
+    # Optional: see first element in detail
+    print("\nFirst element as dict:")
+    print(df.iloc[0]["batch"][0]["msg"])
+
+    quit()
+
 
     if sample_ratio < 1.0:
         subset_size = int(len(dataset) * sample_ratio)
@@ -463,26 +490,26 @@ def train_reward_model(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
+    # model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
 
-    peft_config = LoraConfig(
-        task_type=TaskType.SEQ_CLS,
-        inference_mode=False,
-        target_modules=[
-            "k_proj",
-            "q_proj",
-            "o_proj",
-            "v_proj",
-            "down_proj",
-            "gate_proj",
-            "up_proj",
-        ],
-        layers_to_transform=[25, 26, 27],
-        r=16,
-        lora_alpha=16,
-        lora_dropout=0.1,
-    )
-    model = get_peft_model(model, peft_config)
+    # peft_config = LoraConfig(
+    #     task_type=TaskType.SEQ_CLS,
+    #     inference_mode=False,
+    #     target_modules=[
+    #         "k_proj",
+    #         "q_proj",
+    #         "o_proj",
+    #         "v_proj",
+    #         "down_proj",
+    #         "gate_proj",
+    #         "up_proj",
+    #     ],
+    #     layers_to_transform=[25, 26, 27],
+    #     r=16,
+    #     lora_alpha=16,
+    #     lora_dropout=0.1,
+    # )
+    # model = get_peft_model(model, peft_config)
 
     train_dataset = _build_dataset_split(
         dataset_list_train,
@@ -694,7 +721,7 @@ if __name__ == "__main__":
 
     train_reward_model(
         dataset_list_train,
-        dataset_list_test=dataset_list_test,
+        # dataset_list_test=dataset_list_test,
         model_name=args.model_name,
         output_dir=args.output_dir,
         max_length=args.max_length,
