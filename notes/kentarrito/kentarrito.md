@@ -384,14 +384,30 @@ runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguan
 
 ## Oct 19
 
-- [ ] Finish adpo training debug
+- [x] Finish adpo training debug -> leave it to prakhar 
   - [ ] Fix train cuda oom error
   - [ ] Fix num_gpu = 2 error
-- [ ] Make contract paper for Juan
+- [x] Make contract paper for Juan
+
+- [x] relevance_record now take a lot of memory space, modifty this for rm too
+
+
+## Oct 20
+
 - [ ] Start creating YC application
+  - [ ] Roughly created personal website
 - [ ] Focus on agent rmsearch demo
+  - [ ] decide how to make excel finding project
 
 
-- [ ] relevance_record now take a lot of memory space, modifty this for rm too
+## Oct 21
+
+- [ ] Generating excel sheet by generator functions created by GPT5
+  - [ ] Make prompt to create it
+  - [ ] Gather 1000 datasets with 200 variable generators.
+- [ ] Making a system to automatically add agents and improve systems
+  - [ ] it might be better to create it in SEIMEI
+
+
 
 
