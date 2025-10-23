@@ -397,16 +397,23 @@ runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguan
 - [ ] Start creating YC application
   - [ ] Roughly created personal website
 - [ ] Focus on agent rmsearch demo
-  - [ ] decide how to make excel finding project
+  - [ ] Decide how to make excel finding project
 
 
 ## Oct 21
 
 - [ ] Generating excel sheet by generator functions created by GPT5
   - [ ] Make prompt to create it
-  - [ ] Gather 1000 datasets with 200 variable generators.
+  - [ ] Gather 1000 datasets with 200 variable generators
+
 - [ ] Making a system to automatically add agents and improve systems
-  - [ ] it might be better to create it in SEIMEI
+  - [x] It might be better to create it in SEIMEI -> It's good for customizing and experiment. let's go with SEIMEI
+  - [ ] vllm_serve for both generate & reward needed (because AscynEngine is not working now)
+  - [ ] Access and analyze folder directly without processing folder
+  - [ ] Inference -> Log
+  - [ ] Log -> Agents
+  - [ ] Agents -> Inference
+
 
 
 
