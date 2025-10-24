@@ -99,7 +99,7 @@ if __name__ == "__main__":
 
     import pandas as pd
 
-    from rmsearch.utils.vllm_reward2 import build_llm, search
+    from rmsearch.utils.vllm_reward import build_llm, search
 
     parser = argparse.ArgumentParser(description="Run retrieval evaluation using a vLLM reward model.")
     parser.add_argument("--working-dir", type=Path, default=Path("/workspace/RMS_exp"), help="Root working directory used during training.")
