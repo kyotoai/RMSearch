@@ -25,7 +25,7 @@ def _load_relevance_records(path: Optional[Path]) -> List[Dict[str, Any]]:
         raise ValueError(f"Expected list in {path}, found {type(data).__name__}")
     records: List[Dict[str, Any]] = []
     for item in data:
-        if isinstance(item, dict) and "query" in item:
+        if isinstance(item, dict):
             records.append(item)
     if not records:
         raise ValueError(f"No valid query records found in {path}")
@@ -37,14 +37,11 @@ def _load_filtered_queries(path: Path) -> Dict[int, Dict[str, Any]]:
     if not isinstance(data, list):
         raise ValueError(f"Expected list in {path}, found {type(data).__name__}")
     lookup: Dict[int, Dict[str, Any]] = {}
-    for entry in data:
+    for i, entry in enumerate(data):
         if not isinstance(entry, dict):
             continue
-        df_id = entry.get("df_id")
-        if df_id is None:
-            continue
         try:
-            lookup[int(df_id)] = entry
+            lookup[i] = entry
         except (TypeError, ValueError):
             continue
     return lookup
@@ -104,13 +101,19 @@ def sample_dpo_batch(
         return samples
 
     for record in relevance_records:
-        query = record.get("query")
+        #query = record.get("query")
         query_id = record.get("query_id")
+        query = filtered_queries[query_id]["query"]
         df_id = record.get("df_id")
         query_type = record.get("query_type")
 
         if query is None or query_id is None:
             continue
+
+        for i in range(len(record["keys"])):
+            key_id = record["keys"][i]["key_id"]
+            record["keys"][i]["key"] = df_lookup[key_id]
+
 
         top_key = _sample_key_from_relevance(record, rng=rng)
         df_key = None

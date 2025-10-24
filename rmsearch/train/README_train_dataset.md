@@ -138,7 +138,7 @@ python -m rmsearch.train.get_top_relevant_keys_embed \
   --queries-json ./data/smollm-corpus/filtered_query_recs.json \
   --keys-csv ./data/smollm-corpus/df_small.csv \
   --key-column text \
-  --model-name intfloat/e5-mistral-7b-instruct \
+  --model-name /workspace/e5-mistral7b \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --k-key 100 \
@@ -174,7 +174,7 @@ Sample pairs of relevant/df-sourced keys for DPO-style preference datasets.
 
 ```bash
 python -m rmsearch.train.sample_dpo_batch \
-  --relevance-json ./data/smollm-corpus/relevance_records_rm.json \
+  --relevance-json ./data/smollm-corpus/relevance_records_embed.json \
   --filtered-queries-json ./data/smollm-corpus/filtered_query_recs.json \
   --source-csv ./data/smollm-corpus/df.csv \
   --output ./data/smollm-corpus/sampled_query_key_set.json

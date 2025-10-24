@@ -384,8 +384,62 @@ runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguan
 
 ## Oct 19
 
-- [ ] Finish adpo training debug
-- [ ] Make contract paper for Juan
+- [x] Finish adpo training debug -> leave it to prakhar 
+  - [ ] Fix train cuda oom error
+  - [ ] Fix num_gpu = 2 error
+- [x] Make contract paper for Juan
+
+- [x] relevance_record now take a lot of memory space, modifty this for rm too
+
+
+## Oct 20
+
 - [ ] Start creating YC application
+  - [ ] Roughly created personal website
 - [ ] Focus on agent rmsearch demo
+  - [ ] Decide how to make excel finding project
+
+
+## Oct 21
+
+- [ ] Generating excel sheet by generator functions created by GPT5
+  - [ ] Make prompt to create it
+  - [ ] Gather 1000 datasets with 200 variable generators
+
+- [ ] Making a system to automatically add agents and improve systems
+  - [x] It might be better to create it in SEIMEI -> It's good for customizing and experiment. let's go with SEIMEI
+  - [ ] vllm_serve for both generate & reward needed (because AscynEngine is not working now)
+  - [ ] Access and analyze folder directly without processing folder
+  - [ ] Inference -> Log
+  - [ ] Log -> Agents
+  - [ ] Agents -> Inference
+
+
+
+
+## Oct 24
+
+- [ ] Create rmsearch/evaluation/process_data.py
+  * Specify dataset, download it from huggingface and make pair.csv, query.json, key.json
+  * query.json, key.json: list of query and key
+  * pair.csv: query_id, key_id
+
+- [ ] Create rmsearch/evaluation/embed.py
+  * from query.json and key.json, get relevance matrix of them
+  * from the relevance matrix, create relevance_dict_embed.json
+  * relevance_dict_embed.json :
+  [
+    {
+      "query_id": , "key_ids":[]
+    }
+  ]
+  * inside "keys", top relevant key ids to query with the query_id is there in order.
+  * the number of keys are 100 in default.
+  * Refer to embed_tags.py for how to make embedding.
+
+- [ ] Create rmsearch/evaluation/rerank.py
+  * from relevance_dict_embed.json created, rerank the key_ids using examples/train_en.ipynb: Evaluation > Without Graph section? Output relevance_dict_rerank.json at the end.
+
+
+
 

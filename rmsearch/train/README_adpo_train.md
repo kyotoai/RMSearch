@@ -26,6 +26,15 @@ Download a dataset from HuggingFace, shuffle it, and materialise convenient CSV
 slices.
 
 ```bash
+python -m rmsearch.train.process_data \
+  --dataset-name HuggingFaceTB/smollm-corpus \
+  --output-dir ./data/smollm-corpus \
+  --dataset-config cosmopedia-v2 \
+  --n-sample 1000 \
+  --stream
+```
+
+```bash
 curl -L https://huggingface.co/datasets/mteb/arguana/resolve/main/corpus.jsonl -o data/arguana/corpus.jsonl
 curl -L https://huggingface.co/datasets/mteb/arguana/resolve/main/queries.jsonl -o data/arguana/queries.jsonl
 ```
@@ -65,7 +74,26 @@ PY
 
 
 
-## `make_query_recs`
+## `make_query_recs` & `filter_query_recs`
+
+```bash
+python -m rmsearch.train.make_query_recs \
+  --input-csv ./data/smollm-corpus/df.csv \
+  --text-column text \
+  --model-name /workspace/qwen4b \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --batch-size 8 \
+  --max-model-len 10000 \
+  --output ./data/smollm-corpus/query_recs.json
+```
+
+```bash
+python -m rmsearch.train.filter_query_recs \
+  --input ./data/smollm-corpus/query_recs.json \
+  --output ./data/smollm-corpus/filtered_query_recs.json \
+  --filter questions
+```
 
 ```bash
 python3 - <<'PY'
@@ -109,6 +137,19 @@ store the top-N matches per query.
 
 ```bash
 python -m rmsearch.train.get_top_relevant_keys_embed \
+  --queries-json ./data/smollm-corpus/filtered_query_recs.json \
+  --keys-csv ./data/smollm-corpus/df_small.csv \
+  --key-column text \
+  --model-name /workspace/e5-mistral7b \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --k-key 100 \
+  --similarity-device cuda \
+  --output ./data/smollm-corpus/relevance_records_embed.json
+```
+
+```bash
+python -m rmsearch.train.get_top_relevant_keys_embed \
   --queries-json ./data/arguana/query_recs.json \
   --keys-csv ./data/arguana/df2.csv \
   --key-column corpus \
@@ -147,6 +188,16 @@ python -m rmsearch.train.get_top_relevant_keys_embed \
 ## `sample_advanced_dpo_batch.py`
 
 Sample pairs of relevant/df-sourced keys for DPO-style preference datasets with explicit positive (`correspond`) and negative (`sampled`) keys.
+
+```bash
+python -m rmsearch.train.sample_advanced_dpo_batch \
+  --relevance-json ./data/smollm-corpus/relevance_records_embed.json \
+  --filtered-queries-json ./data/smollm-corpus/filtered_query_recs.json \
+  --source-csv ./data/smollm-corpus/df.csv \
+  --source-column text \
+  --n-sampled-keys 5 \
+  --output ./data/smollm-corpus/adpo_sampled_query_key_set.json
+```
 
 ```bash
 python -m rmsearch.train.sample_advanced_dpo_batch \
@@ -196,6 +247,74 @@ python -m rmsearch.train.sample_advanced_dpo_batch \
 
 
 ## `Direct adpo_sampled_query_key_set.json -> dataset_list_test.json`
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import json
+query_key_set_path = "data/smollm-corpus/adpo_sampled_query_key_set.json"
+output_path = Path("exp2/dataset_list_train.json")
+
+with open(query_key_set_path) as f:
+  query_key_set = json.load(f)
+
+def _format_prompt(query: str, key: str) -> str:
+  return (
+      "Give me relevant score between query and sentence;\n\n"
+      f"Query:{query}\n\n"
+      f"Sentence:```{key}```"
+  )
+
+dataset_list = []
+n_error = 0
+for query_key_dict in query_key_set:
+  try:
+    query_id = query_key_dict["query_id"]
+    query = query_key_dict["query"]
+    correspond_keys = query_key_dict["correspond_keys"]
+    correspond_key_ids = query_key_dict["correspond_key_ids"]
+    sampled_keys = query_key_dict["sampled_keys"]
+    sampled_key_ids = query_key_dict["sampled_key_ids"]
+    keys = correspond_keys + sampled_keys
+    key_ids = correspond_key_ids + sampled_key_ids
+
+    batch = []
+    for i, key in enumerate(keys):
+      batch.append({"msg": [{"role": "user", "content": _format_prompt(query, key)}], "query_id":query_id, "key_id":key_ids[i]})
+
+    dpo_pairs = []
+    for c_id in range(len(correspond_key_ids)):
+      for s_id in range(len(sampled_key_ids)):
+        dpo_pairs.append([c_id, s_id + len(correspond_key_ids)])
+
+    dataset_list.append(
+        {
+            "batch": batch,
+            #[
+            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[1])}], "query_id":query_id, "key_id":},
+            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":},
+            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":}
+            #],
+            "dpo_pairs": dpo_pairs,
+            #[
+            #  [0,1],  # [(chosen_msg_id), (rejected_msg_id)]
+            #  [0,2],
+            #  [1,2]
+            #]
+        }
+    )
+  
+  except Exception as e:
+    n_error += 1
+    print(e)
+
+print("n_error: ", n_error)
+output_path.parent.mkdir(parents=True, exist_ok=True)
+output_path.write_text(json.dumps(dataset_list, ensure_ascii=False, indent=2))
+print(f"Wrote dataset list with {len(dataset_list)} entries to {output_path}")
+PY
+```
+
 
 ```bash
 python3 - <<'PY'
@@ -269,6 +388,21 @@ PY
 ## `adpo_lora_example.py`
 
 Fine-tune a reward model using TRL's `RewardTrainer` with LoRA adapters.
+
+* Login to wandb (-> web service to organize the traini)
+
+  * Wandb home: https://wandb.ai/home
+  * Ref: https://docs.wandb.ai/quickstart/
+
+  1. set api key
+  ```
+  export WANDB_API_KEY=<your_api_key>
+  ```
+
+  2. login by command
+  ```
+  wandb login
+  ```
 
 ```bash
 python -m rmsearch.train.adpo_lora_example \
