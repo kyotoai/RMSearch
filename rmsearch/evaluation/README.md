@@ -16,13 +16,19 @@ three artefacts consumable by downstream steps:
 ```bash
 python -m rmsearch.evaluation.process_data \
   --dataset-name BeIR/fiqa \
-  --output-dir ./exp_eval/data \
+  --output-dir ./data/BeIR/fiqa \
   --query-split queries \
   --key-split corpus \
   --pair-split qrels \
   --max-queries 1000 \
   --max-keys 5000
 ```
+
+```bash
+python RMSearch/rmsearch/evaluation/dataset/beir_to_pairs.py --outdir ./beir_out --split test scifact nq
+```
+
+
 
 **Highlights**
 - Works with streaming and offline environments; falls back to deterministic
