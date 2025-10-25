@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Sequence
 
 import pandas as pd
+import torch
 
 from rmsearch.utils.vllm_reward import build_llm, search
 
@@ -270,13 +271,24 @@ def rerank_candidates(
             ordered_ids.append(original_ids[local_id])
             scores.append(float(item.get("relevance", 0.0)))
         pre_key_ids = list(original_ids)
-        limit = top_k if top_k is not None else len(ordered_ids)
-        limit = min(limit, len(ordered_ids))
+        if not scores:
+            top_indices: List[int] = []
+            top_scores: List[float] = []
+        else:
+            k = len(scores) if top_k is None else max(0, min(top_k, len(scores)))
+            if k == 0:
+                top_indices = []
+                top_scores = []
+            else:
+                score_tensor = torch.tensor(scores, dtype=torch.float32)
+                top_vals, top_idx = torch.topk(score_tensor, k=k, largest=True, sorted=True)
+                top_indices = [ordered_ids[i] for i in top_idx.tolist()]
+                top_scores = top_vals.tolist()
         entry: Dict[str, object] = {
             "query_id": req_query_id,
             "pre_key_ids": pre_key_ids,
-            "key_ids": ordered_ids[:limit],
-            "relevance": scores[:limit],
+            "key_ids": top_indices,
+            "relevance": top_scores,
             "positive_key_ids": positive_lookup.get(req_query_id, []),
         }
         reranked.append(entry)
