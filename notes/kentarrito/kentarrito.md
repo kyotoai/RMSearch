@@ -445,5 +445,15 @@ runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguan
 
 - [x] Add beir_to_pairs.py
 - [x] Adjust input of embed.py, rerank.py and retrieval.py according to the dataset/beir_to_pair.py and update the readme.
+- [x] Adjust rerank.py so that it generates output like 
+    ```
+    [
+      {
+        "query_id": , "key_ids":[], "pre_key_ids":[], "relevance":[], "positive_key_ids":[]
+      }
+    ]
+    ```
+    * add argument for top-k to extract top-k relevant "key_ids" from "pre_key_ids". "pre_key_ids" corresponds to "key_ids" in relevance_dict_embed.json. set top-k 10 in default.
 
+- [x] Add more details about each file's argument, output, output example.
 

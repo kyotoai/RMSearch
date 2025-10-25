@@ -231,8 +231,6 @@ def rerank_candidates(
         candidate_ids = [int(k) for k in record["key_ids"]]  # type: ignore[index]
         if not candidate_ids:
             continue
-        if top_k is not None:
-            candidate_ids = candidate_ids[:top_k]
         key_texts: List[str] = []
         for kid in candidate_ids:
             key_text = key_text_by_id.get(kid)
@@ -271,13 +269,16 @@ def rerank_candidates(
                 continue
             ordered_ids.append(original_ids[local_id])
             scores.append(float(item.get("relevance", 0.0)))
+        pre_key_ids = list(original_ids)
+        limit = top_k if top_k is not None else len(ordered_ids)
+        limit = min(limit, len(ordered_ids))
         entry: Dict[str, object] = {
             "query_id": req_query_id,
-            "key_ids": ordered_ids,
-            "relevance": scores,
+            "pre_key_ids": pre_key_ids,
+            "key_ids": ordered_ids[:limit],
+            "relevance": scores[:limit],
+            "positive_key_ids": positive_lookup.get(req_query_id, []),
         }
-        if positive_lookup:
-            entry["positive_key_ids"] = positive_lookup.get(req_query_id, [])
         reranked.append(entry)
     return reranked
 
@@ -325,7 +326,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--request-batch-size", type=int, default=128, help="Number of (query,key) pairs per scoring batch.")
     parser.add_argument("--timeout", type=float, default=10_000.0, help="Timeout in seconds for reward scoring batches.")
-    parser.add_argument("--top-k", type=int, default=None, help="Optional limit on candidates per query before reranking.")
+    parser.add_argument("--top-k", type=int, default=10, help="Number of most relevant keys to keep per query in the output.")
     parser.add_argument("--log-level", type=str, default="INFO", help="Python logging level.")
     return parser.parse_args()
 
