@@ -46,7 +46,8 @@ python -m rmsearch.evaluation.embed \
   --query-csv ./beir_out/scifact/query.csv \
   --key-csv ./beir_out/scifact/key.csv \
   --pair-csv ./beir_out/scifact/pair.csv \
-  --model-name /workspace/e5-large \
+  --output ./beir_out/scifact/relevance_dict_embed.json \
+  --model-name /workspace/e5-mistral7b \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --top-k 100 \
@@ -70,9 +71,10 @@ python -m rmsearch.evaluation.rerank \
   --key-csv ./beir_out/scifact/key.csv \
   --pair-csv ./beir_out/scifact/pair.csv \
   --embed-json ./beir_out/scifact/relevance_dict_embed.json \
+  --output ./beir_out/scifact/relevance_dict_rerank.json \
   --model-name /workspace/llama3b-rm-converted-model \
   --tensor-parallel-size 1 \
-  --num-instances 4 \
+  --num-instances 1 \
   --request-batch-size 128 \
   --timeout 10000
 ```
