@@ -252,7 +252,7 @@ def rerank_candidates(
             requests,
             template_fn,
             topk=max(len(ids) for ids in id_maps),
-            query_batch_size=request_batch_size,
+            batch_size=request_batch_size,
             timeout_s=timeout_s,
         )
     finally:
