@@ -1,19 +1,22 @@
 # RMSearch Evaluation Utilities
 
 Utilities in `rmsearch.evaluation` reproduce the notebook evaluation
-pipeline from the CLI. They materialise benchmark splits, build embedding
+pipeline from the CLI. They materialise BEIR-style splits, build embedding
 candidate sets, and optionally rerank those candidates with a reward model.
 
-## `process_data.py`
+## Dataset Preparation
 
-Download a dataset split from HuggingFace (default: `BeIR/fiqa`) and export
-three artefacts consumable by downstream steps:
-
-- `query.json`: ordered list of query strings.
-- `key.json`: ordered list of candidate sentences.
-- `pair.csv`: two-column CSV mapping `query_id` → `key_id`.
+Two options exist for producing the `query.csv`, `key.csv`, and `pair.csv`
+artifacts consumed by the downstream scripts:
 
 ```bash
+# Convert BEIR datasets directly
+python rmsearch/evaluation/dataset/beir_to_pairs.py \
+  --outdir ./beir_out \
+  --split test \
+  scifact nq
+
+# Or download from HuggingFace using datasets.load_dataset
 python -m rmsearch.evaluation.process_data \
   --dataset-name BeIR/fiqa \
   --output-dir ./data/BeIR/fiqa \
@@ -24,29 +27,25 @@ python -m rmsearch.evaluation.process_data \
   --max-keys 5000
 ```
 
-```bash
-python RMSearch/rmsearch/evaluation/dataset/beir_to_pairs.py --outdir ./beir_out --split test scifact nq
-```
+- `query.csv`: ordered list of query records (`id`, `original_query_id`, `text`).
+- `key.csv`: ordered list of candidate sentence records (`id`, `original_key_id`, `text`).
+- `pair.csv`: positive relations between the two (`query_id`, `key_id`, plus originals).
 
-
-
-**Highlights**
-- Works with streaming and offline environments; falls back to deterministic
-  stubs when HuggingFace is unavailable.
-- Column, split, and size limits can be tuned per dataset.
-- Outputs are pure text/CSV so they can be inspected or versioned easily.
+Both scripts fall back to deterministic stub outputs when the dataset cannot
+be downloaded.
 
 ## `embed.py`
 
-Embed the `query.json` and `key.json` strings with a vLLM embedding model
-and compute cosine-like similarity to retrieve the top-N keys per query.
-Results are saved to `relevance_dict_embed.json` in the form
-`{"query_id": int, "key_ids": [int, ...]}`.
+Embed `query.csv` and `key.csv` with a vLLM embedding model and compute
+dot-product similarity to retrieve the top-N keys per query. Results are
+written to `relevance_dict_embed.json` as
+`{"query_id": int, "key_ids": [int, ...], "positive_key_ids": [...]}`.
 
 ```bash
 python -m rmsearch.evaluation.embed \
-  --query-json ./exp_eval/data/query.json \
-  --key-json ./exp_eval/data/key.json \
+  --query-csv ./beir_out/scifact/query.csv \
+  --key-csv ./beir_out/scifact/key.csv \
+  --pair-csv ./beir_out/scifact/pair.csv \
   --model-name /workspace/e5-large \
   --tensor-parallel-size 1 \
   --num-instances 1 \
@@ -57,19 +56,20 @@ python -m rmsearch.evaluation.embed \
 **Highlights**
 - Shares batching and checkpointing logic with `rmsearch.utils.vllm_embed`.
 - Optional L2 normalisation before similarity to mimic cosine scoring.
-- Supports CPU/GPU similarity computation and automatic device selection.
+- Automatically maps embedding indices back to the dataset ids.
 
 ## `rerank.py`
 
 Consume `relevance_dict_embed.json` and re-score each candidate set with a
-reward model (LLM) to produce `relevance_dict_rerank.json`. The file mirrors
-the embedding output but includes a `relevance` score list for debugging.
+reward model to produce `relevance_dict_rerank.json`. The output mirrors the
+embed file while adding `relevance` scores.
 
 ```bash
 python -m rmsearch.evaluation.rerank \
-  --query-json ./exp_eval/data/query.json \
-  --key-json ./exp_eval/data/key.json \
-  --embed-json ./exp_eval/data/relevance_dict_embed.json \
+  --query-csv ./beir_out/scifact/query.csv \
+  --key-csv ./beir_out/scifact/key.csv \
+  --pair-csv ./beir_out/scifact/pair.csv \
+  --embed-json ./beir_out/scifact/relevance_dict_embed.json \
   --model-name /workspace/llama3b-rm-converted-model \
   --tensor-parallel-size 1 \
   --num-instances 4 \
@@ -78,33 +78,45 @@ python -m rmsearch.evaluation.rerank \
 ```
 
 **Highlights**
-- Reuses the notebook chat template (“Without Graph” section) for consistent
-  scoring.
+- Reuses the notebook chat template (“Without Graph”) for consistent scoring.
 - Device groups can be pinned explicitly for multi-GPU layouts.
-- Preserves the embedding shortlist order while attaching reward model
-  scores.
+- Preserves embedding order while attaching reward model scores and positive ids.
 
 ## `retrieval.py`
 
-Expose `retrieval_evaluation`, a helper that walks the tag tree to locate
-candidate sentences before scoring them with a provided search function.
-The module is imported when you run the legacy notebook evaluation path.
+Run the reward model across every query–key pair (or the legacy tag-tree
+evaluation) to generate `relevance_dict.json`.
 
-```python
-from rmsearch.evaluation import retrieval_evaluation
+```bash
+python -m rmsearch.evaluation.retrieval \
+  --query-csv ./beir_out/scifact/query.csv \
+  --key-csv ./beir_out/scifact/key.csv \
+  --pair-csv ./beir_out/scifact/pair.csv \
+  --model-name /workspace/llama3b-rm-converted-model \
+  --tensor-parallel-size 1 \
+  --num-instances 4 \
+  --batch-size 512 \
+  --k-key 100 \
+  --output ./beir_out/scifact/relevance_dict.json
 ```
 
+If `--query-csv` / `--key-csv` are unavailable, the script falls back to the
+original notebook inputs (`df_small.csv`, `query_dict.json`, and
+`tag2query-tag_tree.json`) beneath `--working-dir`.
+
 **Highlights**
-- Accepts synchronous or asynchronous search functions.
-- Annotates each key with both the relevance score and the original key id.
+- Direct “without graph” mode scores every key per query using BEIR pairs.
+- Legacy mode still supports tag-tree traversal when those artifacts exist.
+- Outputs include the reward scores plus optional `positive_key_ids`.
 
 ## Package Init
 
-`rmsearch/evaluation/__init__.py` re-exports `retrieval_evaluation` for
-convenient imports (`from rmsearch.evaluation import retrieval_evaluation`).
+`rmsearch/evaluation/__init__.py` re-exports the primary helpers so you can
+write `from rmsearch.evaluation import process_data, build_relevance_dict,
+rerank_candidates, retrieval_evaluation`.
 
 ---
 
-All scripts assume local access to the required models (embedding or reward)
-and benefit from GPU acceleration. When running the full pipeline, execute
-the scripts in the order shown above.
+All scripts assume local access to the required embedding and reward models
+and benefit from GPU acceleration. Run them in the order above to reproduce
+the evaluation artifacts referenced throughout the project.

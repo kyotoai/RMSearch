@@ -419,12 +419,12 @@ runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguan
 
 ## Oct 24
 
-- [ ] Create rmsearch/evaluation/process_data.py
+- [x] Create rmsearch/evaluation/process_data.py
   * Specify dataset, download it from huggingface and make pair.csv, query.json, key.json
   * query.json, key.json: list of query and key
   * pair.csv: query_id, key_id
 
-- [ ] Create rmsearch/evaluation/embed.py
+- [x] Create rmsearch/evaluation/embed.py
   * from query.json and key.json, get relevance matrix of them
   * from the relevance matrix, create relevance_dict_embed.json
   * relevance_dict_embed.json :
@@ -437,9 +437,13 @@ runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguan
   * the number of keys are 100 in default.
   * Refer to embed_tags.py for how to make embedding.
 
-- [ ] Create rmsearch/evaluation/rerank.py
+- [x] Create rmsearch/evaluation/rerank.py
   * from relevance_dict_embed.json created, rerank the key_ids using examples/train_en.ipynb: Evaluation > Without Graph section? Output relevance_dict_rerank.json at the end.
 
 
+## Oct 25
+
+- [x] Add beir_to_pairs.py
+- [x] Adjust input of embed.py, rerank.py and retrieval.py according to the dataset/beir_to_pair.py and update the readme.
 
 

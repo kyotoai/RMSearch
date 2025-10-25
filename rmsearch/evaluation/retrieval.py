@@ -96,14 +96,82 @@ if __name__ == "__main__":
     import json
     import logging
     import multiprocessing as mp
+    from typing import Tuple
 
     import pandas as pd
 
     from rmsearch.utils.vllm_reward import build_llm, search
 
+    def _load_table_csv(path: Path, text_column: str, id_column: str) -> Tuple[List[str], List[int]]:
+        df = pd.read_csv(path)
+        if text_column not in df.columns:
+            raise ValueError(f"Column '{text_column}' not present in {path}")
+        df = df[df[text_column].notna()].copy()
+        if df.empty:
+            raise ValueError(f"Column '{text_column}' in {path} is empty")
+        if id_column and id_column in df.columns:
+            df[id_column] = df[id_column].astype(int)
+            df = df.sort_values(id_column)
+            ids = df[id_column].astype(int).tolist()
+        else:
+            ids = list(range(len(df)))
+        texts = df[text_column].astype(str).tolist()
+        return texts, ids
+
+    def _load_positive_pairs_csv(path: Path, query_column: str, key_column: str) -> Dict[int, List[int]]:
+        df = pd.read_csv(path)
+        for column in (query_column, key_column):
+            if column not in df.columns:
+                raise ValueError(f"Column '{column}' not present in {path}")
+        df = df[[query_column, key_column]].dropna()
+        df[query_column] = df[query_column].astype(int)
+        df[key_column] = df[key_column].astype(int)
+        grouped = df.groupby(query_column)[key_column].apply(list)
+        return {int(qid): [int(k) for k in keys] for qid, keys in grouped.items()}
+
+    def _score_without_graph(
+        queries: Sequence[str],
+        keys: Sequence[str],
+        *,
+        search_fn: Callable[[List[Dict[str, Any]]], List[Dict[str, Any]]],
+        k_key: int,
+        query_ids: Sequence[int],
+        key_ids: Sequence[int],
+        positive_pairs: Optional[Dict[int, List[int]]] = None,
+    ) -> List[Dict[str, Any]]:
+        if not keys:
+            raise ValueError("Key list is empty.")
+        if k_key <= 0:
+            raise ValueError("k-key must be positive.")
+        effective_k = min(k_key, len(keys))
+        requests: List[Dict[str, Any]] = []
+        for query_text in queries:
+            requests.append(
+                {
+                    "query": query_text,
+                    "keys": list(keys),
+                    "k": effective_k,
+                    "return_relevance": True,
+                }
+            )
+
+        outputs = search_fn(requests)
+        results: List[Dict[str, Any]] = []
+        for idx, result in enumerate(outputs):
+            query_id = int(query_ids[idx]) if idx < len(query_ids) else idx
+            positives = positive_pairs.get(query_id, []) if positive_pairs else []
+            result["query_id"] = query_id
+            result["correct_id"] = positives[0] if positives else None
+            if positives:
+                result["positive_key_ids"] = positives
+            for key_item in result.get("keys", []):
+                local_id = int(key_item["key_id"])
+                if 0 <= local_id < len(key_ids):
+                    key_item["relevant_id"] = int(key_ids[local_id])
+            results.append(result)
+        return results
+
     parser = argparse.ArgumentParser(description="Run retrieval evaluation using a vLLM reward model.")
-    parser.add_argument("--working-dir", type=Path, default=Path("/workspace/RMS_exp"), help="Root working directory used during training.")
-    parser.add_argument("--data-name", type=str, default="smollm-corpus", help="Dataset identifier under the working directory.")
     parser.add_argument("--model-name", type=str, default="/workspace/llama3b-rm-converted-model", help="Path to the converted reward model.")
     parser.add_argument("--tensor-parallel-size", type=int, default=1, help="Tensor parallel size for the reward model workers.")
     parser.add_argument("--num-instances", type=int, default=4, help="Number of reward model worker instances.")
@@ -112,27 +180,57 @@ if __name__ == "__main__":
     parser.add_argument("--k-tag", type=int, default=2, help="Branching factor when traversing the tag tree.")
     parser.add_argument("--k-key", type=int, default=10, help="Number of keys retrieved per query in the final stage.")
     parser.add_argument("--output", type=Path, default=Path("relevance_dict.json"), help="Where to save the evaluation results.")
+
+    parser.add_argument("--query-csv", type=Path, default=Path("query.csv"), help="BEIR-style query CSV (id,text).")
+    parser.add_argument("--query-text-column", type=str, default="text", help="Column containing query text in --query-csv.")
+    parser.add_argument("--query-id-column", type=str, default="id", help="Column containing query ids in --query-csv.")
+    parser.add_argument("--key-csv", type=Path, default=Path("key.csv"), help="BEIR-style key CSV (id,text).")
+    parser.add_argument("--key-text-column", type=str, default="text", help="Column containing key text in --key-csv.")
+    parser.add_argument("--key-id-column", type=str, default="id", help="Column containing key ids in --key-csv.")
+    parser.add_argument("--pair-csv", type=Path, help="Optional BEIR-style pair CSV (query_id,key_id).")
+    parser.add_argument("--pair-query-column", type=str, default="query_id", help="Query id column inside --pair-csv.")
+    parser.add_argument("--pair-key-column", type=str, default="key_id", help="Key id column inside --pair-csv.")
+
+    parser.add_argument("--working-dir", type=Path, default=Path("/workspace/RMS_exp"), help="Legacy root working directory used during training.")
+    parser.add_argument("--data-name", type=str, default="smollm-corpus", help="Legacy dataset identifier under the working directory.")
     args = parser.parse_args()
-
-    working_dir = args.working_dir
-    data_dir = working_dir / "data" / args.data_name
-
-    df = pd.read_csv(data_dir / "df_small.csv")
-    with (data_dir / "query_dict.json").open() as handle:
-        query_dict = json.load(handle)
-    with (data_dir / "tag2query-tag_tree.json").open() as handle:
-        tag_tree = json.load(handle)
-
-    sentences = [df.iloc[i]["text"] for i in range(len(df))]
-    queries: List[str] = []
-    correct_ids: List[int] = []
-    for idx in range(len(df)):
-        questions = query_dict[str(idx)]["questions"]
-        queries.extend(questions)
-        correct_ids.extend([idx for _ in range(len(questions))])
 
     logging.getLogger("vllm").setLevel(logging.ERROR)
     mp.set_start_method("spawn", force=True)
+
+    use_beir_inputs = args.query_csv and args.key_csv and args.query_csv.is_file() and args.key_csv.is_file()
+
+    if use_beir_inputs:
+        queries, query_ids = _load_table_csv(args.query_csv, args.query_text_column, args.query_id_column)
+        sentences, key_ids = _load_table_csv(args.key_csv, args.key_text_column, args.key_id_column)
+        positive_pairs = (
+            _load_positive_pairs_csv(args.pair_csv, args.pair_query_column, args.pair_key_column)
+            if args.pair_csv
+            else {}
+        )
+        correct_ids = None
+        tag_tree = None
+    else:
+        working_dir = args.working_dir
+        data_dir = working_dir / "data" / args.data_name
+
+        df = pd.read_csv(data_dir / "df_small.csv")
+        with (data_dir / "query_dict.json").open() as handle:
+            query_dict = json.load(handle)
+        with (data_dir / "tag2query-tag_tree.json").open() as handle:
+            tag_tree = json.load(handle)
+
+        sentences = [df.iloc[i]["text"] for i in range(len(df))]
+        queries_list: List[str] = []
+        correct_ids = []
+        for idx in range(len(df)):
+            questions = query_dict[str(idx)]["questions"]
+            queries_list.extend(questions)
+            correct_ids.extend([idx for _ in range(len(questions))])
+        queries = queries_list
+        query_ids = list(range(len(queries)))
+        key_ids = list(range(len(sentences)))
+        positive_pairs = {}
 
     device_groups: List[List[int]] = []
     device_id = 0
@@ -175,7 +273,8 @@ if __name__ == "__main__":
     def run_search(requests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not requests:
             return []
-        topk = max((req.get("k", args.k_tag) for req in requests), default=args.k_tag)
+        default_topk = args.k_key if use_beir_inputs else args.k_tag
+        topk = max((req.get("k", default_topk) for req in requests), default=default_topk)
         return search(
             rm,
             requests,
@@ -186,15 +285,26 @@ if __name__ == "__main__":
         )
 
     try:
-        outputs = retrieval_evaluation(
-            queries,
-            sentences,
-            tag_tree,
-            search_fn=run_search,
-            k_tag=args.k_tag,
-            k_key=args.k_key,
-            correct_ids=correct_ids,
-        )
+        if use_beir_inputs:
+            outputs = _score_without_graph(
+                queries,
+                sentences,
+                search_fn=run_search,
+                k_key=args.k_key,
+                query_ids=query_ids,
+                key_ids=key_ids,
+                positive_pairs=positive_pairs,
+            )
+        else:
+            outputs = retrieval_evaluation(
+                queries,
+                sentences,
+                tag_tree,  # type: ignore[arg-type]
+                search_fn=run_search,
+                k_tag=args.k_tag,
+                k_key=args.k_key,
+                correct_ids=correct_ids,
+            )
     finally:
         rm.close()
 

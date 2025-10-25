@@ -6,8 +6,9 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import List, Sequence
+from typing import Dict, List, Sequence, Tuple
 
+import pandas as pd
 import torch
 
 from rmsearch.utils import vllm_embed
@@ -17,7 +18,7 @@ __all__ = ["build_relevance_dict"]
 logger = logging.getLogger(__name__)
 
 
-def _load_string_list(path: Path) -> List[str]:
+def _load_strings_from_json(path: Path, *, field: str | None = None) -> List[str]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(data, list):
         values = data
@@ -25,17 +26,97 @@ def _load_string_list(path: Path) -> List[str]:
         values = list(data.values())
     else:
         raise TypeError(f"Unsupported payload in {path}: expected list or dict, got {type(data)!r}")
+
     strings: List[str] = []
     for item in values:
         if isinstance(item, str):
             strings.append(item)
-        elif isinstance(item, dict) and "text" in item:
-            strings.append(str(item["text"]))
+        elif isinstance(item, dict):
+            if field and field in item:
+                strings.append(str(item[field]))
+            elif "text" in item:
+                strings.append(str(item["text"]))
+            elif "query" in item:
+                strings.append(str(item["query"]))
         else:
             raise TypeError(f"Unsupported entry in {path}: {item!r}")
+
     if not strings:
         raise ValueError(f"No textual entries found in {path}")
     return strings
+
+
+def _load_strings_from_csv(path: Path, *, text_column: str, id_column: str | None) -> Tuple[List[str], List[int]]:
+    df = pd.read_csv(path)
+    if text_column not in df.columns:
+        raise ValueError(f"Column '{text_column}' not present in {path}")
+    df = df[df[text_column].notna()].copy()
+    if df.empty:
+        raise ValueError(f"Column '{text_column}' in {path} is empty")
+
+    if id_column and id_column in df.columns:
+        df[id_column] = df[id_column].astype(int)
+        df = df.sort_values(id_column)
+        ids = df[id_column].astype(int).tolist()
+    else:
+        ids = list(range(len(df)))
+    texts = df[text_column].astype(str).tolist()
+    return texts, ids
+
+
+def _load_queries(
+    query_json: Path | None,
+    query_csv: Path | None,
+    *,
+    text_column: str,
+    id_column: str,
+) -> Tuple[List[str], List[int]]:
+    if query_csv and query_csv.is_file():
+        logger.info("Loading queries from CSV: %s", query_csv)
+        return _load_strings_from_csv(query_csv, text_column=text_column, id_column=id_column)
+    if query_json and query_json.is_file():
+        logger.info("Loading queries from JSON: %s", query_json)
+        strings = _load_strings_from_json(query_json, field="query")
+        return strings, list(range(len(strings)))
+    raise FileNotFoundError("Provide --query-csv or --query-json (no query file found).")
+
+
+def _load_keys(
+    key_json: Path | None,
+    key_csv: Path | None,
+    *,
+    text_column: str,
+    id_column: str,
+) -> Tuple[List[str], List[int]]:
+    if key_csv and key_csv.is_file():
+        logger.info("Loading keys from CSV: %s", key_csv)
+        return _load_strings_from_csv(key_csv, text_column=text_column, id_column=id_column)
+    if key_json and key_json.is_file():
+        logger.info("Loading keys from JSON: %s", key_json)
+        strings = _load_strings_from_json(key_json, field="text")
+        return strings, list(range(len(strings)))
+    raise FileNotFoundError("Provide --key-csv or --key-json (no key file found).")
+
+
+def _load_positive_pairs(
+    pair_csv: Path | None,
+    *,
+    query_column: str,
+    key_column: str,
+) -> Dict[int, List[int]]:
+    if pair_csv is None:
+        return {}
+    if not pair_csv.is_file():
+        raise FileNotFoundError(f"Pair CSV not found: {pair_csv}")
+    df = pd.read_csv(pair_csv)
+    for column in (query_column, key_column):
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' not present in {pair_csv}")
+    df = df[[query_column, key_column]].dropna()
+    df[query_column] = df[query_column].astype(int)
+    df[key_column] = df[key_column].astype(int)
+    grouped = df.groupby(query_column)[key_column].apply(list)
+    return {int(qid): [int(k) for k in keys] for qid, keys in grouped.items()}
 
 
 def _embed_texts(
@@ -134,8 +215,17 @@ def build_relevance_dict(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate embedding-based candidate rankings for evaluation.")
-    parser.add_argument("--query-json", type=Path, default=Path("query.json"), help="Path to query JSON list.")
-    parser.add_argument("--key-json", type=Path, default=Path("key.json"), help="Path to key JSON list.")
+    parser.add_argument("--query-csv", type=Path, default=Path("query.csv"), help="CSV file containing queries (from beir_to_pairs).")
+    parser.add_argument("--query-json", type=Path, default=Path("query.json"), help="Fallback JSON file containing queries.")
+    parser.add_argument("--query-text-column", type=str, default="text", help="Column holding query text in --query-csv.")
+    parser.add_argument("--query-id-column", type=str, default="id", help="Column holding query ids in --query-csv.")
+    parser.add_argument("--key-csv", type=Path, default=Path("key.csv"), help="CSV file containing keys (from beir_to_pairs).")
+    parser.add_argument("--key-json", type=Path, default=Path("key.json"), help="Fallback JSON file containing keys.")
+    parser.add_argument("--key-text-column", type=str, default="text", help="Column holding key text in --key-csv.")
+    parser.add_argument("--key-id-column", type=str, default="id", help="Column holding key ids in --key-csv.")
+    parser.add_argument("--pair-csv", type=Path, help="Optional CSV (query_id,key_id) providing positive pairs.")
+    parser.add_argument("--pair-query-column", type=str, default="query_id", help="Query id column inside --pair-csv.")
+    parser.add_argument("--pair-key-column", type=str, default="key_id", help="Key id column inside --pair-csv.")
     parser.add_argument("--output", type=Path, default=Path("relevance_dict_embed.json"), help="Destination for rankings.")
     parser.add_argument("--model-name", type=str, required=True, help="Embedding model identifier or checkpoint.")
     parser.add_argument("--tensor-parallel-size", type=int, default=1, help="Tensor parallelism for embedding workers.")
@@ -162,8 +252,25 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
-    queries = _load_string_list(args.query_json)
-    keys = _load_string_list(args.key_json)
+
+    queries, query_ids = _load_queries(
+        args.query_json,
+        args.query_csv,
+        text_column=args.query_text_column,
+        id_column=args.query_id_column,
+    )
+    keys, key_ids = _load_keys(
+        args.key_json,
+        args.key_csv,
+        text_column=args.key_text_column,
+        id_column=args.key_id_column,
+    )
+    positive_pairs = _load_positive_pairs(
+        args.pair_csv,
+        query_column=args.pair_query_column,
+        key_column=args.pair_key_column,
+    ) if args.pair_csv else {}
+
     indices = build_relevance_dict(
         queries,
         keys,
@@ -181,8 +288,23 @@ def main() -> None:
         query_checkpoint=args.query_checkpoint,
         key_checkpoint=args.key_checkpoint,
     )
-    payload = [{"query_id": idx, "key_ids": row} for idx, row in enumerate(indices)]
+
+    if len(indices) != len(query_ids):
+        raise RuntimeError("Mismatch between embedded queries and loaded query ids.")
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    payload = []
+    for idx, key_idx_list in enumerate(indices):
+        query_id = int(query_ids[idx])
+        resolved_key_ids = [int(key_ids[key_idx]) for key_idx in key_idx_list]
+        entry: Dict[str, object] = {
+            "query_id": query_id,
+            "key_ids": resolved_key_ids,
+        }
+        if positive_pairs:
+            entry["positive_key_ids"] = positive_pairs.get(query_id, [])
+        payload.append(entry)
+
     args.output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     logger.info("Saved embedding rankings for %d queries to %s", len(payload), args.output)
 
