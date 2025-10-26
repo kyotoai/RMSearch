@@ -170,6 +170,7 @@ original notebook inputs (`df_small.csv`, `query_dict.json`, and
 a simpe script to run to evaluate the 'relevant_dict_rerank.json' file. 
 
 ```bash
+pip install ijson
 python -m rmsearch.evaluation.ndcg
 ```
 Inside the file itself. We can adjust the items_to_print = 300 to match the number of queries. Also, adjustable filepath.
