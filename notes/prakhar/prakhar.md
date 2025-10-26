@@ -25,3 +25,16 @@ result = client.chat.completions.create(
  
 print(result.choices[0].message.content)
  ```
+
+
+
+
+ accelerate launch --config_file  ./accelerate_config.yaml   -m rmsearch.train.adpo_lora_example   --dataset-list-train ./exp2/dataset_list_train.json   --dataset-list-test ./exp2/dataset_list_test.json   --model-name /workspace/llama3b-rm   --output-dir ./exp2/model1   > ./exp2/train.log 2>&1
+
+ nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m rmsearch.train.adpo_lora_example \
+  --dataset-list-train ./exp2/dataset_list_train.json \
+  --dataset-list-test ./exp2/dataset_list_test.json \
+  --model-name /workspace/data/llama3b-rm \
+  --output-dir ./exp2/model1 \
+  > >(tee ./train.log) 2>&1 &

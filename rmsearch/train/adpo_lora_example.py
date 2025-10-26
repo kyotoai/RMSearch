@@ -1,24 +1,41 @@
 
 """LoRA reward-model training helpers with built-in dataset prep and W&B logging."""
-
 from __future__ import annotations
-
+import os
+import random
+import math
+import torch
+from datasets import Dataset
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 import argparse
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
-from peft import LoraConfig, TaskType, get_peft_model
+from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from trl import RewardConfig, RewardTrainer
-from datasets import Dataset
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
-
+from torch.utils.data import DataLoader, RandomSampler, DistributedSampler, SequentialSampler
+from accelerate.utils import broadcast_object_list
+import torch.distributed as dist
 from .utils import extract_int, extract_text
-import os
-import random
-import pandas as pd
 
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
 random.seed(42)
+
+# --- DDP: pin each rank to its CUDA device early ---
+local_rank_str = os.environ.get("LOCAL_RANK")
+world_size = int(os.environ.get("WORLD_SIZE", "1"))
+local_rank = int(local_rank_str) if local_rank_str is not None else None
+is_multi_gpu = world_size > 1
+if torch.cuda.is_available() and "LOCAL_RANK" in os.environ:
+    torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+# ---------------------------------------------------
+
+
+print(f"--> Starting process with rank: {os.environ.get('RANK')}, local_rank: {os.environ.get('LOCAL_RANK')}, visible devices: {os.environ.get('CUDA_VISIBLE_DEVICES')}")
+print("torch.cuda.is_available()", torch.cuda.is_available())
+print("device_count:", torch.cuda.device_count())
 
 __all__ = ["make_dataset_list", "train_reward_model"]
 
@@ -59,6 +76,7 @@ from transformers import (
     BaseImageProcessor,
     DataCollator,
     FeatureExtractionMixin,
+    BitsAndBytesConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
     ProcessorMixin,
@@ -74,114 +92,145 @@ from transformers.utils import is_peft_available
 from transformers import Trainer
 from trl.trainer.utils import compute_accuracy
 
-#class CustomRewardTrainer(RewardTrainer):
+
+from transformers import TrainerCallback
+
+from transformers import TrainerCallback
+
+
+
 class CustomRewardTrainer(Trainer):
     _tag_names = ["trl", "reward-trainer"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(compute_metrics=compute_accuracy, *args, **kwargs)
 
-    def compute_loss(
+
+    # --- ensure DistributedSampler on multi-GPU ---
+    def get_train_dataloader(self):
+        dataset = self.train_dataset
+        if dataset is None:
+            raise ValueError("Trainer: training requires a train_dataset")
+
+        if self.args.world_size > 1:
+            sampler = DistributedSampler(
+                dataset,
+                num_replicas=self.args.world_size,
+                rank=self.args.process_index,
+                shuffle=True,
+                drop_last=self.args.dataloader_drop_last,
+            )
+        else:
+            sampler = RandomSampler(dataset)
+
+        return DataLoader(
+            dataset,
+            batch_size=self.args.train_batch_size,
+            sampler=sampler,
+            collate_fn=self.data_collator,
+            drop_last=self.args.dataloader_drop_last,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+        )
+
+    def get_eval_dataloader(self, eval_dataset=None):
+        dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+        if dataset is None:
+            return None
+
+        if self.args.world_size > 1:
+            sampler = DistributedSampler(
+                dataset,
+                num_replicas=self.args.world_size,
+                rank=self.args.process_index,
+                shuffle=False,
+                drop_last=False,
+            )
+        else:
+            sampler = SequentialSampler(dataset)
+
+        return DataLoader(
+            dataset,
+            batch_size=self.args.eval_batch_size,
+            sampler=sampler,
+            collate_fn=self.data_collator,
+            drop_last=False,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+        )
+
+    def compute_loss( #GPT5
         self,
         model: Union[PreTrainedModel, nn.Module],
         inputs: dict[str, Union[torch.Tensor, Any]],
-        return_outputs=False,
+        return_outputs: bool = False,
         num_items_in_batch=None,
-    ) -> Union[torch.Tensor, tuple[torch.Tensor, dict[str, torch.Tensor]]]:
+    ):
+        """
+        Expected shapes from collator:
+        input_ids:      [B, K, L]
+        attention_mask: [B, K, L]
+        dpo_pairs:      list length B, each is list[(c_idx, r_idx)] over range(K)
+        DDP splits B across ranks. K stays intact per sample.
+        """
+        # Move to device
+        inputs = self._prepare_inputs(inputs)
 
+        input_ids      = inputs["input_ids"]      # [B, K, L]
+        attention_mask = inputs["attention_mask"] # [B, K, L]
+        dpo_pairs_list = inputs["dpo_pairs"]      # len B
 
-        dpo_pairs_list = inputs["dpo_pairs"]   #[num_gpus]
-        print("inputs", len(inputs))
+        print("inpud ids shape",input_ids.shape)
+        B, K, L = input_ids.shape
 
-        #n_chosens = inputs["num_chosen"]  #[num_gpus]
-        #n_rejecteds = inputs["num_rejected"]  #[num_gpus]
-        #chosen_reject_similarities = inputs["chosen_reject_similarities"]  #[num_gpus, n_chosens, n_rejecteds]
+        # Flatten candidates so we can do one forward pass:
+        # [B, K, L] -> [B*K, L]
+        input_ids_flat      = input_ids.reshape(B * K, L)
+        attention_mask_flat = attention_mask.reshape(B * K, L)
 
-        #print(inputs["input_ids_chosen"].shape)
-        #print(inputs["input_ids_rejected"].shape)
-
-        num_gpus, num_batch, max_length = inputs["input_ids"].shape
-        input_ids = inputs["input_ids"].reshape(num_gpus*num_batch, max_length)
-        attention_mask = inputs["attention_mask"].reshape(num_gpus*num_batch, max_length)
-        #print(inputs["input_ids"].shape)
-        #attention_mask = inputs["attention_mask"].reshape(inputs["attention_mask"].shape[0]*inputs["attention_mask"].shape[1], inputs["attention_mask"].shape[2])
-
-        all_rewards = model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+        # Forward -> logits [B*K, 1] -> [B, K]
+        rewards_flat = model(
+            input_ids=input_ids_flat,
+            attention_mask=attention_mask_flat,
             return_dict=True,
-        )["logits"]
+        )["logits"].squeeze(-1)  # [B*K]
+        rewards = rewards_flat.view(B, K)         # [B, K]
 
-        #print("1", all_rewards.shape)
-        all_rewards = all_rewards.reshape(num_gpus,num_batch)
-        #print("2", all_rewards.shape)
-        
-        #all_chosen_idx = []
-        #all_rejected_idx = []
-        total_loss = 0
-        for i in range(num_gpus):
-            rewards = all_rewards[i]
-            dpo_pairs = dpo_pairs_list[i]
+        device = rewards.device
+        dtype  = rewards.dtype
 
+        total_loss = 0.0
+        # Compute pairwise DPO-style loss per sample, then average across batch
+        for b in range(B):
+            pairs = dpo_pairs_list[b]  # list[(chosen_idx, rejected_idx)]
+            if not pairs:
+                continue
 
-            cr_matrix = torch.zeros(len(dpo_pairs), len(rewards)) 
-            for i, dpo_pair in enumerate(dpo_pairs):    #fix i 
-                cr_matrix[i, dpo_pair[0]] = 1
-                cr_matrix[i, dpo_pair[1]] = -1
-            
-            '''
-            n_chosen = n_chosens[i]
-            n_rejected = n_rejecteds[i]
-            n_rows = n_chosen * n_rejected
-            n_cols = n_chosen + n_rejected
-            chosen_idx = torch.arange(n_chosen).repeat_interleave(n_rejected)   # shape: [n_rows]
-            rejected_idx = torch.arange(n_rejected).repeat(n_chosen)   # shape: [n_rows]
-            all_chosen_idx.append(chosen_idx)
-            all_rejected_idx.append(rejected_idx)
-            
-            # Create cr_matrix
-            cr_matrix = torch.zeros(n_rows, n_cols)
-            rows = torch.arange(n_rows)
-            cr_matrix[rows, chosen_idx] = 1
-            cr_matrix[rows, n_chosen + rejected_idx] = -1
-            '''
+            # Build a difference matrix M so that (M @ rewards[b]) gives all (r_chosen - r_rejected)
+            M = torch.zeros(len(pairs), K, device=device, dtype=dtype)
+            for j, (c_idx, r_idx) in enumerate(pairs):
+                M[j, c_idx] =  1.0
+                M[j, r_idx] = -1.0
 
-            cr_matrix = cr_matrix.to(rewards.device)
-
-            # Create coe_vector
-            #sims = chosen_reject_similarities[chosen_idx, rejected_idx] # shape: [n_rows]
-            #coe_vector = 1-sims
-
-            #print(coe_vector.shape)
-            #print(coe_vector)
-
-            # Test cr_matrix
-            #test_tensor = torch.ones(rewards.shape).to(cr_matrix.device)
-            #result_tensor = torch.matmul(cr_matrix, test_tensor)
-            #print("result_tensor.shape: ", result_tensor.shape)
-            #print("result_tensor.mean() : ", result_tensor.mean())
-            
-            # calculate loss, optionally modulate with margin
+            diffs = M @ rewards[b]  # [num_pairs_b]
             if "margin" in inputs:
-                loss = -nn.functional.logsigmoid(torch.matmul(cr_matrix, rewards) - inputs["margin"]).mean()
+                loss_b = -nn.functional.logsigmoid(diffs - inputs["margin"]).mean()
             else:
-                loss = -nn.functional.logsigmoid(torch.matmul(cr_matrix, rewards)).mean()
+                loss_b = -nn.functional.logsigmoid(diffs).mean()
 
-            total_loss += loss
-            #all_losses.append(loss)
+            total_loss = total_loss + loss_b
 
-        #total_loss = torch.tensor(all_losses).mean()
-        
+        total_loss = total_loss / max(B, 1)
+
         if return_outputs:
+            # For evaluation, return per-sample rewards and pairs so prediction_step can
+            # build [N_pairs, 2] probabilities exactly like you already do.
             return total_loss, {
-                "all_rewards": all_rewards,
-                #"all_chosen_idx": all_chosen_idx,
-                #"all_rejected_idx": all_rejected_idx,
-                "dpo_pairs_list": dpo_pairs_list,
-                #"n_chosen":n_chosen,
-                #"n_rejected":n_rejected,
+                "all_rewards": rewards,          # [B, K]
+                "dpo_pairs_list": dpo_pairs_list # list len B
             }
         return total_loss
+
 
     def prediction_step(
         self,
@@ -210,37 +259,31 @@ class CustomRewardTrainer(Trainer):
 
         all_rewards = logits_dict["all_rewards"]
         dpo_pairs_list = logits_dict["dpo_pairs_list"]
-        #all_chosen_idx = logits_dict["all_chosen_idx"]
-        #all_rejected_idx = logits_dict["all_rejected_idx"]
-        #n_chosen = logits_dict["n_chosen"]
-        #n_rejected = logits_dict["n_rejected"]
         
         if prediction_loss_only:
             return (loss, None, None)
 
+
         loss = loss.detach()
-        all_logits = torch.tensor([])
+        device = loss.device
+        dtype = loss.dtype
+
+        all_logits = torch.tensor([],device = loss.device, dtype = loss.dtype)
         for i in range(len(all_rewards)):
             rewards = all_rewards[i]
             dpo_pairs = dpo_pairs_list[i]
+            if not dpo_pairs:
+                continue
 
             dpo_pairs_T = torch.tensor(dpo_pairs).transpose(0,1)
-            #print("rewards.shape: ", rewards.shape)
-            #print("all_chosen_idx[i]: ", all_chosen_idx[i])
-            chosen_logits = rewards[dpo_pairs_T[i]].unsqueeze(-1)
-            rejected_logits = rewards[dpo_pairs_T[i]].unsqueeze(-1)
-            #chosen_logits = rewards[all_chosen_idx[i]].unsqueeze(-1)
-            #rejected_logits = rewards[n_chosen + all_rejected_idx[i]].unsqueeze(-1)
+            chosen_logits = rewards[dpo_pairs_T[0]].unsqueeze(-1)
+            rejected_logits = rewards[dpo_pairs_T[1]].unsqueeze(-1)
             logits = torch.cat((chosen_logits, rejected_logits), dim=1)  # 
             #print("logits.shape: ", logits.shape)
-            all_logits = all_logits.to(logits.device)
+            # all_logits = all_logits.to(logits.device)
             all_logits = torch.cat((all_logits, logits), dim=0)
 
         all_logits = all_logits.softmax(dim=1).detach()
-        #print("all_logits: ", all_logits)
-        #print("all_logits.shape: ", all_logits.shape)
-        #logits = torch.cat((chosen_rewards[chosen_idx], rejected_rewards[rejected_idx]), dim=1)
-        #logits = logits.softmax(dim=1).detach()
         '''
         logits = tuple(v for k, v in logits_dict.items() if k not in ignore_keys)
         logits = nested_detach(logits)
@@ -249,8 +292,9 @@ class CustomRewardTrainer(Trainer):
         logits = torch.stack(logits).mean(dim=2).softmax(dim=0).T
         '''
 
-        labels = torch.zeros(all_logits.shape[0])
-        labels = self._prepare_inputs(labels)
+        # labels = torch.zeros(all_logits.shape[0])
+        # labels = self._prepare_inputs(labels)
+        labels = torch.zeros(all_logits.shape[0], dtype=torch.long, device=loss.device)
 
         return loss, all_logits, labels
 
@@ -334,44 +378,34 @@ def _build_dataset_split(
     *,
     max_length: int,
     max_characters: int,
-    sample_ratio: float=0.1 #subset 10%
+   sample_ratio: float = .01 #subset 1%
 ) -> Optional[Dataset]:
     if not records:
         return None
 
+
     dataset = Dataset.from_list(list(records))
 
-    df = pd.DataFrame(dataset)
-
-    print("Before sampling",len(dataset))
-    # print("First element:", dataset[0])
-    print("Top 5 rows:")
-    print(df.head())
-
-    # Show columns
-    print("\nColumns:")
-    print(df.columns)
-
-    # Show info about the DataFrame (types, non-null counts)
-    print("\nDataFrame info:")
-    print(df.info())
-
-    # Show basic statistics for numeric columns
-    print("\nDescriptive statistics:")
-    print(df.describe())
-
-    # Optional: see first element in detail
-    print("\nFirst element as dict:")
-    print(df.iloc[0]["batch"][0]["msg"])
-
-    quit()
-
-
+    # 2) Deterministic global subsample (once) so every rank picks the SAME indices
     if sample_ratio < 1.0:
-        subset_size = int(len(dataset) * sample_ratio)
-        indices = random.sample(range(len(dataset)), subset_size)
+        seed = int(os.environ.get("GLOBAL_SEED", "42"))
+        rng = random.Random(seed)
+
+        target = max(1, int(math.floor(len(dataset) * sample_ratio)))
+
+        # If using multi-GPU, make subset size divisible by world size to avoid length mismatch
+        if dist.is_available() and dist.is_initialized():
+            ws = dist.get_world_size()
+            # ensure at least 1 per rank
+            target = max(ws, (target // ws) * ws)
+
+        indices = rng.sample(range(len(dataset)), target)
         dataset = dataset.select(indices)
 
+
+
+    print(f"[Rank {dist.get_rank() if dist.is_available() and dist.is_initialized() else 0}] "
+          f"After sampling+shard len={len(dataset)}")
     print("After sampling",len(dataset))
 
     def format_example(example: Dict[str, object]) -> Dict[str, List[int]]:
@@ -470,9 +504,9 @@ def train_reward_model(
     dataset_list_test: Sequence[Dict[str, object]] | None = None,
     model_name: str,
     output_dir: Path = Path("./rm_model"),
-    max_length: int = 4000,
+    max_length: int = 1000,
     max_characters: int = 4000,
-    per_device_train_batch_size: int = 3,
+    per_device_train_batch_size: int = 1,
     per_device_eval_batch_size: int = 2,
     evaluation_steps: int = 40,
     save_steps: int = 20,
@@ -481,35 +515,71 @@ def train_reward_model(
     wandb_project: Optional[str] = None,
     wandb_run_name: Optional[str] = None,
     wandb_tags: Optional[Sequence[str]] = None,
+    load_in_8bit: bool = False,
 ) -> None:
     """Train a reward model using TRL's RewardTrainer with LoRA adapters."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    model_kwargs: Dict[str, object] = {"num_labels": 1}
+
+
     tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_bos_token=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
 
-    # peft_config = LoraConfig(
-    #     task_type=TaskType.SEQ_CLS,
-    #     inference_mode=False,
-    #     target_modules=[
-    #         "k_proj",
-    #         "q_proj",
-    #         "o_proj",
-    #         "v_proj",
-    #         "down_proj",
-    #         "gate_proj",
-    #         "up_proj",
-    #     ],
-    #     layers_to_transform=[25, 26, 27],
-    #     r=16,
-    #     lora_alpha=16,
-    #     lora_dropout=0.1,
-    # )
-    # model = get_peft_model(model, peft_config)
+    if load_in_8bit:
+        if not torch.cuda.is_available():
+            raise RuntimeError("8-bit quantization requires CUDA-enabled hardware.")
+
+        local_rank = os.environ.get("LOCAL_RANK")
+        # device_map = {"": int(local_rank)} if local_rank is not None else "auto"
+        device_map = {"": int(local_rank)} if (world_size > 1 and local_rank is not None) else "auto"
+
+        bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+
+        model_kwargs.update({
+            "quantization_config": bnb_config,
+            "device_map": device_map,
+            "torch_dtype": torch.float16  
+        })
+    else:
+         model_kwargs["torch_dtype"] = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8 else torch.float16
+
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_name,
+        # attn_implementation="flash_attention_2",
+        **model_kwargs
+    )
+
+    if load_in_8bit:
+        model = prepare_model_for_kbit_training(model)
+
+    peft_config = LoraConfig(
+        task_type=TaskType.SEQ_CLS,
+        inference_mode=False,
+        target_modules=[
+            "k_proj",
+            "q_proj",
+            "o_proj",
+            "v_proj",
+            "down_proj",
+            "gate_proj",
+            "up_proj",
+        ],
+        layers_to_transform=[25, 26, 27],
+        r=16,
+        lora_alpha=16,
+        lora_dropout=0.1,
+    )
+    model = get_peft_model(model, peft_config)
+
+    model.gradient_checkpointing_enable()
+    model.config.use_cache = False  
+
+    if not load_in_8bit:
+        model.enable_input_require_grads()
 
     train_dataset = _build_dataset_split(
         dataset_list_train,
@@ -554,6 +624,8 @@ def train_reward_model(
         report_to = ["wandb"]
 
     evaluation_strategy = "steps" if eval_dataset is not None else "no"
+
+    print("taining loop start")
     training_args = TrainingArguments(
         output_dir=str(output_dir),
         run_name=wandb_run_name,
@@ -561,6 +633,9 @@ def train_reward_model(
         per_device_eval_batch_size=per_device_eval_batch_size,
         eval_strategy=evaluation_strategy,
         eval_steps=evaluation_steps,
+        optim="paged_adamw_8bit",   # if bitsandbytes is present
+        torch_compile=True, 
+        fp16=True,
         # eval_on_start=bool(eval_dataset),
         save_strategy="steps",
         save_steps=save_steps,
@@ -568,32 +643,35 @@ def train_reward_model(
         num_train_epochs=num_train_epochs,
         report_to=report_to,
         remove_unused_columns=False,
+        dataloader_drop_last=True,
+        ddp_find_unused_parameters=False,
+        dataloader_num_workers=max(2, os.cpu_count() // 2),
+        dataloader_pin_memory=True,
+
     )
 
-    def custom_data_collator(features):
+    def custom_data_collator(features):  #GPT5
+        """
+        Produces:
+        input_ids:      [B, K, L] (long)
+        attention_mask: [B, K, L] (long)
+        dpo_pairs:      list length B, each is a list[tuple(int,int)] over K
+        """
         batch = {}
-        
-        # For fields that are tensors, we stack them.
-        
-        tensor_fields = [
-            "input_ids", "attention_mask",
-        ]
-        '''
-        tensor_fields = [
-            "input_ids_chosen", "attention_mask_chosen",
-            "input_ids_rejected", "attention_mask_rejected"
-        ]
-        '''
-        
+
+        # Tensor fields
+        tensor_fields = ["input_ids", "attention_mask"]
         for field in tensor_fields:
-            batch[field] = torch.stack([torch.tensor(f[field]) for f in features])  #[num_gpus, num_advice_per_batch, max_length]
-        
-        # For the original prompts (strings), we simply collect them in a list.
-        non_tensor_fields = ["dpo_pairs"]
-        for field in non_tensor_fields:
-            batch[field] = [f[field] for f in features]
-        
+            batch[field] = torch.stack(
+                [torch.as_tensor(f[field], dtype=torch.long) for f in features],  # -> [B, K, L]
+                dim=0,
+            )
+
+        # Non-tensor fields (kept as Python objects per sample)
+        batch["dpo_pairs"] = [f["dpo_pairs"] for f in features]  # len B
+
         return batch
+
 
     trainer = CustomRewardTrainer(
         model=model,
@@ -604,7 +682,16 @@ def train_reward_model(
         data_collator=custom_data_collator,
     )
 
+    dl = trainer.get_train_dataloader()
+    s = getattr(dl, "sampler", None)
+    print(f"[Rank {os.environ.get('LOCAL_RANK','?')}] sampler={type(s).__name__} "
+        f"num_replicas={getattr(s, 'num_replicas', None)} rank={getattr(s, 'rank', None)}")
+
+    print(f"[Rank {os.environ.get('LOCAL_RANK','?')}] steps_per_epoch={len(dl)}")
+# -------------------------------------------
+
     trainer.train()
+
 
     if eval_dataset is not None:
         trainer.evaluate()
@@ -656,7 +743,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--per-device-train-batch-size",
         type=int,
-        default=1,
+        default=2,
         help="Batch size per device for the training split.",
     )
     parser.add_argument(
@@ -704,6 +791,12 @@ if __name__ == "__main__":
         nargs="*",
         help="Optional list of tags to attach to the W&B run.",
     )
+    parser.add_argument(
+        "--load-in-8bit",
+        # action="store_true",
+         default=True,
+        help="Load the base model in 8-bit using bitsandbytes before applying LoRA adapters.",
+    )
     args = parser.parse_args()
 
     if not args.dataset_list_train.exists():
@@ -732,6 +825,7 @@ if __name__ == "__main__":
         save_steps=args.save_steps,
         logging_steps=args.logging_steps,
         num_train_epochs=args.num_train_epochs,
+        load_in_8bit=args.load_in_8bit,
         # wandb_project=args.wandb_project,
         # wandb_run_name=args.wandb_run_name,
         # wandb_tags=args.wandb_tags,
