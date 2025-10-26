@@ -457,3 +457,57 @@ runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguan
 
 - [x] Add more details about each file's argument, output, output example.
 
+
+
+
+### download gpt-oss
+
+```
+from huggingface_hub import snapshot_download
+import os
+
+# Set your local directory path
+local_dir = "./gpt-oss-20b"
+
+# Download the repository, excluding 'original/' and 'metal/' directories
+snapshot_download(
+    repo_id="openai/gpt-oss-20b",
+    local_dir=local_dir,
+    ignore_patterns=["original/*", "metal/*"],
+    # repo_type="model"
+)
+
+print(f"Download complete! Files saved to: {local_dir}")
+```
+
+
+### vllm with GPT oss
+
+The model files are already downlaoded and just run
+```
+vllm serve /workspace/gpt-oss-20b     --host 0.0.0.0     --port 7000
+```
+
+from workspace, this will start the vllm server with GPT oss
+
+here is s sample python inference code with API
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:7000/v1",
+    api_key="EMPTY"
+)
+
+result = client.chat.completions.create(
+    model="./gpt-oss-20b",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Explain what data vs task parallelism is."}
+    ]
+)
+
+print(result.choices[0].message.content)
+```
+
