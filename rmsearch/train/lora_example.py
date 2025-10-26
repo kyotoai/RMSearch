@@ -437,7 +437,8 @@ if __name__ == "__main__":
         save_steps=args.save_steps,
         logging_steps=args.logging_steps,
         num_train_epochs=args.num_train_epochs,
-        # wandb_project=args.wandb_project,
-        # wandb_run_name=args.wandb_run_name,
-        # wandb_tags=args.wandb_tags,
+        # Connect with wandb
+        wandb_project=args.wandb_project,
+        wandb_run_name=args.wandb_run_name,
+        wandb_tags=args.wandb_tags,
     )
