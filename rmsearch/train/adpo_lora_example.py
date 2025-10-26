@@ -88,16 +88,22 @@ from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_pt_utils import nested_detach
 from transformers.trainer_utils import EvalPrediction
 from transformers.utils import is_peft_available
-
-from transformers import Trainer
 from trl.trainer.utils import compute_accuracy
 
 
-from transformers import TrainerCallback
-
-from transformers import TrainerCallback
-
-
+def is_main_process() -> bool:
+    # If torch.distributed is initialized, use its rank
+    if dist.is_available() and dist.is_initialized():
+        return dist.get_rank() == 0
+    # Fallback to env var set by launchers (Accelerate/torchrun)
+    rank = os.environ.get("RANK")
+    if rank is not None:
+        try:
+            return int(rank) == 0
+        except ValueError:
+            pass
+    # Single-process case
+    return True
 
 class CustomRewardTrainer(Trainer):
     _tag_names = ["trl", "reward-trainer"]
@@ -378,7 +384,7 @@ def _build_dataset_split(
     *,
     max_length: int,
     max_characters: int,
-   sample_ratio: float = .01 #subset 1%
+   sample_ratio: float = 1,
 ) -> Optional[Dataset]:
     if not records:
         return None
@@ -509,7 +515,7 @@ def train_reward_model(
     per_device_train_batch_size: int = 1,
     per_device_eval_batch_size: int = 2,
     evaluation_steps: int = 40,
-    save_steps: int = 20,
+    save_steps: int = 40,
     logging_steps: int = 1,
     num_train_epochs: int = 50,
     wandb_project: Optional[str] = None,
@@ -597,31 +603,45 @@ def train_reward_model(
         max_characters=max_characters,
     )
 
-    wandb_run = None
+    # wandb_run = None
+    # report_to: List[str] = []
+    # if wandb_project:
+    #     try:
+    #         import wandb
+    #     except ImportError as exc:
+    #         raise RuntimeError("wandb is required when --wandb-project is specified.") from exc
+
+    #     wandb_run = wandb.init(
+    #         project=wandb_project,
+    #         name=wandb_run_name,
+    #         tags=list(wandb_tags) if wandb_tags else None,
+    #         config={
+    #             "model_name": model_name,
+    #             "max_length": max_length,
+    #             "max_characters": max_characters,
+    #             "per_device_train_batch_size": per_device_train_batch_size,
+    #             "per_device_eval_batch_size": per_device_eval_batch_size,
+    #             "num_train_epochs": num_train_epochs,
+    #             "evaluation_steps": evaluation_steps,
+    #             "save_steps": save_steps,
+    #             "logging_steps": logging_steps,
+    #         },
+    #     )
+    #     report_to = ["wandb"]
+
+    # --- W&B: let Trainer manage the run; init only on main process via env ---
     report_to: List[str] = []
     if wandb_project:
-        try:
-            import wandb
-        except ImportError as exc:
-            raise RuntimeError("wandb is required when --wandb-project is specified.") from exc
-
-        wandb_run = wandb.init(
-            project=wandb_project,
-            name=wandb_run_name,
-            tags=list(wandb_tags) if wandb_tags else None,
-            config={
-                "model_name": model_name,
-                "max_length": max_length,
-                "max_characters": max_characters,
-                "per_device_train_batch_size": per_device_train_batch_size,
-                "per_device_eval_batch_size": per_device_eval_batch_size,
-                "num_train_epochs": num_train_epochs,
-                "evaluation_steps": evaluation_steps,
-                "save_steps": save_steps,
-                "logging_steps": logging_steps,
-            },
-        )
+        os.environ.setdefault("WANDB_PROJECT", wandb_project)
+        if wandb_run_name:
+            os.environ["WANDB_NAME"] = wandb_run_name
+        if wandb_tags:
+            os.environ["WANDB_TAGS"] = ",".join(wandb_tags)
+        os.environ.setdefault("WANDB_START_METHOD", "thread")
+        if not is_main_process():
+            os.environ["WANDB_SILENT"] = "true"
         report_to = ["wandb"]
+
 
     evaluation_strategy = "steps" if eval_dataset is not None else "no"
 
@@ -636,7 +656,7 @@ def train_reward_model(
         optim="paged_adamw_8bit",   # if bitsandbytes is present
         torch_compile=True, 
         fp16=True,
-        # eval_on_start=bool(eval_dataset),
+        eval_on_start=bool(eval_dataset),
         save_strategy="steps",
         save_steps=save_steps,
         logging_steps=logging_steps,
@@ -647,6 +667,7 @@ def train_reward_model(
         ddp_find_unused_parameters=False,
         dataloader_num_workers=max(2, os.cpu_count() // 2),
         dataloader_pin_memory=True,
+        disable_tqdm=not is_main_process(),
 
     )
 
@@ -696,11 +717,11 @@ def train_reward_model(
     if eval_dataset is not None:
         trainer.evaluate()
 
-    if wandb_project:
-        # Close the W&B run so metrics are flushed.
-        import wandb
+    # if wandb_project:
+    #     # Close the W&B run so metrics are flushed.
+    #     import wandb
 
-        wandb.finish()
+    #     wandb.finish()
 
 
 if __name__ == "__main__":
@@ -814,7 +835,7 @@ if __name__ == "__main__":
 
     train_reward_model(
         dataset_list_train,
-        # dataset_list_test=dataset_list_test,
+        dataset_list_test=dataset_list_test,
         model_name=args.model_name,
         output_dir=args.output_dir,
         max_length=args.max_length,
@@ -826,7 +847,7 @@ if __name__ == "__main__":
         logging_steps=args.logging_steps,
         num_train_epochs=args.num_train_epochs,
         load_in_8bit=args.load_in_8bit,
-        # wandb_project=args.wandb_project,
-        # wandb_run_name=args.wandb_run_name,
-        # wandb_tags=args.wandb_tags,
+        wandb_project=args.wandb_project,
+        wandb_run_name=args.wandb_run_name,
+        wandb_tags=args.wandb_tags,
     )
