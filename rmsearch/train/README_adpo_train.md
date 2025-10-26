@@ -414,6 +414,17 @@ python -m rmsearch.train.adpo_lora_example \
   --wandb-run-name exp2-adpo-lora
 ```
 
+## With Accelerate (For Multi GPU)
+
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m rmsearch.train.adpo_lora_example \
+  --dataset-list-train ./exp2/dataset_list_train.json \
+  --dataset-list-test ./exp2/dataset_list_test.json \
+  --model-name /workspace/data/llama3b-rm \
+  --output-dir ./exp2/model1 \
+  > >(tee ./train.log) 2>&1 &
+
+
 **Arguments**
 - `--dataset-list-train`: The preference dataset produced by `judge_dataset.py` (`dataset_list_train.json`).
 - `--dataset-list-test`: The preference dataset produced by `judge_dataset.py` (`dataset_list_test.json`).

@@ -1,6 +1,5 @@
 transformers
 datasets
-#trl==0.14.0
 trl
 peft
 pandas
