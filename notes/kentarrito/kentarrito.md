@@ -511,3 +511,11 @@ result = client.chat.completions.create(
 print(result.choices[0].message.content)
 ```
 
+
+## Oct 27
+
+- [x] Improve blogs 1
+  * Put focus on the difference between normal dpo and advanced-batched dpo (in adpo, loss is calculated more combinations from each batch, so model can update weights from more comparison result. Also, model gets 1 input from each chosen key to compare them with 5 sampled rejected keys. In this sense, it supresses over-learning much more than scattering 5 same chosen keys over the dataset.) 
+  * You must not write any code or command. Please explain the overview of how dataset is created plainly with some example content.
+  * I added adpo.jpeg and dpo.png. This has evaluation accuracy for each training. Add pitcure to each blog.
+  * You should make 5 sections, Summary (Overview), Make DPO Dataset, Make Advanced Batching Dataset, Training and Experiment. 

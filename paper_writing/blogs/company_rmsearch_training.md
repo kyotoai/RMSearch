@@ -1,47 +1,19 @@
 Title: Training Our Relevance Reward Model: How RMSearch Learns to Rank
 
-At a glance
-- Problem: We need consistent “relevance” signals to make retrieval and reranking smarter across products.
-- Solution: A reproducible pipeline that generates preference data from raw text and fine‑tunes a small reward head with LoRA.
-- Outcome: A compact reward model that scores query–document relevance and improves downstream ranking quality.
+![DPO evaluation accuracy](../../images/dpo.png)
+![ADPO evaluation accuracy](../../images/adpo.jpeg)
 
-Why a reward model?
-In RAG and search workflows, relevance drives everything. Instead of hand‑writing rules, our reward model learns from pairwise preferences (“A is more relevant than B for this query”). This keeps the training target aligned with the business goal: better ranked results.
+## Summary (Overview)
+Our reward model underpins every ranked list we ship. Classic direct preference optimization (DPO) gives the model one comparison per training example: a chosen sentence versus a rejected sentence. Advanced-batched DPO (ADPO) takes the same batch and evaluates many pairings, keeping one chosen key in place and rotating through five sampled negatives. That wider lens produces more gradients per step and keeps the chosen content from being duplicated throughout the dataset, reducing the risk of over-learning.
 
-How the pipeline works
-1) Prepare the corpus
-- We materialize a structured CSV from a raw HuggingFace dataset (or local text) for fast iteration.
+## Make DPO Dataset
+We start with curated content—think internal how-to guides, support articles, and policy notes—and generate queries that mirror what customers ask. For each query we select two short passages: one that clearly answers the question (for example, “To enable single sign-on, configure the identity provider and sync roles”) and one that drifts away from the need (“Our platform integrates with multiple analytics partners”). These pairs become the building blocks of the DPO dataset, capturing crisp yes-or-no style judgments on relevance without any code-level overhead.
 
-2) Create queries and candidate keys
-- We synthesize or extract queries from the corpus and attach candidate keys (sentences/snippets) to judge.
+## Make Advanced Batching Dataset
+ADPO reuses the same queries but groups information differently. Each record holds the query, one trusted positive passage, and five sampled negatives drawn from the corpus. Picture the positive as “Incident responders should check the runbook in RMSearch to triage outages,” while the negatives mention unrelated licensing policies or marketing metrics. During training the batch yields multiple comparisons between the single positive and each negative, giving us more signal from the same curated content.
 
-3) Retrieve top candidates
-- We use an embedding model to quickly find the top‑K candidates per query and build compact JSON records.
+## Training
+With both datasets prepared, we adapt our base reward model using lightweight LoRA adapters. The standard DPO run consumes one comparison at a time, so improvements depend on covering a large variety of pairs. ADPO squeezes more information out of every batch because the loss is computed across the extra combinations; the optimizer sees several nuanced differences at once and stays anchored on what makes the positive truly relevant.
 
-4) Generate preferences with a judge model
-- A small instruction‑tuned model (via vLLM) compares two candidates and decides which is more relevant. We capture these choices as preference pairs.
-
-5) Fine‑tune with LoRA
-- Using TRL’s RewardTrainer, we apply LoRA adapters on a base reward model to learn from the preferences. This keeps training lightweight and fast to iterate.
-
-What we ship
-- Artifacts: a LoRA‑enhanced reward model, training state, and compact JSON datasets.
-- Observability: Built‑in Weights & Biases support for metrics and runs (optional for offline environments).
-
-Operational considerations
-- Hardware efficiency: Embedding and judging are batched; LoRA avoids full‑weight updates.
-- Offline‑friendly: The pipeline can emit stub datasets when network access is restricted, enabling local development.
-- Modularity: Each step is a standalone script; teams can swap models or data sources without refactoring.
-
-Business impact
-- Improved ranking quality: More relevant results and fewer hallucinations in retrieval‑augmented generation.
-- Faster iteration: LoRA lets us test hypotheses (new judge, new negatives, new domains) on short cycles.
-- Portability: The same approach works for new verticals and languages by swapping data and models.
-
-What’s next
-- Harder negatives (ADPO path) and curriculum strategies for tougher benchmarks.
-- Domain‑specific reward heads calibrated to compliance or safety constraints.
-- A/B rollouts where RM‑guided reranking is compared against existing baselines.
-
-If your team maintains a corpus and cares about getting the top results right, this pipeline turns raw text into ranking improvements you can measure. We’re happy to walk you through adapting it to your domain.
-
+## Experiment
+Evaluation on held-out queries shows that both approaches lift relevance scoring, but ADPO maintains a higher accuracy curve. The attached figures highlight the gap: DPO improves steadily before leveling, while ADPO keeps climbing thanks to the richer comparisons inside each batch. That translates directly to better ranking for customer queries, especially in long-tail knowledge areas where we cannot afford to overfit on a single phrasing.
