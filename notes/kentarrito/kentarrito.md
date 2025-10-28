@@ -524,7 +524,7 @@ print(result.choices[0].message.content)
 
 - [x] Add more dpo_pairs -> create judge_adpo_dataset.py
 
-- [ ] Modify judge_adpo_dataset.py
+- [x] Modify judge_adpo_dataset.py
   * Set limit of each sentence for llm to judge. apply [:4000] to each sentence.
-  * Change the judge prompt so that it can also generate tie. Generate dpo_pairs only when there is a meaningful gap between sentence1 and sentence2 
-  * Let's skip judgement for correspond_keys. Add this always 
+  * Change the judge prompt so that it can also generate tie. Add dpo_pairs only when there is a meaningful gap between sentence1 and sentence2.
+  * Let's skip llm judgement for correspond_keys. Automatically add all possible dpo_pairs where correspond_keys win sampled_keys.

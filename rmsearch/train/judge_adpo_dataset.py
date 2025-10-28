@@ -17,11 +17,16 @@ __all__ = ["judge_adpo_pairs"]
 
 RequestFunc = Any  # Callable returning list of outputs; left generic on purpose
 
+_MAX_SENTENCE_CHARS = 4000
+
 _SYSTEM_PROMPT = (
     "You are a brilliant judge who decides which text is more relevant to a given query.\n"
-    "You will be given a query, 2 sentences.\n"
-    "Please carefully analyze these two sentences and then return your answer following the output format.\n\n"
-    "Output format:\n<ID> 1 or 2 (file id more relevant to given query) </ID>"
+    "You will be given a query and 2 sentences.\n"
+    "Please analyse the sentences carefully and decide whether sentence 1 is better, sentence 2 is better, or they are too similar to pick a meaningful winner.\n\n"
+    "Output format (respond with exactly one of the following forms):\n"
+    "<ID> 1 </ID>  # choose this when sentence 1 is clearly more relevant\n"
+    "<ID> 2 </ID>  # choose this when sentence 2 is clearly more relevant\n"
+    "<ID> tie </ID>  # choose this only when the sentences are similarly relevant or it is impossible to judge a meaningful difference\n"
 )
 
 _USER_TEMPLATE = (
@@ -65,6 +70,10 @@ def _format_prompt(query: str, key: str) -> str:
     )
 
 
+def _truncate_text(text: str) -> str:
+    return text[:_MAX_SENTENCE_CHARS]
+
+
 def _normalise_key_id(raw_id: Any, fallback: int) -> int:
     if raw_id is None:
         return fallback
@@ -101,7 +110,7 @@ def _load_query_key_set(path: Path) -> List[Dict[str, Any]]:
             key_id = _normalise_key_id(raw_id, fallback)
             keys.append(
                 {
-                    "key": str(raw_text),
+                    "key": _truncate_text(str(raw_text)),
                     "key_id": key_id,
                     "pair_group": "correspond",
                 }
@@ -115,7 +124,7 @@ def _load_query_key_set(path: Path) -> List[Dict[str, Any]]:
             key_id = _normalise_key_id(raw_id, fallback)
             keys.append(
                 {
-                    "key": str(raw_text),
+                    "key": _truncate_text(str(raw_text)),
                     "key_id": key_id,
                     "pair_group": "sampled",
                 }
@@ -172,10 +181,19 @@ def judge_adpo_pairs(
             continue
 
         all_pairs = list(itertools.combinations(range(len(keys)), 2))
+        judgeable_pairs = [
+            (idx_a, idx_b)
+            for idx_a, idx_b in all_pairs
+            if not (
+                keys[idx_a].get("pair_group") == "correspond"
+                or keys[idx_b].get("pair_group") == "correspond"
+            )
+        ]
+
         if sample_pairs is not None and sample_pairs > 0:
-            chosen_pairs = random.sample(all_pairs, min(sample_pairs, len(all_pairs)))
+            chosen_pairs = random.sample(judgeable_pairs, min(sample_pairs, len(judgeable_pairs))) if judgeable_pairs else []
         else:
-            chosen_pairs = all_pairs
+            chosen_pairs = judgeable_pairs
 
         for idx_a, idx_b in chosen_pairs:
             key_a = keys[idx_a]
@@ -194,8 +212,6 @@ def judge_adpo_pairs(
                     "keys": [key_a["key"], key_b["key"]],
                 }
             )
-
-    print("n_request: ", len(requests))
 
     existing_results: List[Dict[str, Any]] = []
     finished_ids: Set[int] = set()
@@ -297,6 +313,9 @@ def _assemble_dataset_list(
         if len(keys) < 2:
             continue
 
+        correspond_positions = [idx for idx, item in enumerate(keys) if item.get("pair_group") == "correspond"]
+        sampled_positions = [idx for idx, item in enumerate(keys) if item.get("pair_group") == "sampled"]
+
         batch: List[Dict[str, Any]] = []
         for position, key_dict in enumerate(keys):
             item: Dict[str, Any] = {
@@ -312,18 +331,50 @@ def _assemble_dataset_list(
 
         pair_records = grouped.get(entry_index, [])
         seen_pairs: Set[Tuple[int, int]] = set()
+
+        for c_idx in correspond_positions:
+            for s_idx in sampled_positions:
+                seen_pairs.add((c_idx, s_idx))
+
+        tie_keywords = {
+            "tie",
+            "equal",
+            "same",
+            "no clear winner",
+            "cannot decide",
+            "cannot determine",
+            "similar",
+            "neither",
+            "both",
+            "no preference",
+            "draw",
+        }
+
         for record in pair_records:
             pair_indices = record.get("pair_indices") or []
             if len(pair_indices) != 2:
                 continue
+            if (
+                keys[pair_indices[0]].get("pair_group") == "correspond"
+                or keys[pair_indices[1]].get("pair_group") == "correspond"
+            ):
+                continue
             output_text = record.get("output", "")
             chosen_id = extract_text(output_text, "ID")
-            if chosen_id is None:
-                chosen_id = extract_int(output_text[-10:])
-            try:
-                chosen_val = int(chosen_id)
-            except Exception:
+            raw_choice = str(chosen_id).strip().lower() if chosen_id is not None else ""
+
+            if any(keyword in raw_choice for keyword in tie_keywords) or (not raw_choice and any(keyword in output_text.lower() for keyword in tie_keywords)):
                 continue
+
+            try:
+                chosen_val = int(raw_choice)
+            except Exception:
+                chosen_val = extract_int(raw_choice) if raw_choice else None
+                if chosen_val is None:
+                    chosen_val = extract_int(output_text)
+                if chosen_val is None:
+                    continue
+
             if chosen_val not in (1, 2):
                 continue
             chosen_pos = pair_indices[0] if chosen_val == 1 else pair_indices[1]
