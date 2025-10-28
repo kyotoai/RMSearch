@@ -255,9 +255,10 @@ reward-model preference dataset.
 
 ```bash
 python -m rmsearch.train.judge_adpo_dataset \
-  --query-key-set ./data/smollm-corpus/sampled_query_key_set.json \
+  --query-key-set ./data/smollm-corpus/adpo_sampled_query_key_set.json \
   --model-name /workspace/qwen4b \
   --progress-dir relevant_file_progress \
+  --batch-size 20 \
   --max-model-len 10000 \
   --output ./exp3/dataset_list_train.json
 ```

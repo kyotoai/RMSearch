@@ -195,6 +195,8 @@ def judge_adpo_pairs(
                 }
             )
 
+    print("n_request: ", len(requests))
+
     existing_results: List[Dict[str, Any]] = []
     finished_ids: Set[int] = set()
     results_path: Optional[Path] = None
