@@ -74,8 +74,7 @@ PY
 
 ## `make_query_and_less_relevant_keys_recs.py`
 
-Flatten the generated titles, keywords, questions, and irrelevant questions into
-per-query recommendation records while reusing the same vLLM backend.
+Generate a dataset with query and less_relevant_keys. 
 
 ```bash
 python -m rmsearch.train.make_query_and_less_relevant_keys_recs \
@@ -84,10 +83,19 @@ python -m rmsearch.train.make_query_and_less_relevant_keys_recs \
   --model-name /workspace/qwen4b \
   --tensor-parallel-size 1 \
   --num-instances 1 \
+  --n-key-generation 5 \
   --batch-size 8 \
   --max-model-len 10000 \
   --output ./data/smollm-corpus/query_and_less_relevant_keys_recs.json
 ```
+
+**Algorithm**
+1. Load all keys from df.csv
+2. Generate 1 query for every key in df.csv text-column and generate n_key_generation less_relevant_keys to the query which are ranged from a slightly less relevant key to the query than the original key to more irrelevant key. Follow
+  * It should generate a different type of query which is very relevant to query. Title, question, 1 sentence, 2~3 sentences, 1 paragraph, 2~3 paragraphs. Make 10 instructions for the difference.
+  * You should make n_key_generation less relevant keys in different ways so that the dataset become not biased. Ex. by changine some element of the core sentence of the relevance with the query in the original key, by totally recreating the original key, by inserting some fake sentences, and ... . Make 10 instructions for the difference.
+  * For each LLM generation prompt, pick an instruction pair in turn from 100 query & key possibilities (not randomly picking one but picking them in turn) and make the prompt.
+  * IN THE PROMPT, MAKE SURE THAT THE KEYS RELEVACE BECOME: keys[0] > keys[1] > ... > keys[n_key_generation-1]. To make the dataset, this is the most important condition. Second, be sure to generate keys which are also relevant to the query to some extent. Don't make some totally irrelevant keys. It's prefarable for the generated keys to contain important terms but the content is slightly off to the query. 
 
 **Arguments**
 - Inherits the same CLI as `make_query_recs.py`; see above for detailed flag descriptions.
@@ -97,251 +105,14 @@ python -m rmsearch.train.make_query_and_less_relevant_keys_recs \
 - Example entry:
   ```json
   [
-    {"query": "Graph Retrieval Overview", "correspond_key":"...", "generated_less_relevant_keys": ["(a slightly less relevant key)", ... , "(less relevant key to some extent)"], "df_id": 42, "query-type": "titles"},
-    {"query": "How does graph retrieval work?", "correspond_key":"...", "generated_less_relevant_keys": "(a slightly less relevant key)", ... , "(less relevant key to some extent)"], "df_id": 33, "query-type": "questions"}
+    {"query": "Graph Retrieval Overview", "correspond_key":"...", "less_relevant_keys": ["(a slightly less relevant key)", ... , "(less relevant key to some extent)"], "df_id": 42, "query-type": "titles"},
+    {"query": "How does graph retrieval work?", "correspond_key":"...", "less_relevant_keys": "(a slightly less relevant key)", ... , "(less relevant key to some extent)"], "df_id": 33, "query-type": "questions"}
   ]
   ```
 
 **Notices**
-- Shares batching, sampling, and fallback behaviour with `make_queries.py`; refer to that section for runtime considerations.
-
-
-
-## `make_query_recs` & `filter_query_recs`
-
-
-```bash
-python -m rmsearch.train.make_query_recs \
-  --input-csv ./data/smollm-corpus/df.csv \
-  --text-column text \
-  --model-name /workspace/qwen4b \
-  --tensor-parallel-size 1 \
-  --num-instances 1 \
-  --batch-size 8 \
-  --max-model-len 10000 \
-  --output ./data/smollm-corpus/query_recs.json
-```
-
-```bash
-python -m rmsearch.train.filter_query_recs \
-  --input ./data/smollm-corpus/query_recs.json \
-  --output ./data/smollm-corpus/filtered_query_recs.json \
-  --filter questions
-```
-
-```bash
-python3 - <<'PY'
-from pathlib import Path
-import json
-import pandas as pd
-
-input_csv = "data/arguana/df2.csv"
-output_path = Path("data/arguana/query_recs.json")
-
-df = pd.read_csv(input_csv)
-
-def _format_prompt(text: str) -> str:
-  return (
-      "Give me relevant score between query and sentence;\n\n"
-      f"Query:{question}\n\n"
-      f"Sentence:```{text}```"
-  )
-
-query_recs = []
-for df_id, query in enumerate(df["query"].to_list()):
-
-  query_recs.append(
-      {
-          "query": query,
-          "df_id": df_id,
-          "query-type": "arguana-normal",
-      }
-  )
-
-output_path.parent.mkdir(parents=True, exist_ok=True)
-output_path.write_text(json.dumps(query_recs, ensure_ascii=False, indent=2))
-PY
-```
-
-
-## `get_top_relevant_keys_embed.py`
-
-Embed queries and keys with vLLM, score them with dot-product similarity, and
-store the top-N matches per query.
-
-```bash
-python -m rmsearch.train.get_top_relevant_keys_embed \
-  --queries-json ./data/smollm-corpus/filtered_query_recs.json \
-  --keys-csv ./data/smollm-corpus/df_small.csv \
-  --key-column text \
-  --model-name /workspace/e5-mistral7b \
-  --tensor-parallel-size 1 \
-  --num-instances 1 \
-  --k-key 100 \
-  --similarity-device cuda \
-  --output ./data/smollm-corpus/relevance_records_embed.json
-```
-
-```bash
-python -m rmsearch.train.get_top_relevant_keys_embed \
-  --queries-json ./data/arguana/query_recs.json \
-  --keys-csv ./data/arguana/df2.csv \
-  --key-column corpus \
-  --model-name /workspace/e5-mistral7b \
-  --tensor-parallel-size 1 \
-  --num-instances 1 \
-  --k-key 100 \
-  --similarity-device cuda \
-  --output ./data/arguana/relevance_records_embed.json
-```
-
-**Arguments**
-- `--queries-json` / `--queries-csv`: Query inputs. The JSON path should point to `filtered_query_recs.json` (or a similar list of objects containing at least a `"query"` field, with optional `df_id` and `query-type`).
-- `--keys-json` / `--keys-csv`: Candidate key sentences; use `--key-json-field` / `--key-column` to pick the text field.
-- `--model-name`, `--tensor-parallel-size`, `--num-instances`, `--max-model-len`, `--max-num-seqs`, `--gpu-memory-utilization`: Embedding worker configuration passed to `vllm_embed`.
-- `--query-batch-size`, `--key-batch-size`: Batch sizes for embedding calls.
-- `--query-checkpoint`, `--key-checkpoint`: Optional JSONL checkpoints written during embedding.
-- `--similarity-device`: Device used for the matrix multiply when ranking (default `cpu`; pass `cuda` for GPU).
-- `--k-key`: Number of keys returned per query (default 50).
-- `--correct-ids-json`: Optional gold key indices aligned with the query order.
-- `--output`: Destination JSON for the relevance records (default `relevance_records_embed.json`).
-
-**Outputs**
-- JSON list mirroring the RM-based format with `query`, `query_id`, optional `df_id` / `query_type`, optional `correct_id`, and `"keys"` entries containing `key_id`, `key`, and cosine-like similarity scores.
-- Optional embedding checkpoints if the related flags are supplied.
-
-**Notices**
-- Embeddings are pulled through the vLLM embedding API (see `rmsearch/utils/vllm_embed.py`); ensure the model exposes embedding heads.
-- The similarity computation promotes tensors to the chosen device; large matrices may demand significant memory if you select `cuda`.
-- Provide non-empty query and key inputs; the script validates and aborts otherwise.
-
-
-
-
-
-## `sample_advanced_dpo_batch.py`
-
-Sample pairs of relevant/df-sourced keys for DPO-style preference datasets with explicit positive (`correspond`) and negative (`sampled`) keys.
-
-```bash
-python -m rmsearch.train.sample_advanced_dpo_batch \
-  --relevance-json ./data/smollm-corpus/relevance_records_embed.json \
-  --filtered-queries-json ./data/smollm-corpus/filtered_query_recs.json \
-  --source-csv ./data/smollm-corpus/df.csv \
-  --source-column text \
-  --n-sampled-keys 5 \
-  --output ./data/smollm-corpus/adpo_sampled_query_key_set.json
-```
-
-```bash
-python -m rmsearch.train.sample_advanced_dpo_batch \
-  --relevance-json ./data/arguana/relevance_records_embed.json \
-  --filtered-queries-json ./data/arguana/query_recs.json \
-  --source-csv ./data/arguana/df2.csv \
-  --source-column corpus \
-  --n-sampled-keys 5 \
-  --output ./data/arguana/adpo_sampled_query_key_set.json
-```
-
-**Arguments**
-- `--relevance-json`: Optional path to the relevance records (RM or embedding variant). When omitted, two keys are uniformly sampled from the source CSV instead.
-- `--filtered-queries-json`: Optional metadata lookup (e.g. `filtered_query_recs.json`) to recover `df_id` / `query-type`.
-- `--source-csv`: DataFrame backing the df_id indices (defaults expect `df.csv`).
-- `--source-column`: Column within the DataFrame containing the key text (default `text`).
-- `--n-sampled-keys`: Number of negatives sampled from the relevance list per query (default `2`). The positive correspond key is always excluded from this pool.
-- `--output`: Destination JSON for the sampled pairs (default `./data/smollm-corpus/sampled_query_key_set.json`).
-- `--random-seed`: Sampling seed (default 42).
-
-**Outputs**
-- `{output}`: JSON list where each entry includes `query`, `query_id`, `correspond_keys`, `correspond_key_ids`, `sampled_keys`, `sampled_key_ids`, and the propagated `query-type` when available. When no relevance file is provided, the script emits a placeholder query with one correspond key and `n-sampled-keys` negatives chosen from the dataframe.
-- Example:
-```
-[
-  {
-    "query_id": 0,
-    "query": "query0",
-    "correspond_key_ids":[0],
-    "sampled_key_ids": [10,12],
-    "correspond_keys": [
-      "key0",
-    ],
-    "sampled_keys": [
-      "key10",
-      "key12"
-    ]
-  }
-]
-```
-
-**Notices**
-- The correspond key always comes from the dataframe row aligned with `df_id`, and duplicates are filtered so that no correspond key appears in `sampled_keys`.
-- Queries lacking a valid correspond key or enough distinct negatives are skipped to avoid producing incomplete preference pairs.
-- Up to `n-sampled-keys` negatives are drawn without replacement from the relevance list; if no relevance file is supplied, negatives are drawn uniformly from the dataframe instead.
-
-
-
-
-
-## `judge_adpo_dataset.py`
-
-Collect pairwise relevance judgements for candidate sentences, producing the
-reward-model preference dataset.
-
-```bash
-python -m rmsearch.train.judge_adpo_dataset \
-  --query-key-set ./data/smollm-corpus/adpo_sampled_query_key_set.json \
-  --model-name /workspace/qwen4b \
-  --progress-dir relevant_file_progress \
-  --batch-size 20 \
-  --max-model-len 10000 \
-  --output ./exp3/dataset_list_train.json
-```
-
-**Algorithm**
-1. In a row of sampled_query_key_set.json, generate all the possible pairs of correspond_keys + sampled_keys.
-2. For each possiblity, compare 2 keys and decide which is more relevant to query
-3. From the decision, make dataset_list_train.json.
-
-**Arguments**
-- `--query-key-set`: JSON generated by `sample_advanced_dpo_batch.py` containing query/key pairs (alias: `--query-key-s`).
-- `--model-name`: Local vLLM model used to provide pairwise judgements.
-- `--tokenizer-name`: Optional tokenizer name (defaults to `--model-name`).
-- `--tensor-parallel-size`, `--num-instances`, `--gpu-memory-utilization`: Worker-pool configuration for `rmsearch.utils.vllm_generate`.
-- `--max-model-len`, `--dtype`, `--trust-remote-code`: Optional model loader overrides passed to vLLM.
-- `--batch-size`, `--temperature`, `--top-p`, `--max-tokens`, `--timeout-s`: Sampling controls for the pairwise judge prompts.
-- `--progress-dir`: Optional directory for streaming checkpoints (raw judgements are written to `<progress-dir>/results.json`; leave unset to skip checkpointing).
-- `--output`: Destination JSON for the assembled dataset list (default `dataset_list.json`).
-- `--restart`: Resume from a previous run in `progress_dir` (requires `--progress-dir`).
-- `--sample-pairs`: Number of sentence pairs sampled per query (useful when more than two keys exist).
-
-**Outputs**
-- `{output}`: Dataset list JSON suitable for DPO training, containing `batch` (messages of query and key pair) and `dpo_pairs` (pair list to specify the ranking of each sentence inside batch. For example in the case below, batch 0th is better than 1th. 0th > 2th. 1th>2th. These are judged by LLM.)
-- Example:
-    [
-        {
-            "batch": batch,
-            #[
-            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[1])}], "query_id":query_id, "key_id":},
-            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":},
-            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":}
-            #],
-            "dpo_pairs": dpo_pairs,
-            #[
-            #  [0,1],  # [(chosen_msg_id), (rejected_msg_id)]
-            #  [0,2],
-            #  [1,2]
-            #]
-        },
-        ...
-    ]
-- `{progress-dir}/results.json`: Raw judgements with prompts and model outputs for resumable execution.
-
-
-
-**Notices**
-- Reuses the same in-process vLLM worker pool (`rmsearch.utils.vllm_generate`) as `make_query_recs.py`; ensure the model fits into GPU memory.
-- Random sampling means reruns without `--restart` may yield different pairings (when more than two keys per query are available).
-
+- Shares batching, sampling, and fallback behaviour with `make_query_recs.py`; refer to that section for runtime considerations.
+- Use the same method for LLM generation as `make_query_recs.py`.
 
 
 

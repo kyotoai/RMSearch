@@ -545,5 +545,47 @@ Possible plan
 
 
 
+scifact example
+
+query:  Mice without IFN-γ or its receptor are resistant to EAM induced with α-MyHC/CFA.
+
+posi key:  IL-12 and IFN-gamma positively regulate each other and type 1 inflammatory responses, which are believed to cause tissue damage in autoimmune diseases. We investigated the role of the IL-12/IFN-gamma (Th1) axis in the development of autoimmune myocarditis. IL-12p40-deficient mice on a susceptible background resisted myocarditis. In the absence of IL-12, autospecific CD4(+) T cells proliferated poorly and showed increased Th2 cytokine responses. However, IFN-gamma-deficient mice developed fatal autoimmune disease, and blockade of IL-4R signaling did not confer susceptibility to myocarditis in IL-12p40-deficient mice, demonstrating that IL-12 triggers autoimmunity by a mechanism independent of the effector cytokines IFN-gamma and IL-4. In conclusion, our results suggest that the IL-12/IFN-gamma axis is a double-edged sword for the development of autoimmune myocarditis. Although IL-12 mediates disease by induction/expansion of Th1-type cells, IFN-gamma production from these cells limits disease progression.
+
+top relevant key 1:  Experimental autoimmune myocarditis (EAM) represents a Th17 T cell-mediated mouse model of postinflammatory heart disease. In BALB/c wild-type mice, EAM is a self-limiting disease, peaking 21 days after alpha-myosin H chain peptide (MyHC-alpha)/CFA immunization and largely resolving thereafter. In IFN-gammaR(-/-) mice, however, EAM is exacerbated and shows a chronic progressive disease course. We found that this progressive disease course paralleled persistently elevated IL-17 release from T cells infiltrating the hearts of IFN-gammaR(-/-) mice 30 days after immunization. In fact, IL-17 promoted the recruitment of CD11b(+) monocytes, the major heart-infiltrating cells in EAM. In turn, CD11b(+) monocytes suppressed MyHC-alpha-specific Th17 T cell responses IFN-gamma-dependently in vitro. In vivo, injection of IFN-gammaR(+/+)CD11b(+), but not IFN-gammaR(-/-)CD11b(+), monocytes, suppressed MyHC-alpha-specific T cells, and abrogated the progressive disease course in IFN-gammaR(-/-) mice. Finally, coinjection of MyHC-alpha-specific, but not OVA-transgenic, IFN-gamma-releasing CD4(+) Th1 T cell lines, together with MyHC-alpha-specific Th17 T cells protected RAG2(-/-) mice from EAM. In conclusion, CD11b(+) monocytes play a dual role in EAM: as a major cellular substrate of IL-17-induced inflammation and as mediators of an IFN-gamma-dependent negative feedback loop confining disease progression.
+
+top relevant key 2:  BACKGROUND Interferon-gamma (IFN-gamma) is an essential cytokine in the regulation of inflammatory responses in autoimmune diseases. Little is known about its role in inflammatory heart disease. METHODS AND RESULTS We showed that IFN-gamma receptor-deficient mice (IFN-gammaR(-/-)) on a BALB/c background immunized with a peptide derived from cardiac alpha-myosin heavy chain develop severe myocarditis with high mortality. Although myocarditis subsided in wild-type mice after 3 weeks, IFN-gammaR(-/-) mice showed persistent disease. The persistent inflammation was accompanied by vigorous in vitro CD4 T-cell responses and impaired inducible nitric oxide synthase expression, together with evidence of impaired nitric oxide production in IFN-gammaR(-/-) hearts. Treatment of wild-type mice with the nitric oxide synthetase inhibitor N:-nitro-l-arginine-methyl-ester enhanced in vitro CD4 T-cell proliferation and prevented healing of myocarditis. CONCLUSIONS Our data provide evidence that IFN-gamma protects mice from lethal autoimmune myocarditis by inducing the expression of inducible nitric oxide synthase followed by the downregulation of T-cell responses.
+
+top relevant key 3:  BACKGROUND Interleukin (IL)-12 exerts a potent proinflammatory effect by stimulating T-helper (Th) 1 responses. This effect is believed to be mediated primarily through the activation of STAT4 and subsequent production of interferon (IFN)-gamma. Methods and Results- We examined the role of IL-12 receptor (IL-12R) signaling in the development of murine experimental autoimmune myocarditis (EAM) induced by cardiac myosin immunization. Both IL-12Rbeta1-deficient mice and STAT4-deficient mice were resistant to the induction of myocarditis. Treatment with exogenous IL-12 exacerbated disease. We questioned whether IFN-gamma is required for the disease-promoting activity of IL-12. On the contrary, we found that IFN-gamma suppresses EAM. Lack of IFN-gamma due to either depletion with an antibody or a genetic deficiency exacerbated myocarditis. Spleens from IFN-gamma-deficient mice immunized with cardiac myosin showed increased cellularity; greater numbers of CD3+, CD4+, CD8+, and IL-2-producing cells; and heightened ability to produce cytokines on stimulation in vitro. Treatment of mice with recombinant IFN-gamma suppressed the development of myocarditis. CONCLUSIONS IL-12/IL-12R/STAT4 signaling promotes the development of EAM. In contrast, IFN-gamma plays a protective role. The disease-limiting effects of IFN-gamma might be explained by its ability to control the expansion of activated T lymphocytes.
+
+query: 0-dimensional biomaterials show inductive properties.
+correspond_key: "Nanotechnologies are emerging platforms that could be useful in measuring, understanding, and manipulating stem cells. Examples include magnetic nanoparticles and quantum dots for stem cell labeling and in vivo tracking; nanoparticles, carbon nanotubes, and polyplexes for the intracellular delivery of genes/oligonucleotides and protein/peptides; and engineered nanometer-scale scaffolds for stem cell differentiation and transplantation. This review examines the use of nanotechnologies for stem cell tracking, differentiation, and transplantation. We further discuss their utility and the potential concerns regarding their cytotoxicity."
+
+All hematopoietic stem cells segregate their chromosomes randomly.
+Radioiodine treatment of non-toxic multinodular goitre reduces thyroid volume.
+
+
+* Dataset collect
+
+* Biomedical
+qiaojin/PubMedQA : question, context, answer -> generate similar answer2 with llm
+BeIR/bioasq-generated-queries : title (sometimes not good), text -> extract only runnable data
+
+* Finance
+next-tat/TAT-QA : 
+some other. But need to download them to see
+
+* Legal
+coastalcph/lex_glue : context -> query, context 2
+
+* 
+
+
+* General
+smollm
+
+
+## Oct 30
+
+- [x] Make make_query_and_less_relevant_keys_recs.py
 
 
