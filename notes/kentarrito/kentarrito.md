@@ -528,3 +528,22 @@ print(result.choices[0].message.content)
   * Set limit of each sentence for llm to judge. apply [:4000] to each sentence.
   * Change the judge prompt so that it can also generate tie. Add dpo_pairs only when there is a meaningful gap between sentence1 and sentence2.
   * Let's skip llm judgement for correspond_keys. Automatically add all possible dpo_pairs where correspond_keys win sampled_keys.
+
+-> I found almost all pairs are tied. Need to make a better questions. 
+
+Possible plan
+* Include irr-questions
+* Change queries and 
+
+
+## Oct 29
+
+- [ ] Make more queries
+  * See inside evaluation
+  * Make more general questions
+
+
+
+
+
+

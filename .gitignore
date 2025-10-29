@@ -38,3 +38,6 @@ Thumbs.db
 rmsearch.egg-info/
 rmsearch/__pycache__/
 rmsearch/train/__pycache__/
+
+# Personal
+code
