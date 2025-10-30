@@ -589,3 +589,5 @@ smollm
 - [x] Make make_query_and_less_relevant_keys_recs.py
 
 
+ps aux | grep python
+

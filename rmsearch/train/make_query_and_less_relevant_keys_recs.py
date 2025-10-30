@@ -375,6 +375,9 @@ def make_query_and_less_relevant_keys_recs(
     if not prompts:
         return []
 
+    print("n requests: ", len(prompts))
+    prompts= prompts[:24]
+
     outputs: List[Tuple[int, str]]
     if request_func is None:
         if engine_kwargs is None:
