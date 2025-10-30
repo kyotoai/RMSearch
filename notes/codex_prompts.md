@@ -18,6 +18,13 @@ Modify files following the above instrutions. Don't change code lines more than 
 ```
 
 
+## When creating experiment code
+
+```
+Don't add more than enough fallback conditions to avoid errors. Try to make a simple code and make it generate errors if algorithm isn't working.
+```
+
+
 ## README sample
 
 ## Overview

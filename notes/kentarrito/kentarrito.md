@@ -593,7 +593,7 @@ smollm
 - [x] Debug 1-2 make_query_and_less_relevant_keys_recs.py
   * modify so that it generates closer keys
 
-- [ ] Debug 
+- [ ] Implement gpt-oss
 
 
 
