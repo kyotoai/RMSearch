@@ -34,9 +34,10 @@ _USER_TEMPLATE = (
     "1. Draft ONE query that follows the query style instructions.\n"
     "2. Produce EXACTLY {n_keys} less_relevant_keys. Index 0 must be almost as relevant as the original key, "
     "and each subsequent index must become gradually less relevant while remaining on-topic.\n"
-    "3. Apply the specified less-relevant strategy so the drift increases from index 0 to {last_index}, yet every key "
+    "3. Keep the format, tone, and length of each less_relevant_key within ±10% of the original key's word count and match its paragraph or bullet structure so they are hard to distinguish on appearance alone.\n"
+    "4. Apply the specified less-relevant strategy so the drift increases from index 0 to {last_index}, yet every key "
     "still shares critical terminology or context with the query.\n"
-    "4. Never output the original key text or totally irrelevant keys.\n\n"
+    "5. Never output the original key text or totally irrelevant keys, and avoid meta commentary or disclaimers.\n\n"
     "Return ONLY valid JSON (no Markdown) using:\n"
     "{{\n"
     '  "query": "...",\n'
@@ -48,7 +49,6 @@ _USER_TEMPLATE = (
     "  ]\n"
     "}}\n\n"
     "Strict rules:\n"
-    "- Keep the length of each less_relevant_key under 80 words.\n"
     "- Preserve ordering so keys[0] is more relevant than keys[1], etc., until keys[{last_index}].\n"
     "- If you must clarify assumptions, incorporate them inside the JSON fields.\n"
 )

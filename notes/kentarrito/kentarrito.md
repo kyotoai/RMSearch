@@ -588,6 +588,12 @@ smollm
 
 - [x] Make make_query_and_less_relevant_keys_recs.py
 
+- [x] Debug 1 make_query_and_less_relevant_keys_recs.py
+  * modify so that it generates closer keys
 
-ps aux | grep python
+
+
+`ps aux | grep python`
+
+
 
