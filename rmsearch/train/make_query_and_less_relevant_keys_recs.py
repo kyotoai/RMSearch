@@ -49,6 +49,7 @@ _USER_TEMPLATE = (
     "  ]\n"
     "}}\n\n"
     "Strict rules:\n"
+    "- Generate around the same length of keys as original key.\n"
     "- Preserve ordering so keys[0] is more relevant than keys[1], etc., until keys[{last_index}].\n"
     "- If you must clarify assumptions, incorporate them inside the JSON fields.\n"
 )
