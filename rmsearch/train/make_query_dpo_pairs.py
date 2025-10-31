@@ -228,31 +228,44 @@ def _parse_outputs(
     n_queries: int,
 ) -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
+    n_error = 0
+
     for request_id, raw_output in outputs:
-        payload = _extract_json_payload(raw_output) or {}
-        queries = payload.get("queries")
-        if not isinstance(queries, list) or len(queries) != n_queries:
-            raise ValueError(f"Expected {n_queries} queries for df_id {request_id}, received payload: {payload}")
-        cleaned_queries: List[str] = []
-        for idx, query in enumerate(queries):
-            if not isinstance(query, str):
-                raise ValueError(f"Query at index {idx} for df_id {request_id} is not a string.")
-            value = query.strip()
-            if not value:
-                raise ValueError(f"Query at index {idx} for df_id {request_id} is empty after stripping.")
-            cleaned_queries.append(value)
+        try:
+            payload = _extract_json_payload(raw_output) or {}
+            queries = payload.get("queries")
+            if not isinstance(queries, list) or len(queries) != n_queries:
+                
+                raise ValueError(f"Expected {n_queries} queries for df_id {request_id}, received payload: {payload}")
+            cleaned_queries: List[str] = []
+            for idx, query in enumerate(queries):
+                if not isinstance(query, str):
+                    raise ValueError(f"Query at index {idx} for df_id {request_id} is not a string.")
+                value = query.strip()
+                if not value:
+                    raise ValueError(f"Query at index {idx} for df_id {request_id} is empty after stripping.")
+                cleaned_queries.append(value)
 
-        instruction_plan = plans[request_id]
-        query_types = [instruction.query_type for instruction in instruction_plan]
+            instruction_plan = plans[request_id]
+            query_types = [instruction.query_type for instruction in instruction_plan]
 
-        records.append(
-            {
-                "queries": cleaned_queries,
-                "key": texts[request_id],
-                "df_id": request_id,
-                "query-types": query_types,
-            }
-        )
+            records.append(
+                {
+                    "queries": cleaned_queries,
+                    "key": texts[request_id],
+                    "df_id": request_id,
+                    "query-types": query_types,
+                }
+            )
+        except Exception:
+            print()
+            print("----- Error ----")
+            print(raw_output)
+            n_error += 1
+            continue
+
+    print(f"Errors: {n_error} / {len(outputs)}")
+
     return records
 
 
@@ -296,6 +309,8 @@ def make_query_dpo_pairs(
 
     if not prompts:
         return []
+
+    print("n requests: ", len(prompts))
 
     outputs: List[Tuple[int, str]]
     if request_func is None:

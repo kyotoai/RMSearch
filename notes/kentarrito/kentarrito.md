@@ -601,5 +601,8 @@ smollm
 - [x] Make make_query_dpo_pairs.py
 - [ ] Debug make_query_dpo_pairs.py
 
+- [ ] Make a serve vllm for faster debug
+- [ ] Add readme with api key setting
+- [ ] 
 
 

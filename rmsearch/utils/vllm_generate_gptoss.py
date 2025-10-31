@@ -19,6 +19,7 @@ from openai_harmony import (
     SystemContent,
     DeveloperContent,
 )
+import re
 
 try:
     from vllm.inputs import TokensPrompt
@@ -27,6 +28,32 @@ except Exception:
 
 _clear_output = resolve_clear_output()
 _USE_TQDM = should_use_tqdm()
+
+
+
+def extract_harmony_final(text: str) -> str:
+    # 1) official Harmony tag, per cookbook
+    # https://cookbook.openai.com/articles/openai-harmony
+    tag = "<|channel|>final<|message|>"
+    if tag in text:
+        tail = text.split(tag, 1)[1]
+    else:
+        # 2) flattened vLLM style like your example:
+        # "analysis....assistantfinal- ...."
+        m = re.search(r"assistantfinal-?\s*", text)
+        if not m:
+            return text.strip()
+        tail = text[m.end():]
+
+    # trim common Harmony end markers
+    for stop in ("<|return|>", "<|end|>", "<|stop|>"):
+        i = tail.find(stop)
+        if i != -1:
+            tail = tail[:i]
+            break
+
+    return tail.strip()
+
 
 def _worker_main(
     worker_id: int,
@@ -164,8 +191,12 @@ def _worker_main(
                         use_tqdm=_USE_TQDM,
                     )
 
+                    # print("Outputs", outputs)
+                    # texts = [o.outputs[0].text if o.outputs else "" for o in outputs]
 
-                    texts = [o.outputs[0].text if o.outputs else "" for o in outputs]
+                    raw_texts = [o.outputs[0].text if o.outputs else "" for o in outputs]
+                    texts = [extract_harmony_final(t) for t in raw_texts]
+                    # print(texts)
                     # include worker id so parent can manage inflight if needed
                     result_q.put((job_id, item_idx, {"texts": texts, "wid": worker_id}), block=False)
                     done += 1

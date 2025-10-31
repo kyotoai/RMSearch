@@ -148,7 +148,7 @@ python -m rmsearch.train.make_query_dpo_pairs \
   --n-query-generation 5 \
   --batch-size 8 \
   --max-model-len 10000 \
-  --output ./data/smollm-corpus/query_and_less_relevant_keys_recs.json
+  --output ./data/smollm-corpus/query_dpo_pairs.json
 ```
 
 
