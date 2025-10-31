@@ -19,6 +19,8 @@ import torch.distributed as dist
 from .utils import extract_int, extract_text
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["HF_DATASETS_DISABLE_PARALLEL"] = "1"
+# dist.init_process_group("gloo")  #use gloo backend if NCCL is misbehaving (<2 GPU)
 
 
 random.seed(42)
@@ -33,7 +35,9 @@ if torch.cuda.is_available() and "LOCAL_RANK" in os.environ:
 # ---------------------------------------------------
 
 
-print(f"--> Starting process with rank: {os.environ.get('RANK')}, local_rank: {os.environ.get('LOCAL_RANK')}, visible devices: {os.environ.get('CUDA_VISIBLE_DEVICES')}")
+print(f"--> Starting process with rank: {os.environ.get('RANK')}, "
+      f"local_rank: {os.environ.get('LOCAL_RANK')}, "
+      f"visible devices: {os.environ.get('CUDA_VISIBLE_DEVICES')}")
 print("torch.cuda.is_available()", torch.cuda.is_available())
 print("device_count:", torch.cuda.device_count())
 
@@ -165,6 +169,11 @@ class CustomRewardTrainer(Trainer):
             pin_memory=self.args.dataloader_pin_memory,
         )
 
+
+    # def _zero_loss_like_model(model):
+    # # attach to the graph cheaply
+    #     return next(model.parameters()).sum() * 0.0
+
     def compute_loss( #GPT5
         self,
         model: Union[PreTrainedModel, nn.Module],
@@ -200,7 +209,7 @@ class CustomRewardTrainer(Trainer):
             attention_mask=attention_mask_flat,
             return_dict=True,
         )["logits"].squeeze(-1)  # [B*K]
-        rewards = rewards_flat.view(B, K)         # [B, K]
+        rewards = rewards_flat.view(B, K).float()        # [B, K]
 
         device = rewards.device
         dtype  = rewards.dtype
@@ -211,6 +220,7 @@ class CustomRewardTrainer(Trainer):
             pairs = dpo_pairs_list[b]  # list[(chosen_idx, rejected_idx)]
             if not pairs:
                 continue
+
 
             # Build a difference matrix M so that (M @ rewards[b]) gives all (r_chosen - r_rejected)
             M = torch.zeros(len(pairs), K, device=device, dtype=dtype)
@@ -230,13 +240,12 @@ class CustomRewardTrainer(Trainer):
 
         if return_outputs:
             # For evaluation, return per-sample rewards and pairs so prediction_step can
-            # build [N_pairs, 2] probabilities exactly like you already do.
+            # build [N_pairs, 2] probabilities exactly
             return total_loss, {
                 "all_rewards": rewards,          # [B, K]
                 "dpo_pairs_list": dpo_pairs_list # list len B
             }
         return total_loss
-
 
     def prediction_step(
         self,
@@ -384,7 +393,7 @@ def _build_dataset_split(
     *,
     max_length: int,
     max_characters: int,
-   sample_ratio: float = 1,
+   sample_ratio: float = 1.0,
 ) -> Optional[Dataset]:
     if not records:
         return None
@@ -517,7 +526,7 @@ def train_reward_model(
     evaluation_steps: int = 40,
     save_steps: int = 40,
     logging_steps: int = 1,
-    num_train_epochs: int = 50,
+    num_train_epochs: int = 5,
     wandb_project: Optional[str] = None,
     wandb_run_name: Optional[str] = None,
     wandb_tags: Optional[Sequence[str]] = None,
@@ -540,9 +549,10 @@ def train_reward_model(
             raise RuntimeError("8-bit quantization requires CUDA-enabled hardware.")
 
         local_rank = os.environ.get("LOCAL_RANK")
+        print("WORLD size", world_size)
         # device_map = {"": int(local_rank)} if local_rank is not None else "auto"
-        device_map = {"": int(local_rank)} if (world_size > 1 and local_rank is not None) else "auto"
-
+        device_map = {"": int(local_rank)} if (world_size > 1 and local_rank is not None) else "cuda:0"
+    
         bnb_config = BitsAndBytesConfig(load_in_8bit=True)
 
         model_kwargs.update({
@@ -603,33 +613,6 @@ def train_reward_model(
         max_characters=max_characters,
     )
 
-    # wandb_run = None
-    # report_to: List[str] = []
-    # if wandb_project:
-    #     try:
-    #         import wandb
-    #     except ImportError as exc:
-    #         raise RuntimeError("wandb is required when --wandb-project is specified.") from exc
-
-    #     wandb_run = wandb.init(
-    #         project=wandb_project,
-    #         name=wandb_run_name,
-    #         tags=list(wandb_tags) if wandb_tags else None,
-    #         config={
-    #             "model_name": model_name,
-    #             "max_length": max_length,
-    #             "max_characters": max_characters,
-    #             "per_device_train_batch_size": per_device_train_batch_size,
-    #             "per_device_eval_batch_size": per_device_eval_batch_size,
-    #             "num_train_epochs": num_train_epochs,
-    #             "evaluation_steps": evaluation_steps,
-    #             "save_steps": save_steps,
-    #             "logging_steps": logging_steps,
-    #         },
-    #     )
-    #     report_to = ["wandb"]
-
-    # --- W&B: let Trainer manage the run; init only on main process via env ---
     report_to: List[str] = []
     if wandb_project:
         os.environ.setdefault("WANDB_PROJECT", wandb_project)
@@ -655,6 +638,12 @@ def train_reward_model(
         eval_steps=evaluation_steps,
         optim="paged_adamw_8bit",   # if bitsandbytes is present
         torch_compile=True, 
+        learning_rate=1e-4,              # "high" for LoRA;
+        weight_decay=0.05,               # small regularization helps with high LR
+        lr_scheduler_type="cosine",      # good default for high LR
+        # warmup_ratio=0.005,               # ~6% of total steps as warmup (or set warmup_steps)
+        warmup_steps=40,             # use this instead of warmup_ratio if you prefer a fixed warmup
+        max_grad_norm=1.0, 
         fp16=True,
         eval_on_start=bool(eval_dataset),
         save_strategy="steps",
@@ -666,6 +655,7 @@ def train_reward_model(
         dataloader_drop_last=True,
         ddp_find_unused_parameters=False,
         dataloader_num_workers=max(2, os.cpu_count() // 2),
+        # dataloader_num_workers=0,
         dataloader_pin_memory=True,
         disable_tqdm=not is_main_process(),
 
@@ -703,6 +693,8 @@ def train_reward_model(
         data_collator=custom_data_collator,
     )
 
+
+
     dl = trainer.get_train_dataloader()
     s = getattr(dl, "sampler", None)
     print(f"[Rank {os.environ.get('LOCAL_RANK','?')}] sampler={type(s).__name__} "
@@ -711,17 +703,62 @@ def train_reward_model(
     print(f"[Rank {os.environ.get('LOCAL_RANK','?')}] steps_per_epoch={len(dl)}")
 # -------------------------------------------
 
+    # ---- Log clipped grad norm to W&B (works with TrainingArguments max_grad_norm) ----
+    def install_wandb_gradnorm_logger(trainer, key_prefix="grad_norm"):
+        try:
+            import wandb
+        except Exception:
+            wandb = None
+
+        accel = trainer.accelerator                     # used internally by Trainer
+        orig_clip = accel.clip_grad_norm_               # original function
+
+        def wrapped_clip_grad_norm_(params, max_norm, *args, **kwargs):
+            # Ensure we only touch real grads from trainable params (LoRA etc.)
+            if not isinstance(params, (list, tuple)):
+                params = list(params)
+            params = [p for p in params if (p is not None and p.requires_grad and p.grad is not None)]
+
+            # Pre-clip norm (the value Accelerate returns)
+            pre = orig_clip(params, max_norm, *args, **kwargs)
+
+            # Post-clip norm: recompute after clipping
+            post = float("nan")
+            try:
+                with torch.no_grad():
+                    norms = [p.grad.detach().data.norm(2) for p in params]
+                    if norms:
+                        post = torch.norm(torch.stack(norms), 2).item()
+            except Exception:
+                pass
+
+            # Log only on main process, and only if W&B is enabled
+            if trainer.is_world_process_zero() and wandb is not None and ("wandb" in (trainer.args.report_to or [])):
+                payload = {
+                    f"{key_prefix}_pre_clip": float(pre),    # can be inf early on
+                    f"{key_prefix}_post_clip": float(post),  # should be <= max_norm
+                    "max_grad_norm": float(max_norm),
+                }
+                # If fp16 is used, this helps debug scaler behavior
+                scaler = getattr(trainer.accelerator, "scaler", None)
+                if scaler is not None:
+                    try:
+                        payload["grad_scale"] = float(scaler.get_scale())
+                    except Exception:
+                        pass
+                wandb.log(payload, step=trainer.state.global_step)
+
+            return pre
+
+        accel.clip_grad_norm_ = wrapped_clip_grad_norm_
+
+    install_wandb_gradnorm_logger(trainer) 
     trainer.train()
 
 
     if eval_dataset is not None:
         trainer.evaluate()
 
-    # if wandb_project:
-    #     # Close the W&B run so metrics are flushed.
-    #     import wandb
-
-    #     wandb.finish()
 
 
 if __name__ == "__main__":

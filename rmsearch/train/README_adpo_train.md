@@ -489,6 +489,21 @@ nohup accelerate launch --config_file ./accelerate_config.yaml \
   --output-dir ./exp2/model1 \
   > >(tee ./train.log) 2>&1 &
 
+## for qwen3 4b Reranker
+
+for > 2 gpu (Use gloo instead of nccl)
+
+
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m rmsearch.train.adpo_lora_example \
+  --dataset-list-train ./exp2/dataset_list_train.json \
+  --dataset-list-test ./exp2/dataset_list_test.json \
+  --model-name /workspace/data/qwen4b/ \
+  --output-dir ./exp2/model1 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp2-adpo-lora-qwen4b \
+  > >(tee ./train.log) 2>&1 &
+
 
 **Arguments**
 - `--dataset-list-train`: The preference dataset produced by `judge_dataset.py` (`dataset_list_train.json`).
