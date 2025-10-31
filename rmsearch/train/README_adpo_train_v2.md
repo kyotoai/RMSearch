@@ -353,6 +353,27 @@ python -m rmsearch.train.adpo_lora_example \
 
 ## With Accelerate (For Multi GPU)
 
+
+### Multi-GPU note
+
+✅ Works with 2× GPU for training + eval.
+
+❌ With >2 GPUs on some containers, it hangs on NCCL.
+
+🔁 Workaround: change backend from NCCL → GLOO in the training script:
+
+```python
+import torch.distributed as dist
+dist.init_process_group("gloo")
+```
+
+After switching to GLOO: training runs, but eval still throws tensor-shape errors (not solved yet).
+
+🟢 Simplest stable option right now: use A100 GPUs / containers that already have NCCL distributed set up correctly.
+
+## Accelerate (multi-GPU friendly baseline)
+
+```bash
 nohup accelerate launch --config_file ./accelerate_config.yaml \
   -m rmsearch.train.adpo_lora_example \
   --dataset-list-train ./exp2/dataset_list_train.json \
@@ -360,6 +381,22 @@ nohup accelerate launch --config_file ./accelerate_config.yaml \
   --model-name /workspace/data/llama3b-rm \
   --output-dir ./exp2/model1 \
   > >(tee ./train.log) 2>&1 &
+```
+
+## for qwen3 4b Reranker
+```bash
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m rmsearch.train.adpo_lora_example \
+  --dataset-list-train ./exp2/dataset_list_train.json \
+  --dataset-list-test ./exp2/dataset_list_test.json \
+  --model-name /workspace/data/qwen4b/ \
+  --output-dir ./exp2/model1 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp2-adpo-lora-qwen4b \
+  > >(tee ./train.log) 2>&1 &
+
+```
+
 
 
 **Arguments**
