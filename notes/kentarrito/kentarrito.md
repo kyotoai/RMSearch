@@ -593,8 +593,13 @@ smollm
 - [x] Debug 1-2 make_query_and_less_relevant_keys_recs.py
   * modify so that it generates closer keys
 
-- [ ] Implement gpt-oss
+- [x] Implement gpt-oss
 
+
+## Oct 31
+
+- [x] Make make_query_dpo_pairs.py
+- [ ] Debug make_query_dpo_pairs.py
 
 
 

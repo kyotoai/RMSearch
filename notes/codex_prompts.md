@@ -17,11 +17,15 @@ Create code files following the above instrutions. Don't change the existing cod
 Modify files following the above instrutions. Don't change code lines more than enough because the original code is already debugged and stable version.
 ```
 
+```
+If there is something ambiguous or some logical conflict in my instructions, ask some questions to me before you generate code.
+```
+
 
 ## When creating experiment code
 
 ```
-Don't add more than enough fallback conditions to avoid errors. Try to make a simple code and make it generate errors if algorithm isn't working.
+Don't add more than enough fallback conditions to avoid errors. Try to make a simple code and system which lets errors happen if algorithm isn't working.
 ```
 
 
