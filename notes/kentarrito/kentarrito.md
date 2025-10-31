@@ -586,6 +586,23 @@ smollm
 
 ## Oct 30
 
+`ps aux | grep python`
+
 - [x] Make make_query_and_less_relevant_keys_recs.py
+
+- [x] Debug 1-2 make_query_and_less_relevant_keys_recs.py
+  * modify so that it generates closer keys
+
+- [x] Implement gpt-oss
+
+
+## Oct 31
+
+- [x] Make make_query_dpo_pairs.py
+- [ ] Debug make_query_dpo_pairs.py
+
+- [ ] Make a serve vllm for faster debug
+- [ ] Add readme with api key setting
+- [ ] 
 
 
