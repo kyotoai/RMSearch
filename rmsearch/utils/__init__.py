@@ -13,10 +13,11 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Iterable, List
 
-from . import vllm_embed, vllm_generate, vllm_reward, vllm_serve_generate
+from . import vllm_embed, vllm_generate, vllm_generate_gptoss, vllm_reward, vllm_serve_generate
 
 __all__: List[str] = [
     "vllm_generate",
+    "vllm_generate_gptoss",
     "vllm_serve_generate",
     "vllm_reward",
     "vllm_embed",

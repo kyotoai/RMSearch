@@ -89,6 +89,21 @@ python -m rmsearch.train.make_query_and_less_relevant_keys_recs \
   --output ./data/smollm-corpus/query_and_less_relevant_keys_recs.json
 ```
 
+
+```bash
+python -m rmsearch.train.make_query_and_less_relevant_keys_recs-gptoss \
+  --input-csv ./data/smollm-corpus/df.csv \
+  --text-column text \
+  --model-name /workspace/gpt-oss-20b \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --n-key-generation 5 \
+  --batch-size 8 \
+  --max-model-len 10000 \
+  --output ./data/smollm-corpus/make_query_and_less_relevant_keys_recs-gptoss.json
+```
+
+
 **Algorithm**
 1. Load all keys from df.csv
 2. Generate 1 query for every key in df.csv text-column and generate n_key_generation less_relevant_keys to the query which are ranged from a slightly less relevant key to the query than the original key to more irrelevant key. Follow
