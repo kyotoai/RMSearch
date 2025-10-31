@@ -334,7 +334,7 @@ nohup accelerate launch --config_file ./accelerate_config.yaml \
   -m rmsearch.train.adpo_lora_example \
   --dataset-list-train ./exp2/dataset_list_train.json \
   --dataset-list-test ./exp2/dataset_list_test.json \
-  --model-name /workspace/data/qwen4b/ \
+  --model-name /workspace/qwen4b-reranker/ \
   --output-dir ./exp2/model1 \
   --wandb-project rmsearch \
   --wandb-run-name exp2-adpo-lora-qwen4b \
