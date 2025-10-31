@@ -28,12 +28,12 @@
 
   * Qwen3 4b Instruct Model
 
-  ```bash
-  cd /workspace
-  pip install "huggingface_hub[hf_transfer]"
-  pip install hf_transfer
-  HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Qwen/Qwen3-4B-Instruct-2507 --local-dir ./qwen4b/
-  ```
+```bash
+cd /workspace
+pip install "huggingface_hub[hf_transfer]"
+pip install hf_transfer
+HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Qwen/Qwen3-4B-Instruct-2507 --local-dir ./qwen4b/
+```
 
 
   * e5 Mistral 7b Model (float16)

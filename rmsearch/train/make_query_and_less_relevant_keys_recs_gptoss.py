@@ -139,6 +139,7 @@ def _extract_terms(text: str, *, limit: int = 6) -> List[str]:
 def _fallback_query(text: str, query_type: str, terms: Sequence[str]) -> str:
     base = " ".join(text.strip().split())
     if not base:
+        raise Exception("Error")
         base = "Placeholder content about the topic."
     topic = " ".join(terms[:3]) if terms else "the topic"
     if query_type == "title":
@@ -268,6 +269,7 @@ def _normalise_less_keys(
     result = [candidate for candidate in result if candidate]
     if len(result) >= n_keys:
         return result[:n_keys]
+    raise Exception("Error")
     fallback_needed = n_keys - len(result)
     fallback_values = _fallback_less_keys(text, n_keys=fallback_needed, query=query, terms=terms)
     result.extend(fallback_values)
@@ -302,35 +304,44 @@ def _parse_outputs(
 ) -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
     for request_id, raw_output in outputs:
+
         original_text = texts[request_id]
         pair = instruction_map[request_id]
         terms = _extract_terms(original_text)
         payload = _extract_json_payload(raw_output) or {}
         query = payload.get("query")
-        if not isinstance(query, str) or not query.strip():
-            query = _fallback_query(original_text, pair.query_instruction.query_type, terms)
-        else:
-            query = query.strip()
-        query_type = payload.get("query_type")
-        if not isinstance(query_type, str) or not query_type.strip():
-            query_type = pair.query_instruction.query_type
         less_values = payload.get("less_relevant_keys")
-        less_keys = _normalise_less_keys(
-            less_values,
-            n_keys=n_keys,
-            text=original_text,
-            query=query,
-            terms=terms,
-        )
-        records.append(
-            {
-                "query": query,
-                "correspond_key": original_text,
-                "less_relevant_keys": less_keys,
-                "df_id": request_id,
-                "query-type": query_type,
-            }
-        )
+
+        try:
+            if not isinstance(query, str) or not query.strip():
+                query = _fallback_query(original_text, pair.query_instruction.query_type, terms)
+            else:
+                query = query.strip()
+            query_type = payload.get("query_type")
+            if not isinstance(query_type, str) or not query_type.strip():
+                query_type = pair.query_instruction.query_type
+            
+            less_keys = _normalise_less_keys(
+                less_values,
+                n_keys=n_keys,
+                text=original_text,
+                query=query,
+                terms=terms,
+            )
+            records.append(
+                {
+                    "query": query,
+                    "correspond_key": original_text,
+                    "less_relevant_keys": less_keys,
+                    "df_id": request_id,
+                    "query-type": query_type,
+                }
+            )
+        except Exception:
+            print()
+            print("query: ", query)
+            print("less_values: ", less_values)
+            continue
     return records
 
 
@@ -385,7 +396,7 @@ def make_query_and_less_relevant_keys_recs(
             raise ValueError("engine_kwargs must be provided when request_func is omitted")
 
         try:
-            from ..utils import vllm_generate as _vllm_generate
+            from ..utils import vllm_generate_gptoss as _vllm_generate
             from vllm import SamplingParams
         except Exception as exc:  # pragma: no cover - depends on runtime environment
             logger.warning("Falling back to stub generation because vLLM could not be imported: %s", exc)
@@ -473,6 +484,9 @@ if __name__ == "__main__":
 
     subset = df[df[args.text_column].notna()].copy()
     sentences = subset[args.text_column].astype(str).tolist()
+    sentences= sentences[:8]
+    print(len(sentences))
+    # quit()
     if not sentences:
         raise ValueError("No keys available for generation.")
 

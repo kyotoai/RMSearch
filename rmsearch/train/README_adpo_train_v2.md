@@ -116,6 +116,25 @@ python -m rmsearch.train.make_query_and_less_relevant_keys_recs \
 
 
 
+
+## `make_query_and_less_relevant_keys_recs_gptoss.py`
+
+```bash
+python -m rmsearch.train.make_query_and_less_relevant_keys_recs_gptoss \
+  --input-csv ./data/smollm-corpus/df.csv \
+  --text-column text \
+  --model-name /workspace/gpt-oss-20b \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --n-key-generation 5 \
+  --batch-size 8 \
+  --max-model-len 20000 \
+  --output ./data/smollm-corpus/query_and_less_relevant_keys_recs_gptoss.json
+```
+
+
+
+
 ## `Direct adpo_sampled_query_key_set.json -> dataset_list_test.json`
 
 ```bash
