@@ -12,7 +12,7 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Seq
 
 import pandas as pd
 
-from rmsearch.utils.vllm_reward2 import build_llm, search
+from rmsearch.utils.vllm_reward import build_llm, search
 
 __all__ = ["assign_key_to_tag_tree"]
 

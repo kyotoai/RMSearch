@@ -384,14 +384,208 @@ runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguan
 
 ## Oct 19
 
-- [ ] Finish adpo training debug
+- [x] Finish adpo training debug -> leave it to prakhar 
   - [ ] Fix train cuda oom error
   - [ ] Fix num_gpu = 2 error
-- [ ] Make contract paper for Juan
+- [x] Make contract paper for Juan
+
+- [x] relevance_record now take a lot of memory space, modifty this for rm too
+
+
+## Oct 20
+
 - [ ] Start creating YC application
+  - [ ] Roughly created personal website
 - [ ] Focus on agent rmsearch demo
+  - [ ] Decide how to make excel finding project
 
 
-- [ ] relevance_record now take a lot of memory space, modifty this for rm too
+## Oct 21
+
+- [ ] Generating excel sheet by generator functions created by GPT5
+  - [ ] Make prompt to create it
+  - [ ] Gather 1000 datasets with 200 variable generators
+
+- [ ] Making a system to automatically add agents and improve systems
+  - [x] It might be better to create it in SEIMEI -> It's good for customizing and experiment. let's go with SEIMEI
+  - [ ] vllm_serve for both generate & reward needed (because AscynEngine is not working now)
+  - [ ] Access and analyze folder directly without processing folder
+  - [ ] Inference -> Log
+  - [ ] Log -> Agents
+  - [ ] Agents -> Inference
+
+
+
+
+## Oct 24
+
+- [x] Create rmsearch/evaluation/process_data.py
+  * Specify dataset, download it from huggingface and make pair.csv, query.json, key.json
+  * query.json, key.json: list of query and key
+  * pair.csv: query_id, key_id
+
+- [x] Create rmsearch/evaluation/embed.py
+  * from query.json and key.json, get relevance matrix of them
+  * from the relevance matrix, create relevance_dict_embed.json
+  * relevance_dict_embed.json :
+  [
+    {
+      "query_id": , "key_ids":[]
+    }
+  ]
+  * inside "keys", top relevant key ids to query with the query_id is there in order.
+  * the number of keys are 100 in default.
+  * Refer to embed_tags.py for how to make embedding.
+
+- [x] Create rmsearch/evaluation/rerank.py
+  * from relevance_dict_embed.json created, rerank the key_ids using examples/train_en.ipynb: Evaluation > Without Graph section? Output relevance_dict_rerank.json at the end.
+
+
+## Oct 25
+
+- [x] Add beir_to_pairs.py
+- [x] Adjust input of embed.py, rerank.py and retrieval.py according to the dataset/beir_to_pair.py and update the readme.
+- [x] Adjust rerank.py so that it generates output like 
+    ```
+    [
+      {
+        "query_id": , "key_ids":[], "pre_key_ids":[], "relevance":[], "positive_key_ids":[]
+      }
+    ]
+    ```
+    * add argument for top-k to extract top-k relevant "key_ids" from "pre_key_ids". "pre_key_ids" corresponds to "key_ids" in relevance_dict_embed.json. set top-k 10 in default.
+
+- [x] Add more details about each file's argument, output, output example.
+
+
+
+
+### download gpt-oss
+
+```
+from huggingface_hub import snapshot_download
+import os
+
+# Set your local directory path
+local_dir = "./gpt-oss-20b"
+
+# Download the repository, excluding 'original/' and 'metal/' directories
+snapshot_download(
+    repo_id="openai/gpt-oss-20b",
+    local_dir=local_dir,
+    ignore_patterns=["original/*", "metal/*"],
+    # repo_type="model"
+)
+
+print(f"Download complete! Files saved to: {local_dir}")
+```
+
+
+### vllm with GPT oss
+
+The model files are already downlaoded and just run
+```
+vllm serve /workspace/gpt-oss-20b     --host 0.0.0.0     --port 7000
+```
+
+from workspace, this will start the vllm server with GPT oss
+
+here is s sample python inference code with API
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://localhost:7000/v1",
+    api_key="EMPTY"
+)
+
+result = client.chat.completions.create(
+    model="./gpt-oss-20b",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Explain what data vs task parallelism is."}
+    ]
+)
+
+print(result.choices[0].message.content)
+```
+
+
+## Oct 27
+
+- [x] Improve blogs 1
+  * Put focus on the difference between normal dpo and advanced-batched dpo (in adpo, loss is calculated more combinations from each batch, so model can update weights from more comparison result. Also, model gets 1 input from each chosen key to compare them with 5 sampled rejected keys. In this sense, it supresses over-learning much more than scattering 5 same chosen keys over the dataset.) 
+  * You must not write any code or command. Please explain the overview of how dataset is created plainly with some example content.
+  * I added adpo.jpeg and dpo.png. This has evaluation accuracy for each training. Add pitcure to each blog.
+  * You should make 5 sections, Summary (Overview), Make DPO Dataset, Make Advanced Batching Dataset, Training and Experiment.
+
+## Oct 28
+
+- [x] Add more dpo_pairs -> create judge_adpo_dataset.py
+
+- [x] Modify judge_adpo_dataset.py
+  * Set limit of each sentence for llm to judge. apply [:4000] to each sentence.
+  * Change the judge prompt so that it can also generate tie. Add dpo_pairs only when there is a meaningful gap between sentence1 and sentence2.
+  * Let's skip llm judgement for correspond_keys. Automatically add all possible dpo_pairs where correspond_keys win sampled_keys.
+
+-> I found almost all pairs are tied. Need to make a better questions. 
+
+Possible plan
+* Include irr-questions
+* Change queries and 
+
+
+## Oct 29
+
+- [ ] Make more queries
+  * See inside evaluation
+  * Make more general questions
+
+
+
+
+scifact example
+
+query:  Mice without IFN-γ or its receptor are resistant to EAM induced with α-MyHC/CFA.
+
+posi key:  IL-12 and IFN-gamma positively regulate each other and type 1 inflammatory responses, which are believed to cause tissue damage in autoimmune diseases. We investigated the role of the IL-12/IFN-gamma (Th1) axis in the development of autoimmune myocarditis. IL-12p40-deficient mice on a susceptible background resisted myocarditis. In the absence of IL-12, autospecific CD4(+) T cells proliferated poorly and showed increased Th2 cytokine responses. However, IFN-gamma-deficient mice developed fatal autoimmune disease, and blockade of IL-4R signaling did not confer susceptibility to myocarditis in IL-12p40-deficient mice, demonstrating that IL-12 triggers autoimmunity by a mechanism independent of the effector cytokines IFN-gamma and IL-4. In conclusion, our results suggest that the IL-12/IFN-gamma axis is a double-edged sword for the development of autoimmune myocarditis. Although IL-12 mediates disease by induction/expansion of Th1-type cells, IFN-gamma production from these cells limits disease progression.
+
+top relevant key 1:  Experimental autoimmune myocarditis (EAM) represents a Th17 T cell-mediated mouse model of postinflammatory heart disease. In BALB/c wild-type mice, EAM is a self-limiting disease, peaking 21 days after alpha-myosin H chain peptide (MyHC-alpha)/CFA immunization and largely resolving thereafter. In IFN-gammaR(-/-) mice, however, EAM is exacerbated and shows a chronic progressive disease course. We found that this progressive disease course paralleled persistently elevated IL-17 release from T cells infiltrating the hearts of IFN-gammaR(-/-) mice 30 days after immunization. In fact, IL-17 promoted the recruitment of CD11b(+) monocytes, the major heart-infiltrating cells in EAM. In turn, CD11b(+) monocytes suppressed MyHC-alpha-specific Th17 T cell responses IFN-gamma-dependently in vitro. In vivo, injection of IFN-gammaR(+/+)CD11b(+), but not IFN-gammaR(-/-)CD11b(+), monocytes, suppressed MyHC-alpha-specific T cells, and abrogated the progressive disease course in IFN-gammaR(-/-) mice. Finally, coinjection of MyHC-alpha-specific, but not OVA-transgenic, IFN-gamma-releasing CD4(+) Th1 T cell lines, together with MyHC-alpha-specific Th17 T cells protected RAG2(-/-) mice from EAM. In conclusion, CD11b(+) monocytes play a dual role in EAM: as a major cellular substrate of IL-17-induced inflammation and as mediators of an IFN-gamma-dependent negative feedback loop confining disease progression.
+
+top relevant key 2:  BACKGROUND Interferon-gamma (IFN-gamma) is an essential cytokine in the regulation of inflammatory responses in autoimmune diseases. Little is known about its role in inflammatory heart disease. METHODS AND RESULTS We showed that IFN-gamma receptor-deficient mice (IFN-gammaR(-/-)) on a BALB/c background immunized with a peptide derived from cardiac alpha-myosin heavy chain develop severe myocarditis with high mortality. Although myocarditis subsided in wild-type mice after 3 weeks, IFN-gammaR(-/-) mice showed persistent disease. The persistent inflammation was accompanied by vigorous in vitro CD4 T-cell responses and impaired inducible nitric oxide synthase expression, together with evidence of impaired nitric oxide production in IFN-gammaR(-/-) hearts. Treatment of wild-type mice with the nitric oxide synthetase inhibitor N:-nitro-l-arginine-methyl-ester enhanced in vitro CD4 T-cell proliferation and prevented healing of myocarditis. CONCLUSIONS Our data provide evidence that IFN-gamma protects mice from lethal autoimmune myocarditis by inducing the expression of inducible nitric oxide synthase followed by the downregulation of T-cell responses.
+
+top relevant key 3:  BACKGROUND Interleukin (IL)-12 exerts a potent proinflammatory effect by stimulating T-helper (Th) 1 responses. This effect is believed to be mediated primarily through the activation of STAT4 and subsequent production of interferon (IFN)-gamma. Methods and Results- We examined the role of IL-12 receptor (IL-12R) signaling in the development of murine experimental autoimmune myocarditis (EAM) induced by cardiac myosin immunization. Both IL-12Rbeta1-deficient mice and STAT4-deficient mice were resistant to the induction of myocarditis. Treatment with exogenous IL-12 exacerbated disease. We questioned whether IFN-gamma is required for the disease-promoting activity of IL-12. On the contrary, we found that IFN-gamma suppresses EAM. Lack of IFN-gamma due to either depletion with an antibody or a genetic deficiency exacerbated myocarditis. Spleens from IFN-gamma-deficient mice immunized with cardiac myosin showed increased cellularity; greater numbers of CD3+, CD4+, CD8+, and IL-2-producing cells; and heightened ability to produce cytokines on stimulation in vitro. Treatment of mice with recombinant IFN-gamma suppressed the development of myocarditis. CONCLUSIONS IL-12/IL-12R/STAT4 signaling promotes the development of EAM. In contrast, IFN-gamma plays a protective role. The disease-limiting effects of IFN-gamma might be explained by its ability to control the expansion of activated T lymphocytes.
+
+query: 0-dimensional biomaterials show inductive properties.
+correspond_key: "Nanotechnologies are emerging platforms that could be useful in measuring, understanding, and manipulating stem cells. Examples include magnetic nanoparticles and quantum dots for stem cell labeling and in vivo tracking; nanoparticles, carbon nanotubes, and polyplexes for the intracellular delivery of genes/oligonucleotides and protein/peptides; and engineered nanometer-scale scaffolds for stem cell differentiation and transplantation. This review examines the use of nanotechnologies for stem cell tracking, differentiation, and transplantation. We further discuss their utility and the potential concerns regarding their cytotoxicity."
+
+All hematopoietic stem cells segregate their chromosomes randomly.
+Radioiodine treatment of non-toxic multinodular goitre reduces thyroid volume.
+
+
+* Dataset collect
+
+* Biomedical
+qiaojin/PubMedQA : question, context, answer -> generate similar answer2 with llm
+BeIR/bioasq-generated-queries : title (sometimes not good), text -> extract only runnable data
+
+* Finance
+next-tat/TAT-QA : 
+some other. But need to download them to see
+
+* Legal
+coastalcph/lex_glue : context -> query, context 2
+
+* 
+
+
+* General
+smollm
+
+
+## Oct 30
+
+- [x] Make make_query_and_less_relevant_keys_recs.py
 
 

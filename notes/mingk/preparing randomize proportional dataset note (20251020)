@@ -1,0 +1,418 @@
+# Process arguana dataset for test dataset of RMSearch training
+
+## Overview
+
+1. `process_data`: download data from huggingface and save it to local volume
+2. `make_query_recs`: from the data, make queries in records format about each data row. 
+3. `get_top_relevant_keys_embed.py`: Get top-relevant rows from dataframe by embedding model.
+4. `sample_dpo_batch.py`: Sample data rows from query_recs
+5. `Direct sampled_query_key_set.json -> dataset_list_test.json`: From query_key_set created from `sample_dpo_batch.py`, make dpo dataset.
+6. `lora_example.py`: Train reward model for the training.
+
+* Running order: 1 -> 2 -> 3 -> 4 -> 5 -> (start training from here)6 -> 7 -> 8
+
+
+## Install rmsearch
+
+```bash
+git clone https://github.com/kyotoai/RMSearch.git
+cd RMSearch
+pip install -r RMSearch/requirements.txt
+```
+
+
+## 1 `process_data`
+
+Download a dataset from HuggingFace, shuffle it, and materialise convenient CSV
+slices.
+
+```
+
+python3 - <<'PY'
+from datasets import load_dataset, load_dataset_builder
+from datasets import Dataset
+
+import random, time
+
+DATASETS_TO_LOAD = [
+    {"name": "mteb/arguana", "config": "queries", "split": "queries"},
+    {"name": "mteb/dbpedia", "config": "queries", "split": "queries"},
+    {"name": "mteb/climate-fever", "config": "queries", "split": "queries"},
+    {"name": "mteb/fever", "config": "queries", "split": "queries"},
+    {"name": "mteb/FiQA2018-NL", "config": "queries", "split": "queries"},
+    {"name": "mteb/hotpotqa", "config": "queries", "split": "queries"},
+    {"name": "mteb/nfcorpus", "config": "queries", "split": "queries"},
+    {"name": "mteb/msmarco", "config": "queries", "split": "queries"},
+    {"name": "mteb/quora", "config": "queries", "split": "queries"},
+    {"name": "mteb/nq", "config": "queries", "split": "queries"},
+    {"name": "mteb/scidocs", "config": "queries", "split": "queries"},
+    {"name": "mteb/scifact", "config": "queries", "split": "queries"},
+    {"name": "mteb/touche2020", "config": "queries", "split": "queries"},
+    {"name": "mteb/trec-covid", "config": "queries", "split": "queries"},
+]
+
+TOTAL_SAMPLES_WANTED = 100
+SEED = 42
+
+def get_dataset_sizes(dataset_configs):
+    """
+    Inspects dataset metadata to get the number of examples without downloading.
+    """
+    sizes = []
+    grand_total = 0
+    print("Step 1: Fetching dataset metadata to get sizes...")
+    for config in dataset_configs:
+        try:
+            builder_kwargs = {}
+            if config.get("config"):
+                builder_kwargs['name'] = config.get("config")
+            builder = load_dataset_builder(config["name"], **builder_kwargs)
+            size = builder.info.splits[config["split"]].num_examples
+            sizes.append({"name": config["name"], "size": size})
+            grand_total += size
+            print(f"  - Found '{config['name']}': {size:,} examples")
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"Could not get size for {config['name']}. Error: {e}")
+    print(f"\n=> Grand total across all datasets: {grand_total:,} examples.\n")
+    return sizes, grand_total
+
+def calculate_samples_per_dataset(dataset_sizes, total_examples, total_wanted):
+    """
+    Calculates how many samples to take from each dataset proportionally.
+    Ensures that datasets with a very small proportion still get at least one sample.
+    Handles rounding to ensure the total is exactly what's wanted.
+    """
+    samples_to_take = []
+    print("Step 2: Calculating proportional samples for each dataset...")
+
+    if total_examples == 0:
+        print("Warning: Total size of all datasets is 0. No samples can be taken.")
+        return []
+
+    # Identify tiny datasets that would round to zero but have data
+    tiny_datasets = []
+    large_datasets = []
+    for ds_info in dataset_sizes:
+        if ds_info["size"] == 0:
+            continue # Skip empty datasets
+        proportion = ds_info["size"] / total_examples
+        num_samples_float = proportion * total_wanted
+        if 0 < num_samples_float < 1:
+            tiny_datasets.append(ds_info)
+        else:
+            large_datasets.append(ds_info)
+
+    # Allocate 1 sample to each tiny dataset
+    for ds_info in tiny_datasets:
+        original_config = next(c for c in DATASETS_TO_LOAD if c['name'] == ds_info['name'])
+        samples_to_take.append({"config": original_config, "num_samples": 1})
+
+    # Calculate remaining samples and total size for the rest
+    remaining_wanted = total_wanted - len(tiny_datasets)
+    remaining_total_examples = sum(ds["size"] for ds in large_datasets)
+
+    # Distribute the rest proportionally among the large datasets
+    if remaining_total_examples > 0 and remaining_wanted > 0:
+        samples_allocated = 0
+        for i, ds_info in enumerate(large_datasets):
+            proportion = ds_info["size"] / remaining_total_examples
+            
+            # For the last item, assign the remainder to avoid rounding errors
+            if i == len(large_datasets) - 1:
+                num_samples = remaining_wanted - samples_allocated
+            else:
+                num_samples = round(proportion * remaining_wanted)
+                samples_allocated += num_samples
+
+            original_config = next(c for c in DATASETS_TO_LOAD if c['name'] == ds_info['name'])
+            samples_to_take.append({"config": original_config, "num_samples": num_samples})
+    
+    # Print the final plan, sorted alphabetically for clarity
+    total_final_samples = 0
+    for plan in sorted(samples_to_take, key=lambda x: x['config']['name']):
+        ds_name = plan['config']['name']
+        num_samples = plan['num_samples']
+        ds_size = next((ds['size'] for ds in dataset_sizes if ds['name'] == ds_name), 0)
+        proportion = ds_size / total_examples if total_examples > 0 else 0
+        print(f"  - From '{ds_name}': Taking {num_samples} samples ({proportion:.2%})")
+        total_final_samples += num_samples
+
+    print(f"\n=> Total samples to be downloaded: {total_final_samples}\n")
+    # Sanity check to ensure the logic is correct
+    if total_final_samples != total_wanted and total_examples > 0:
+         print(f"Warning: Mismatch in total samples! Expected {total_wanted}, got {total_final_samples}")
+
+    return samples_to_take
+
+def stream_and_combine_datasets(sampling_plan):
+    """
+    Streams each dataset, shuffles it, takes the required number of samples,
+    and combines them into a final list.
+    """
+    combined_samples = []
+    print("Step 3: Streaming, shuffling, and sampling...")
+    
+    for plan in sampling_plan:
+        config = plan["config"]
+        num_samples = plan["num_samples"]
+
+        if num_samples == 0:
+            print(f"  - Skipping '{config['name']}' as no samples are needed.")
+            continue
+            
+        print(f"  - Processing '{config['name']}' for {num_samples} samples...")
+        try:
+            # Load the dataset in streaming mode
+            streamed_ds = load_dataset(
+                config["name"],
+                config.get("config"),
+                split=config["split"],
+                streaming=True
+            )
+
+            # Shuffle the stream and take the calculated number of samples
+            # A buffer_size is good practice for streaming shuffles
+            shuffled_subset = streamed_ds.shuffle(seed=SEED, buffer_size=1000).take(num_samples)
+
+            # Add the collected samples to our final list
+            combined_samples.extend(list(shuffled_subset))
+        except Exception as e:
+            print(f"Could not process {config['name']}. Error: {e}")
+            
+    return combined_samples
+
+
+if __name__ == "__main__":
+    # Step 1: Get the sizes of all datasets
+    sizes, total_size = get_dataset_sizes(DATASETS_TO_LOAD)
+
+    # Step 2: Determine how many samples to get from each one
+    sampling_plan = calculate_samples_per_dataset(sizes, total_size, TOTAL_SAMPLES_WANTED)
+
+    # Step 3: Execute the plan: stream, sample, and combine
+    final_dataset = stream_and_combine_datasets(sampling_plan)
+
+    # Step 4: Shuffle the final combined list for a perfect mix
+    print("\nStep 4: Shuffling the final combined dataset...")
+    random.seed(SEED)
+    random.shuffle(final_dataset)
+    
+    print(f"\n--- Success! ---")
+    print(f"Created a combined dataset with {len(final_dataset)} samples.")
+
+    ds = list(final_dataset)
+    ds = Dataset.from_list(ds)
+    df = ds.to_pandas()   
+    ds.save_to_disk(f"/workspace/Mingkwan/data/test")
+    df.to_csv(f"/workspace/Mingkwan/data/test/df.csv", index=False)    
+PY
+```
+
+## 2 `make_query_recs`
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import json
+import pandas as pd
+
+input_csv = "/workspace/Mingkwan/data/test/df.csv"
+output_path = Path("/workspace/Mingkwan/data/test/train_query_recs.json")
+
+df = pd.read_csv(input_csv)
+
+def _format_prompt(text: str) -> str:
+  return (
+      "Give me relevant score between query and sentence;\n\n"
+      f"Query:{question}\n\n"
+      f"Sentence:```{text}```"
+  )
+
+query_recs = []
+for df_id, query in enumerate(df["text"].to_list()):
+
+  query_recs.append(
+      {
+          "query": query,
+          "df_id": df_id,
+          "query-type": "arguana-normal",
+      }
+  )
+
+output_path.parent.mkdir(parents=True, exist_ok=True)
+output_path.write_text(json.dumps(query_recs, ensure_ascii=False, indent=2))
+PY
+```
+
+
+## 3 `get_top_relevant_keys_embed.py`
+
+Embed queries and keys with vLLM, score them with dot-product similarity, and
+store the top-N matches per query.
+
+cd RMSearch
+```bash
+python -m rmsearch.train.get_top_relevant_keys_embed \
+  --queries-json /workspace/Mingkwan/data/test/train_query_recs.json \
+  --keys-csv /workspace/Mingkwan/data/test/df.csv \
+  --key-column text \
+  --model-name /workspace/e5-mistral7b \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --k-key 100 \
+  --similarity-device cuda \
+  --output /workspace/Mingkwan/data/test/relevance_records_embed.json
+```
+
+**Arguments**
+- `--queries-json` / `--queries-csv`: Query inputs. The JSON path should point to `filtered_query_recs.json` (or a similar list of objects containing at least a `"query"` field, with optional `df_id` and `query-type`).
+- `--keys-json` / `--keys-csv`: Candidate key sentences; use `--key-json-field` / `--key-column` to pick the text field.
+- `--model-name`, `--tensor-parallel-size`, `--num-instances`, `--max-model-len`, `--max-num-seqs`, `--gpu-memory-utilization`: Embedding worker configuration passed to `vllm_embed`.
+- `--query-batch-size`, `--key-batch-size`: Batch sizes for embedding calls.
+- `--query-checkpoint`, `--key-checkpoint`: Optional JSONL checkpoints written during embedding.
+- `--similarity-device`: Device used for the matrix multiply when ranking (default `cpu`; pass `cuda` for GPU).
+- `--k-key`: Number of keys returned per query (default 50).
+- `--correct-ids-json`: Optional gold key indices aligned with the query order.
+- `--output`: Destination JSON for the relevance records (default `relevance_records_embed.json`).
+
+**Outputs**
+- JSON list mirroring the RM-based format with `query`, `query_id`, optional `df_id` / `query_type`, optional `correct_id`, and `"keys"` entries containing `key_id`, `key`, and cosine-like similarity scores.
+- Optional embedding checkpoints if the related flags are supplied.
+
+**Notices**
+- Embeddings are pulled through the vLLM embedding API (see `rmsearch/utils/vllm_embed.py`); ensure the model exposes embedding heads.
+- The similarity computation promotes tensors to the chosen device; large matrices may demand significant memory if you select `cuda`.
+- Provide non-empty query and key inputs; the script validates and aborts otherwise.
+
+
+
+
+
+## 4 `sample_dpo_batch.py`
+
+Sample pairs of relevant/df-sourced keys for DPO-style preference datasets.
+
+```bash
+python -m rmsearch.train.sample_dpo_batch \
+  --relevance-json /workspace/Mingkwan/data/test/relevance_records_embed.json \
+  --filtered-queries-json /workspace/Mingkwan/data/test/train_query_recs.json \
+  --source-csv /workspace/Mingkwan/data/test/df.csv \
+  --source-column text \
+  --output /workspace/Mingkwan/data/test/sampled_query_key_set.json
+```
+
+**Arguments**
+- `--relevance-json`: Optional path to the relevance records (RM or embedding variant). When omitted, two keys are uniformly sampled from the source CSV instead.
+- `--filtered-queries-json`: Optional metadata lookup (e.g. `filtered_query_recs.json`) to recover `df_id` / `query-type`.
+- `--source-csv`: DataFrame backing the df_id indices (defaults expect `df.csv`).
+- `--source-column`: Column within the DataFrame containing the key text (default `text`).
+- `--output`: Destination JSON for the sampled pairs (default `./data/smollm-corpus/sampled_query_key_set.json`).
+- `--random-seed`: Sampling seed (default 42).
+
+**Outputs**
+- `{output}`: JSON list where each entry includes `query`, `query_id`, `keys`, `key_ids`, and the propagated `query-type` when available. When no relevance file is provided, a single placeholder query with two randomly sampled keys is emitted.
+- Example:
+```
+[
+  {
+    "query_id": 0,
+    "query": "...",
+    "key_ids": [0,1],
+    "keys": [
+      "sentence1",
+      "sentence2"
+    ]
+  }
+]
+```
+
+**Notices**
+- Sampling picks one key from the relevance results and one from the original df_id (when available); if no relevance file is supplied, two keys are drawn uniformly from the entire source CSV.
+
+
+
+## 5 `Direct sampled_query_key_set.json -> dataset_list_test.json`
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import json
+query_key_set_path = "/workspace/Mingkwan/data/test/sampled_query_key_set.json"
+output_path = Path("/workspace/Mingkwan/exp/dataset_list_test.json")
+
+with open(query_key_set_path) as f:
+  query_key_set = json.load(f)
+
+def _format_prompt(query: str, key: str) -> str:
+  return (
+      "Give me relevant score between query and sentence;\n\n"
+      f"Query:{query}\n\n"
+      f"Sentence:```{key}```"
+  )
+
+dataset_list = []
+for query_key_dict in query_key_set:
+  query_id = query_key_dict["query_id"]
+  query = query_key_dict["query"]
+  keys = query_key_dict["keys"]
+  key_ids = query_key_dict["key_ids"]
+
+  dataset_list.append(
+      {
+          "query_id": query_id,
+          "chosen_msg": [{"role": "user", "content": _format_prompt(query, keys[1])}],
+          "rejected_msg": [{"role": "user", "content": _format_prompt(query, keys[0])}],
+          "chosen_sentence_id": key_ids[1],
+          "rejected_sentence_id": key_ids[0],
+      }
+  )
+
+output_path.parent.mkdir(parents=True, exist_ok=True)
+output_path.write_text(json.dumps(dataset_list, ensure_ascii=False, indent=2))
+print(f"Wrote dataset list with {len(dataset_list)} entries to {output_path}")
+PY
+```
+
+
+
+## `lora_example.py`
+
+Fine-tune a reward model using TRL's `RewardTrainer` with LoRA adapters.
+
+```bash
+python -m rmsearch.train.lora_example \
+  --dataset-list-train /workspace/Mingkwan/exp/dataset_list_train.json \
+  --dataset-list-test /workspace/Mingkwan/exp/dataset_list_test.json \
+  --model-name /workspace/llama3b-rm \
+  --output-dir ./exp1/model1 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp1-lora
+```
+
+**Arguments**
+- `--dataset-list-train`: The preference dataset produced by `judge_dataset.py` (`dataset_list_train.json`).
+- `--dataset-list-test`: The preference dataset produced by `judge_dataset.py` (`dataset_list_test.json`).
+- `--model-name`: Base reward model checkpoint.
+- `--num-gpus`: Number of GPUs available for training (passed to `RMTrainer`).
+- `--output-dir`: Directory where LoRA checkpoints and logs are written.
+- `--base-dir`: Working directory for intermediate preprocessed datasets.
+
+**Outputs**
+- Checkpoints under `output-dir` (e.g. `checkpoint-XXXX`).
+- Preprocessed dataset shards in `base-dir`.
+- TRL training logs under `output-dir`.
+- Example dataset entry fed to TRL:
+  ```json
+  {
+    "chosen_msg": [{"role": "user", "content": "...positive sentence..."}],
+    "rejected_msg": [{"role": "user", "content": "...negative sentence..."}],
+    "chosen_sentence_id": 12,
+    "rejected_sentence_id": 45
+  }
+  ```
+
+**Notices**
+- Expects the base reward model weights and tokenizer to reside locally.
+- Training parameters mirror the notebook; adjust inside the script if you need different LoRA or training hyperparameters.
+- Long-running GPU job – monitor disk space for checkpoints.

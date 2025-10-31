@@ -9,3 +9,4 @@ vllm
 evaluate
 sentence_transformers
 wandb
+hf_transfer
