@@ -304,7 +304,8 @@ def _parse_outputs(
 ) -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
     for request_id, raw_output in outputs:
-
+        print()
+        print("raw_output: ", raw_output)
         original_text = texts[request_id]
         pair = instruction_map[request_id]
         terms = _extract_terms(original_text)
@@ -388,7 +389,7 @@ def make_query_and_less_relevant_keys_recs(
         return []
 
     print("n requests: ", len(prompts))
-    prompts= prompts[:24]
+    prompts = prompts[:8]
 
     outputs: List[Tuple[int, str]]
     if request_func is None:
@@ -450,6 +451,8 @@ def make_query_and_less_relevant_keys_recs(
     else:
         responses = _maybe_run_async(request_func(prompts))
         outputs = list(enumerate(responses))
+
+    print("outputs[0]: ", outputs[0])
 
     return _parse_outputs(outputs, texts, instruction_map, n_keys=n_key_generation)
 

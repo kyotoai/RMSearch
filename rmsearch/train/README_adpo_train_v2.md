@@ -89,6 +89,21 @@ python -m rmsearch.train.make_query_and_less_relevant_keys_recs \
   --output ./data/smollm-corpus/query_and_less_relevant_keys_recs.json
 ```
 
+
+```bash
+python -m rmsearch.train.make_query_and_less_relevant_keys_recs-gptoss \
+  --input-csv ./data/smollm-corpus/df.csv \
+  --text-column text \
+  --model-name /workspace/gpt-oss-20b \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --n-key-generation 5 \
+  --batch-size 8 \
+  --max-model-len 10000 \
+  --output ./data/smollm-corpus/make_query_and_less_relevant_keys_recs-gptoss.json
+```
+
+
 **Algorithm**
 1. Load all keys from df.csv
 2. Generate 1 query for every key in df.csv text-column and generate n_key_generation less_relevant_keys to the query which are ranged from a slightly less relevant key to the query than the original key to more irrelevant key. Follow
@@ -117,20 +132,53 @@ python -m rmsearch.train.make_query_and_less_relevant_keys_recs \
 
 
 
-## `make_query_and_less_relevant_keys_recs_gptoss.py`
+
+
+## `make_query_dpo_pairs.py`
+
+Generate a dataset with relevance-varient queries for a key. 
 
 ```bash
-python -m rmsearch.train.make_query_and_less_relevant_keys_recs_gptoss \
+python -m rmsearch.train.make_query_dpo_pairs \
   --input-csv ./data/smollm-corpus/df.csv \
   --text-column text \
   --model-name /workspace/gpt-oss-20b \
   --tensor-parallel-size 1 \
   --num-instances 1 \
-  --n-key-generation 5 \
+  --n-query-generation 5 \
   --batch-size 8 \
-  --max-model-len 20000 \
-  --output ./data/smollm-corpus/query_and_less_relevant_keys_recs_gptoss.json
+  --max-model-len 10000 \
+  --output ./data/smollm-corpus/query_and_less_relevant_keys_recs.json
 ```
+
+
+**Algorithm**
+1. Load all keys from df.csv
+2. For every key in df.csv text-column, generate n_query_generation queries ranged from the most relevant query to the key to more irrelevant key. Follow
+  * It should generate a different type of queries which varies in terms of their relevance to the key. Randomly pick query type from title/question/single-sentence/several-sentences/single-paragraph/sevral-paragraphs.
+  * Make 4 different instructions for making various queries. For each query-type, offer 4 different ways to generate the query. Ex. "Write a concise 5-7 word title capturing the key's core concept with active wording." You can refer to QUERY_VARIATIONS in make_query_and_less_relevant_keys_recs.py.
+  * Pick query-type and 4 different instructions randomly and make n_query_generation queries.
+  * IN THE PROMPT, MAKE SURE THAT THE QUERIES RELEVACE TO THE KEY BECOME: queries[0] > queries[1] > ... > queries[n_query_generation-1]. To make the qualitative dataset, this is the most important condition. Second, be sure to generate relevant queries, all of which are also relevant to the key to some extent. But queries[i] is slightly more relevant to the key in terms of their relevance to the deep meaning of the key.
+
+**Arguments**
+- Inherits the same CLI as `make_query_recs.py`; see above for detailed flag descriptions.
+
+**Outputs**
+- `{output}`: JSON list where each element contains `queries`, `key`, `df_id`, and `query-type`, covering every generated title/question/single-sentence/several-sentences/single-paragraph/sevral-paragraphs query.
+- Example entry:
+  ```json
+  [
+
+    {"queries": ["(The most relevant query)", "(Slightly less relevant query)", ... , "(The most irrelevant key)] , "key":"...", "df_id": 42, "query-types": ["title", "question", ...]},
+
+    {"queries": ["(The most relevant query)", "(Slightly less relevant query)", ... , "(The most irrelevant key)] , "key":"...", "df_id": 33, "query-types": ["question", "title", ...]},
+
+    ...
+  ]
+  ```
+
+**Notices**
+- Use the same method for LLM generation as `make_query_and_less_relevant_keys_recs-gptoss,py`.
 
 
 
