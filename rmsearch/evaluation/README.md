@@ -54,6 +54,20 @@ python -m rmsearch.evaluation.embed \
   --similarity-device auto
 ```
 
+```bash
+python -m rmsearch.evaluation.embed \
+  --query-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/query.csv \
+  --key-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/key.csv \
+  --pair-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/pair.csv \
+  --output ./nfcorpus/new_emb_results.json \
+  --model-name /workspace/e5-mistral7b \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --top-k 100 \
+  --similarity-device auto
+```
+
+
 **Highlights**
 - Shares batching and checkpointing logic with `rmsearch.utils.vllm_embed`.
 - Optional L2 normalisation before similarity to mimic cosine scoring.
@@ -91,9 +105,10 @@ python -m rmsearch.evaluation.rerank \
   --model-name /workspace/llama3b-rm-converted-model \
   --tensor-parallel-size 1 \
   --num-instances 1 \
-  --request-batch-size 128 \
   --timeout 10000
 ```
+
+
 
 **Highlights**
 - Reuses the notebook chat template (“Without Graph”) for consistent scoring.
