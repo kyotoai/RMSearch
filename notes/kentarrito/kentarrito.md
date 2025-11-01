@@ -606,3 +606,7 @@ smollm
 - [ ] 
 
 
+
+* When killing nohop
+`ps aux | grep accelerate`
+`kill -9 <pid>`

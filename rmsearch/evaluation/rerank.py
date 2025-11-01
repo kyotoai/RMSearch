@@ -131,7 +131,18 @@ def _load_embed_records(path: Path) -> List[Dict[str, object]]:
         key_ids = item.get("key_ids")
         if not isinstance(key_ids, list):
             raise TypeError(f"'key_ids' must be a list in {item!r}")
-        record: Dict[str, object] = {"query_id": query_id, "key_ids": [int(k) for k in key_ids]}
+        embed_relevances = item.get("embed_relevances")
+        if not isinstance(embed_relevances, list):
+            raise TypeError(f"'embed_relevances' must be a list in {item!r}")
+        resolved_key_ids = [int(k) for k in key_ids]
+        resolved_embed_scores = [float(score) for score in embed_relevances]
+        if len(resolved_key_ids) != len(resolved_embed_scores):
+            raise ValueError("'key_ids' and 'embed_relevances' must have the same length.")
+        record: Dict[str, object] = {
+            "query_id": query_id,
+            "key_ids": resolved_key_ids,
+            "embed_relevances": resolved_embed_scores,
+        }
         if "positive_key_ids" in item and isinstance(item["positive_key_ids"], list):
             record["positive_key_ids"] = [int(k) for k in item["positive_key_ids"]]
         records.append(record)
@@ -222,6 +233,7 @@ def rerank_candidates(
     requests: List[Dict[str, object]] = []
     id_maps: List[List[int]] = []
     request_query_ids: List[int] = []
+    embed_scores_by_request: List[List[float]] = []
 
     for record in embed_records:
         query_id = int(record["query_id"])
@@ -231,6 +243,9 @@ def rerank_candidates(
         candidate_ids = [int(k) for k in record["key_ids"]]  # type: ignore[index]
         if not candidate_ids:
             continue
+        embed_scores = [float(score) for score in record.get("embed_relevances", [])]  # type: ignore[arg-type]
+        if len(embed_scores) != len(candidate_ids):
+            raise ValueError(f"Embedding relevances for query {query_id} do not align with key ids.")
         key_texts: List[str] = []
         for kid in candidate_ids:
             key_text = key_text_by_id.get(kid)
@@ -240,6 +255,7 @@ def rerank_candidates(
         requests.append({"query": query_text, "keys": key_texts, "return_relevance": True})
         id_maps.append(candidate_ids)
         request_query_ids.append(query_id)
+        embed_scores_by_request.append(embed_scores)
 
     if not requests:
         rm.close()
@@ -260,7 +276,7 @@ def rerank_candidates(
 
     positive_lookup = positive_pairs or {}
     reranked: List[Dict[str, object]] = []
-    for req_query_id, result, original_ids in zip(request_query_ids, outputs, id_maps):
+    for req_query_id, result, original_ids, embed_scores in zip(request_query_ids, outputs, id_maps, embed_scores_by_request):
         ordered_ids: List[int] = []
         scores: List[float] = []
         for item in result.get("keys", []):
@@ -276,7 +292,8 @@ def rerank_candidates(
             "query_id": req_query_id,
             "pre_key_ids": pre_key_ids,
             "key_ids": ordered_ids[:limit],
-            "relevance": scores[:limit],
+            "embed_relevances": embed_scores,
+            "rerank_relevances": scores[:limit],
             "positive_key_ids": positive_lookup.get(req_query_id, []),
         }
         reranked.append(entry)
