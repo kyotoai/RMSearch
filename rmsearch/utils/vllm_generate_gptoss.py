@@ -29,6 +29,10 @@ except Exception:
 _clear_output = resolve_clear_output()
 _USE_TQDM = should_use_tqdm()
 
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # stable ordering
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"       # <- same as `export CUDA_VISIBLE_DEVICES=0,1`
+
+
 
 
 def extract_harmony_final(text: str) -> str:

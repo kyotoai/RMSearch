@@ -28,9 +28,9 @@ slices.
 ```bash
 python -m rmsearch.train.process_data \
   --dataset-name HuggingFaceTB/smollm-corpus \
-  --output-dir ./data/smollm-corpus \
+  --output-dir ./data/smollm-corpus6000 \
   --dataset-config cosmopedia-v2 \
-  --n-sample 1000 \
+  --n-sample 6000 \
   --stream
 ```
 
@@ -151,6 +151,20 @@ python -m rmsearch.train.make_query_dpo_pairs \
   --output ./data/smollm-corpus/query_dpo_pairs.json
 ```
 
+```bash
+nohup python -m rmsearch.train.make_query_dpo_pairs_v2 \
+  --input-csv ./data/smollm-corpus6000/df.csv \
+  --text-column text \
+  --model-name /workspace/gpt-oss-20b \
+  --tensor-parallel-size 1 \
+  --num-instances 3 \
+  --n-query-generation 5 \
+  --batch-size 20 \
+  --max-model-len 10000 \
+  --output ./data/smollm-corpus6000/query_dpo_pairs_easy.json \
+  > >(tee ./data_generate.log) 2>&1 &
+```
+
 
 **Algorithm**
 1. Load all keys from df.csv
@@ -190,8 +204,8 @@ python3 - <<'PY'
 from pathlib import Path
 import json
 query_dpo_pairs_path = "data/smollm-corpus/query_dpo_pairs.json"
-output_path_train = Path("exp4/dataset_list_train.json")
-output_path_test = Path("exp4/dataset_list_test.json")
+output_path_train = Path("exp5/dataset_list_train.json")
+output_path_test = Path("exp5/dataset_list_test.json")
 test_size = 50
 n_query = 5
 
