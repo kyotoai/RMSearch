@@ -41,6 +41,7 @@ When you train a model with lora and try to evaluate the model checkpoint, you n
 
 ```bash
 python -m rmsearch.evaluation.utils \
+  --type checkpoint \
   --check-point-path /workspace/Prakhar/exp5/model1/checkpoint-400 \
   --base-model-path /workspace/qwen4b-reranker \
   --model-path /workspace/qwen4b-reranker-exp5-model1-400
@@ -125,6 +126,32 @@ python -m rmsearch.evaluation.rerank \
 
 ```bash
 python -m rmsearch.evaluation.rerank \
+  --query-csv ./beir_out/scifact/query.csv \
+  --key-csv ./beir_out/scifact/key.csv \
+  --pair-csv ./beir_out/scifact/pair.csv \
+  --embed-json ./beir_out/scifact/relevance_dict_embed.json \
+  --output ./beir_out/scifact/relevance_dict_rerank_qwen4b.json \
+  --model-name /workspace/qwen4b-reranker \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --timeout 10000
+```
+
+```bash
+python -m rmsearch.evaluation.rerank \
+  --query-csv ./beir_out/scifact/query.csv \
+  --key-csv ./beir_out/scifact/key.csv \
+  --pair-csv ./beir_out/scifact/pair.csv \
+  --embed-json ./beir_out/scifact/relevance_dict_embed.json \
+  --output ./beir_out/scifact/relevance_dict_llama3b.json \
+  --model-name /workspace/llama3b-rm-converted-model \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --timeout 10000
+```
+
+```bash
+python -m rmsearch.evaluation.rerank_qwen4b \
   --query-csv ./beir_out/scifact/query.csv \
   --key-csv ./beir_out/scifact/key.csv \
   --pair-csv ./beir_out/scifact/pair.csv \
