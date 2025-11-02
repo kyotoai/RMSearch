@@ -4,9 +4,28 @@ from pathlib import Path
 import time, os
 import torch
 import argparse
-base_model_name = "/workspace/llama3b-rm"
-checkpoint_path = "exp3/model1/checkpoint-40"
-model_name = "exp3-model1-step40"
+
+'''
+
+Examples:
+
+1. When converting checkpoint to model compatible with rmsearch.utils.vllm_reward.py
+```bash
+python -m rmsearch.evaluation.utils \
+  --type checkpoint \
+  --check-point-path /workspace/Prakhar/exp5/model1/checkpoint-400 \
+  --base-model-path /workspace/qwen4b-reranker \
+  --model-path /workspace/qwen4b-reranker-exp5-model1-400
+```
+
+2. When converting a model (reranker, reward, etc.) from huggingface to converted-model compatible with rmsearch.utils.vllm_reward.py
+```bash
+python -m rmsearch.evaluation.utils \
+  --type model \
+  --model-path /workspace/qwen4b-reranker
+```
+
+'''
 
 
 # You should custom the following function depending on your model
@@ -72,10 +91,21 @@ def convert_checkpoint(base_model_path, checkpoint_path, model_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate query sequences with controlled relevance drift for source keys.")
-    parser.add_argument("--check-point-path", type=Path, required=True, help="Checkpoint path after you train a reward model.")
-    parser.add_argument("--base-model-path", type=Path, required=True, help="Base reward model path to add lora weight to.")
+    parser.add_argument("--type", type=str, required=True, help="checkpoint or model.")
+    parser.add_argument("--check-point-path", type=Path, default=None, help="Checkpoint path after you train a reward model.")
+    parser.add_argument("--base-model-path", type=Path, default=None, help="Base reward model path to add lora weight to.")
     parser.add_argument("--model-path", type=Path, required=True, help="Path to save the converted reward model.")
+    parser.add_argument("--keep-original", type=bool, default=True, help="Path to save the converted reward model.")
     args = parser.parse_args()
 
-    convert_checkpoint(args.base_model_path, args.check_point_path, args.model_path)
+    if args.type == "checkpoint":
+        if not args.base_model_path or not args.base_model_path or not args.model_path:
+            raise Exception("provide check-point-path, base-model-path and model-path for type:checkpoint")
+        convert_checkpoint(args.base_model_path, args.check_point_path, args.model_path)
+    elif args.type == "model":
+        if not args.keep_original or not args.model_path:
+            raise Exception("provide check-point-path, base-model-path and model-path for type:checkpoint")
+        convert_model(args.model_path, keep_original_model=args.keep_original)
+    else:
+        raise Exception("type should be checkpoint or model")
 
