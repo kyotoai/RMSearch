@@ -1,0 +1,2 @@
+[console_scripts]
+my-tool = my_package.cli:main

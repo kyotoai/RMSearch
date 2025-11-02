@@ -9,63 +9,207 @@
 5. `Direct sampled_query_key_set.json -> dataset_list_test.json`: From query_key_set created from `sample_dpo_batch.py`, make dpo dataset.
 6. `lora_example.py`: Train reward model for the training.
 
-* Running order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
+* Running order: 1 -> 2 -> 3 -> 4 -> 5 -> (start training from here)6 -> 7 -> 8
 
 
 ## Install rmsearch
 
 ```bash
-git clone --branch develop https://github.com/kyotoai/RMSearch.git
-pip install -e RMSearch/
+git clone https://github.com/kyotoai/RMSearch.git
+cd RMSearch
+pip install -r RMSearch/requirements.txt
 ```
 
 
-## `process_data`
+## 1 `process_data`
 
 Download a dataset from HuggingFace, shuffle it, and materialise convenient CSV
 slices.
 
-```bash
-curl -L https://huggingface.co/datasets/mteb/arguana/resolve/main/corpus.jsonl -o data/arguana/corpus.jsonl
-curl -L https://huggingface.co/datasets/mteb/arguana/resolve/main/queries.jsonl -o data/arguana/queries.jsonl
 ```
 
-```bash
-python -m rmsearch.train.process_data \
-  --dataset-name mteb/arguana \
-  --split test \
-  --n-sample 100 \
-  --output-dir ./data/arguana \
-  --stream
-```
-
-```bash
 python3 - <<'PY'
-import json
-import pandas as pd
+from datasets import load_dataset, load_dataset_builder
+from datasets import Dataset
 
-df_corpus = pd.read_json('data/arguana/corpus.jsonl', lines=True)
-df_queries = pd.read_json('data/arguana/queries.jsonl', lines=True)
-df = pd.read_csv("./data/arguana/df.csv")
+import random, time
 
-# Ensure matching dtypes for IDs (optional but safe)
-df['_qid'] = df['query-id'].astype(str)
-df['_cid'] = df['corpus-id'].astype(str)
-q_map = df_queries.assign(_id=df_queries['_id'].astype(str)).set_index('_id')['text']
-c_map = df_corpus.assign(_id=df_corpus['_id'].astype(str)).set_index('_id')['text']
+DATASETS_TO_LOAD = [
+    {"name": "mteb/arguana", "config": "queries", "split": "queries"},
+    {"name": "mteb/dbpedia", "config": "queries", "split": "queries"},
+    {"name": "mteb/climate-fever", "config": "queries", "split": "queries"},
+    {"name": "mteb/fever", "config": "queries", "split": "queries"},
+    {"name": "mteb/FiQA2018-NL", "config": "queries", "split": "queries"},
+    {"name": "mteb/hotpotqa", "config": "queries", "split": "queries"},
+    {"name": "mteb/nfcorpus", "config": "queries", "split": "queries"},
+    {"name": "mteb/msmarco", "config": "queries", "split": "queries"},
+    {"name": "mteb/quora", "config": "queries", "split": "queries"},
+    {"name": "mteb/nq", "config": "queries", "split": "queries"},
+    {"name": "mteb/scidocs", "config": "queries", "split": "queries"},
+    {"name": "mteb/scifact", "config": "queries", "split": "queries"},
+    {"name": "mteb/touche2020", "config": "queries", "split": "queries"},
+    {"name": "mteb/trec-covid", "config": "queries", "split": "queries"},
+]
 
-df['query'] = df['_qid'].map(q_map)
-df['corpus'] = df['_cid'].map(c_map)
-df = df.drop(columns=['_qid', '_cid'])
+TOTAL_SAMPLES_WANTED = 100
+SEED = 42
 
-df.to_csv("./data/arguana/df2.csv")
+def get_dataset_sizes(dataset_configs):
+    """
+    Inspects dataset metadata to get the number of examples without downloading.
+    """
+    sizes = []
+    grand_total = 0
+    print("Step 1: Fetching dataset metadata to get sizes...")
+    for config in dataset_configs:
+        try:
+            builder_kwargs = {}
+            if config.get("config"):
+                builder_kwargs['name'] = config.get("config")
+            builder = load_dataset_builder(config["name"], **builder_kwargs)
+            size = builder.info.splits[config["split"]].num_examples
+            sizes.append({"name": config["name"], "size": size})
+            grand_total += size
+            print(f"  - Found '{config['name']}': {size:,} examples")
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"Could not get size for {config['name']}. Error: {e}")
+    print(f"\n=> Grand total across all datasets: {grand_total:,} examples.\n")
+    return sizes, grand_total
+
+def calculate_samples_per_dataset(dataset_sizes, total_examples, total_wanted):
+    """
+    Calculates how many samples to take from each dataset proportionally.
+    Ensures that datasets with a very small proportion still get at least one sample.
+    Handles rounding to ensure the total is exactly what's wanted.
+    """
+    samples_to_take = []
+    print("Step 2: Calculating proportional samples for each dataset...")
+
+    if total_examples == 0:
+        print("Warning: Total size of all datasets is 0. No samples can be taken.")
+        return []
+
+    # Identify tiny datasets that would round to zero but have data
+    tiny_datasets = []
+    large_datasets = []
+    for ds_info in dataset_sizes:
+        if ds_info["size"] == 0:
+            continue # Skip empty datasets
+        proportion = ds_info["size"] / total_examples
+        num_samples_float = proportion * total_wanted
+        if 0 < num_samples_float < 1:
+            tiny_datasets.append(ds_info)
+        else:
+            large_datasets.append(ds_info)
+
+    # Allocate 1 sample to each tiny dataset
+    for ds_info in tiny_datasets:
+        original_config = next(c for c in DATASETS_TO_LOAD if c['name'] == ds_info['name'])
+        samples_to_take.append({"config": original_config, "num_samples": 1})
+
+    # Calculate remaining samples and total size for the rest
+    remaining_wanted = total_wanted - len(tiny_datasets)
+    remaining_total_examples = sum(ds["size"] for ds in large_datasets)
+
+    # Distribute the rest proportionally among the large datasets
+    if remaining_total_examples > 0 and remaining_wanted > 0:
+        samples_allocated = 0
+        for i, ds_info in enumerate(large_datasets):
+            proportion = ds_info["size"] / remaining_total_examples
+            
+            # For the last item, assign the remainder to avoid rounding errors
+            if i == len(large_datasets) - 1:
+                num_samples = remaining_wanted - samples_allocated
+            else:
+                num_samples = round(proportion * remaining_wanted)
+                samples_allocated += num_samples
+
+            original_config = next(c for c in DATASETS_TO_LOAD if c['name'] == ds_info['name'])
+            samples_to_take.append({"config": original_config, "num_samples": num_samples})
+    
+    # Print the final plan, sorted alphabetically for clarity
+    total_final_samples = 0
+    for plan in sorted(samples_to_take, key=lambda x: x['config']['name']):
+        ds_name = plan['config']['name']
+        num_samples = plan['num_samples']
+        ds_size = next((ds['size'] for ds in dataset_sizes if ds['name'] == ds_name), 0)
+        proportion = ds_size / total_examples if total_examples > 0 else 0
+        print(f"  - From '{ds_name}': Taking {num_samples} samples ({proportion:.2%})")
+        total_final_samples += num_samples
+
+    print(f"\n=> Total samples to be downloaded: {total_final_samples}\n")
+    # Sanity check to ensure the logic is correct
+    if total_final_samples != total_wanted and total_examples > 0:
+         print(f"Warning: Mismatch in total samples! Expected {total_wanted}, got {total_final_samples}")
+
+    return samples_to_take
+
+def stream_and_combine_datasets(sampling_plan):
+    """
+    Streams each dataset, shuffles it, takes the required number of samples,
+    and combines them into a final list.
+    """
+    combined_samples = []
+    print("Step 3: Streaming, shuffling, and sampling...")
+    
+    for plan in sampling_plan:
+        config = plan["config"]
+        num_samples = plan["num_samples"]
+
+        if num_samples == 0:
+            print(f"  - Skipping '{config['name']}' as no samples are needed.")
+            continue
+            
+        print(f"  - Processing '{config['name']}' for {num_samples} samples...")
+        try:
+            # Load the dataset in streaming mode
+            streamed_ds = load_dataset(
+                config["name"],
+                config.get("config"),
+                split=config["split"],
+                streaming=True
+            )
+
+            # Shuffle the stream and take the calculated number of samples
+            # A buffer_size is good practice for streaming shuffles
+            shuffled_subset = streamed_ds.shuffle(seed=SEED, buffer_size=1000).take(num_samples)
+
+            # Add the collected samples to our final list
+            combined_samples.extend(list(shuffled_subset))
+        except Exception as e:
+            print(f"Could not process {config['name']}. Error: {e}")
+            
+    return combined_samples
+
+
+if __name__ == "__main__":
+    # Step 1: Get the sizes of all datasets
+    sizes, total_size = get_dataset_sizes(DATASETS_TO_LOAD)
+
+    # Step 2: Determine how many samples to get from each one
+    sampling_plan = calculate_samples_per_dataset(sizes, total_size, TOTAL_SAMPLES_WANTED)
+
+    # Step 3: Execute the plan: stream, sample, and combine
+    final_dataset = stream_and_combine_datasets(sampling_plan)
+
+    # Step 4: Shuffle the final combined list for a perfect mix
+    print("\nStep 4: Shuffling the final combined dataset...")
+    random.seed(SEED)
+    random.shuffle(final_dataset)
+    
+    print(f"\n--- Success! ---")
+    print(f"Created a combined dataset with {len(final_dataset)} samples.")
+
+    ds = list(final_dataset)
+    ds = Dataset.from_list(ds)
+    df = ds.to_pandas()   
+    ds.save_to_disk(f"/workspace/Mingkwan/data/test")
+    df.to_csv(f"/workspace/Mingkwan/data/test/df.csv", index=False)    
 PY
 ```
 
-
-
-
-## `make_query_recs`
+## 2 `make_query_recs`
 
 ```bash
 python3 - <<'PY'
@@ -73,8 +217,8 @@ from pathlib import Path
 import json
 import pandas as pd
 
-input_csv = "data/arguana/df2.csv"
-output_path = Path("data/arguana/query_recs.json")
+input_csv = "/workspace/Mingkwan/data/test/df.csv"
+output_path = Path("/workspace/Mingkwan/data/test/train_query_recs.json")
 
 df = pd.read_csv(input_csv)
 
@@ -86,7 +230,7 @@ def _format_prompt(text: str) -> str:
   )
 
 query_recs = []
-for df_id, query in enumerate(df["query"].to_list()):
+for df_id, query in enumerate(df["text"].to_list()):
 
   query_recs.append(
       {
@@ -102,22 +246,23 @@ PY
 ```
 
 
-## `get_top_relevant_keys_embed.py`
+## 3 `get_top_relevant_keys_embed.py`
 
 Embed queries and keys with vLLM, score them with dot-product similarity, and
 store the top-N matches per query.
 
+cd RMSearch
 ```bash
 python -m rmsearch.train.get_top_relevant_keys_embed \
-  --queries-json ./data/arguana/query_recs.json \
-  --keys-csv ./data/arguana/df2.csv \
-  --key-column corpus \
+  --queries-json /workspace/Mingkwan/data/test/train_query_recs.json \
+  --keys-csv /workspace/Mingkwan/data/test/df.csv \
+  --key-column text \
   --model-name /workspace/e5-mistral7b \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --k-key 100 \
   --similarity-device cuda \
-  --output ./data/arguana/relevance_records_embed.json
+  --output /workspace/Mingkwan/data/test/relevance_records_embed.json
 ```
 
 **Arguments**
@@ -144,17 +289,17 @@ python -m rmsearch.train.get_top_relevant_keys_embed \
 
 
 
-## `sample_dpo_batch.py`
+## 4 `sample_dpo_batch.py`
 
 Sample pairs of relevant/df-sourced keys for DPO-style preference datasets.
 
 ```bash
 python -m rmsearch.train.sample_dpo_batch \
-  --relevance-json ./data/arguana/relevance_records_embed.json \
-  --filtered-queries-json ./data/arguana/query_recs.json \
-  --source-csv ./data/arguana/df2.csv \
-  --source-column corpus \
-  --output ./data/arguana/sampled_query_key_set.json
+  --relevance-json /workspace/Mingkwan/data/test/relevance_records_embed.json \
+  --filtered-queries-json /workspace/Mingkwan/data/test/train_query_recs.json \
+  --source-csv /workspace/Mingkwan/data/test/df.csv \
+  --source-column text \
+  --output /workspace/Mingkwan/data/test/sampled_query_key_set.json
 ```
 
 **Arguments**
@@ -187,14 +332,14 @@ python -m rmsearch.train.sample_dpo_batch \
 
 
 
-## `Direct sampled_query_key_set.json -> dataset_list_test.json`
+## 5 `Direct sampled_query_key_set.json -> dataset_list_test.json`
 
 ```bash
 python3 - <<'PY'
 from pathlib import Path
 import json
-query_key_set_path = "data/arguana/sampled_query_key_set.json"
-output_path = Path("exp1/dataset_list_test.json")
+query_key_set_path = "/workspace/Mingkwan/data/test/sampled_query_key_set.json"
+output_path = Path("/workspace/Mingkwan/exp/dataset_list_test.json")
 
 with open(query_key_set_path) as f:
   query_key_set = json.load(f)
@@ -237,10 +382,10 @@ Fine-tune a reward model using TRL's `RewardTrainer` with LoRA adapters.
 
 ```bash
 python -m rmsearch.train.lora_example \
-  --dataset-list-train ./exp1/dataset_list_train.json \
-  --dataset-list-test ./exp1/dataset_list_test.json \
+  --dataset-list-train /workspace/kentarrito/exp1/dataset_list_train.json \
+  --dataset-list-test /workspace/Mingkwan/exp/dataset_list_test.json \
   --model-name /workspace/llama3b-rm \
-  --output-dir ./exp1/model1 \
+  --output-dir /workspace/Mingkwan/exp/model1 \
   --wandb-project rmsearch \
   --wandb-run-name exp1-lora
 ```

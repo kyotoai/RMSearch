@@ -1,0 +1,9 @@
+transformers
+datasets
+trl==0.14.0
+peft
+pandas
+matplotlib
+vllm
+evaluate
+sentence_transformers

@@ -119,15 +119,17 @@ def process_data(
             random_seed=random_seed,
         )
 
-    load_kwargs = {
-        "split": split,
-        "streaming": stream,
-    }
+    # load_kwargs = {
+    #     "corpus",
+    #     split = "corpus",
+    #     streaming = True,
+    # }
     if dataset_config is not None:
         load_kwargs["name"] = dataset_config
 
     try:
-        dataset = load_dataset(dataset_name, **load_kwargs)
+        # dataset = load_dataset(dataset_name, **load_kwargs)
+        dataset = load_dataset(dataset_name, split, steaming = True )
     except Exception as exc:  # pragma: no cover - exercised in offline environments
         if _looks_like_connection_issue(exc):
             logger.warning(
