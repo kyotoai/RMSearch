@@ -780,6 +780,7 @@ def train_reward_model(
 
     trainer.add_callback(PreciseLrCallback())
     install_wandb_gradnorm_logger(trainer) 
+    # trainer.train(resume_from_checkpoint="/workspace/exp2/model1/checkpoint-280") #for chekpoint [not tested]
     trainer.train()
 
 

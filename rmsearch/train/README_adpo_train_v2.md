@@ -404,6 +404,9 @@ nohup accelerate launch --config_file ./accelerate_config.yaml -m rmsearch.train
 ## for new dataset (dataset cerated by Kentaro with GPTOSS20b + extra data)
 nohup accelerate launch --config_file ./accelerate_config.yaml -m rmsearch.train.adpo_lora_example --dataset-list-train ./exp5/dataset_list_train.json --dataset-list-test ./exp5/dataset_list_test.json --model-name /workspace/data/qwen4b-reranker/ --output-dir ./exp5/model1 --wandb-project rmsearch --wandb-run-name exp5-adpo-lora-qwen4b-new-dataset > >(tee ./train.log) 2>&1
 
+## llama
+
+nohup accelerate launch --config_file ./accelerate_config.yaml -m rmsearch.train.adpo_lora_example --dataset-list-train ./exp5/dataset_list_train.json --dataset-list-test ./exp5/dataset_list_test.json --model-name /workspace/data/llama3b-rm --output-dir ./exp5/modelLlama/ --wandb-project rmsearch --wandb-run-name exp5-adpo-lora-llama3b-new-dataset > >(tee ./train.log) 2>&1
 
 ## Why the first few steps look bad
 We’re training in fp16, so PyTorch/HF use dynamic loss scaling: they start with a big scale (≈ 65,536) to stop tiny fp16 gradients from underflowing. On our job the first batches are very heavy ([B, 5, 4000]), so when that big scale is applied the backward pass overflows and the gradients become inf. The AMP scaler detects this, skips the update, and lowers the scale on the next steps — exactly what you see. After 2–3 steps the scale is small enough, gradients become finite, so the optimizer + LR scheduler can finally step, and the logged LR starts increasing. This is normal fp16 behaviour on large batches. Can be seen in the run https://wandb.ai/kyoto-ai/rmsearch/workspace?nw=nwuserkyotoai . (under grad_scale)
