@@ -18,6 +18,7 @@ from accelerate.utils import broadcast_object_list
 import torch.distributed as dist
 from .utils import extract_int, extract_text
 
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["HF_DATASETS_DISABLE_PARALLEL"] = "1"
 # dist.init_process_group("gloo")  #use gloo backend if NCCL is misbehaving (<2 GPU)
@@ -513,6 +514,25 @@ def make_dataset_list(
     return dataset_list
 
 
+from transformers import TrainerCallback
+
+class PreciseLrCallback(TrainerCallback):
+    def on_step_end(self, args, state, control, **kwargs):
+        # kwargs usually has optimizer and lr_scheduler
+        lr_scheduler = kwargs.get("lr_scheduler", None)
+        optimizer = kwargs.get("optimizer", None)
+
+        if lr_scheduler is not None:
+            lr = lr_scheduler.get_last_lr()[0]
+        elif optimizer is not None:
+            lr = optimizer.param_groups[0]["lr"]
+        else:
+            return
+
+        # print to console with high precision
+        print(f"[step {state.global_step}] lr={lr:.10f}")
+
+
 def train_reward_model(
     dataset_list_train: Sequence[Dict[str, object]],
     *,
@@ -628,7 +648,12 @@ def train_reward_model(
 
     evaluation_strategy = "steps" if eval_dataset is not None else "no"
 
+
+  
+
     print("taining loop start")
+
+
     training_args = TrainingArguments(
         output_dir=str(output_dir),
         run_name=wandb_run_name,
@@ -638,13 +663,14 @@ def train_reward_model(
         eval_steps=evaluation_steps,
         optim="paged_adamw_8bit",   # if bitsandbytes is present
         torch_compile=True, 
-        learning_rate=1e-4,              # "high" for LoRA;
+        learning_rate=8e-5,              # "high" for LoRA;
         weight_decay=0.05,               # small regularization helps with high LR
         lr_scheduler_type="cosine",      # good default for high LR
-        # warmup_ratio=0.005,               # ~6% of total steps as warmup (or set warmup_steps)
-        warmup_steps=40,             # use this instead of warmup_ratio if you prefer a fixed warmup
+        # lr_scheduler_kwargs={"num_cycles": 4},
+        warmup_steps=40,           
         max_grad_norm=1.0, 
         fp16=True,
+        # fp16_init_scale=8192,     # instead of 65536 for no overflow of initial loss [not available]
         eval_on_start=bool(eval_dataset),
         save_strategy="steps",
         save_steps=save_steps,
@@ -746,12 +772,13 @@ def train_reward_model(
                         payload["grad_scale"] = float(scaler.get_scale())
                     except Exception:
                         pass
-                wandb.log(payload, step=trainer.state.global_step)
+                wandb.log(payload)
 
             return pre
 
         accel.clip_grad_norm_ = wrapped_clip_grad_norm_
 
+    trainer.add_callback(PreciseLrCallback())
     install_wandb_gradnorm_logger(trainer) 
     trainer.train()
 
@@ -831,7 +858,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num-train-epochs",
         type=int,
-        default=50,
+        default=10,
         help="Number of epochs to train the reward model.",
     )
     parser.add_argument(
