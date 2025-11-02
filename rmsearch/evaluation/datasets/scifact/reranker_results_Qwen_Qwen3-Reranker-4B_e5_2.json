@@ -1,0 +1,30 @@
+{
+  "dataset": "scifact",
+  "embedding_model": "intfloat/e5-mistral-7b-instruct",
+  "reranker_model": "Qwen/Qwen3-Reranker-4B",
+  "ndcg": {
+    "NDCG@1": 0.01,
+    "NDCG@3": 0.01068,
+    "NDCG@5": 0.01845,
+    "NDCG@10": 0.02507
+  },
+  "map": {
+    "MAP@1": 0.0075,
+    "MAP@3": 0.00883,
+    "MAP@5": 0.01295,
+    "MAP@10": 0.0156
+  },
+  "recall": {
+    "Recall@1": 0.0075,
+    "Recall@3": 0.0115,
+    "Recall@5": 0.02978,
+    "Recall@10": 0.04961
+  },
+  "precision": {
+    "P@1": 0.01,
+    "P@3": 0.00556,
+    "P@5": 0.00933,
+    "P@10": 0.00733
+  },
+  "num_queries": 300
+}

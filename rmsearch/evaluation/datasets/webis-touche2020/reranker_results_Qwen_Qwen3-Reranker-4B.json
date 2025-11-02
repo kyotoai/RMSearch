@@ -1,0 +1,30 @@
+{
+  "dataset": "webis-touche2020",
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "reranker_model": "Qwen/Qwen3-Reranker-4B",
+  "ndcg": {
+    "NDCG@1": 0.13265,
+    "NDCG@3": 0.17608,
+    "NDCG@5": 0.18229,
+    "NDCG@10": 0.19823
+  },
+  "map": {
+    "MAP@1": 0.00976,
+    "MAP@3": 0.03359,
+    "MAP@5": 0.0519,
+    "MAP@10": 0.07797
+  },
+  "recall": {
+    "Recall@1": 0.00976,
+    "Recall@3": 0.04834,
+    "Recall@5": 0.07722,
+    "Recall@10": 0.15313
+  },
+  "precision": {
+    "P@1": 0.14286,
+    "P@3": 0.21088,
+    "P@5": 0.20408,
+    "P@10": 0.20408
+  },
+  "num_queries": 49
+}

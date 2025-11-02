@@ -41,3 +41,25 @@ rmsearch/train/__pycache__/
 
 # Personal
 code
+models/Pra1_1240-converted-model/model-00001-of-00003.safetensors
+.gitignore
+.gitignore
+.gitignore
+models/Pra1_1240-converted-model/model-00002-of-00003.safetensors
+models/Pra1_1240-converted-model/model-00003-of-00003.safetensors
+models/Pra1_1240-converted-model/chat_template.jinja
+models/Pra1_1240-converted-model/score.pt
+rmsearch/evaluation/datasets/webis-touche2020/embeddings_cache/query_ids_BAAI_bge-small-en-v1.5.json
+rmsearch/evaluation/datasets/webis-touche2020/embeddings_cache/doc_ids_BAAI_bge-small-en-v1.5.json
+models/Pra1_1240-converted-model/tokenizer.json
+rmsearch/evaluation/datasets/fiqa/embeddings_cache/doc_embeddings_BAAI_bge-small-en-v1.5.npy
+rmsearch/evaluation/datasets/fiqa/embeddings_cache/query_embeddings_BAAI_bge-small-en-v1.5.npy
+rmsearch/evaluation/datasets/scifact/embeddings_cache/doc_embeddings_intfloat_e5-mistral-7b-instruct.npy
+rmsearch/evaluation/datasets/scifact/embeddings_cache/doc_embeddings_BAAI_bge-small-en-v1.5.npy
+rmsearch/evaluation/datasets/nfcorpus/embeddings_cache/query_embeddings_BAAI_bge-small-en-v1.5.npy
+rmsearch/evaluation/datasets/scifact/embeddings_cache/query_embeddings_BAAI_bge-small-en-v1.5.npy
+rmsearch/evaluation/datasets/scifact/embeddings_cache/query_embeddings_intfloat_e5-mistral-7b-instruct.npy
+rmsearch/evaluation/datasets/nfcorpus_run_take1.trec
+rmsearch/evaluation/datasets/trec-covid/embeddings_cache/query_embeddings_BAAI_bge-small-en-v1.5.npy
+rmsearch/evaluation/datasets/webis-touche2020/embeddings_cache/query_embeddings_BAAI_bge-small-en-v1.5.npy
+rmsearch/evaluation/datasets/webis-touche2020/embeddings_cache/doc_embeddings_BAAI_bge-small-en-v1.5.npy
