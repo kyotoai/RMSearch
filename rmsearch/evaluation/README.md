@@ -1,5 +1,45 @@
-# RMSearch Evaluation Utilities
+# Run evalaute
 
+python rmsearch/evaluation/evaluate_retrieval.py run \
+  --model hf \
+  --hf_model_name BAAI/bge-large-en-v1.5 \
+  --corpus_file /workspace/Mingkwan/RMSearch/beir_out/scifact/key.csv \
+  --queries_file /workspace/Mingkwan/RMSearch/beir_out/scifact/query.csv \
+  --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv \
+  --output_file /workspace/Mingkwan/RMSearch/beir_out/scifact/hf/rel_emb.json \
+  --top_k 100 
+
+### Install hf_transfer
+# This command runs the reranker on the candidates we just created
+python rmsearch/evaluation/reranker_run.py \
+  --candidate_results_file /workspace/Mingkwan/RMSearch/beir_out/scifact/hf/rel_emb.json \
+  --corpus_file /workspace/Mingkwan/RMSearch/beir_out/scifact/key.csv \
+  --queries_file /workspace/Mingkwan/RMSearch/beir_out/scifact/query.csv \
+  --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv \
+  --reranker_model_name Qwen/Qwen3-Reranker-4B \
+  --top_k 10 \
+  --trust_remote_code 
+
+This will load `zeroentropy/zerank-1`, rerank the top 100 documents from `candidates_bge.json`, save the new Top 10 results to `results/reranked_zeroentropy_zerank-1.json`, and then print the final evaluation scores.
+
+python evaluate_retrieval.py evaluate  --results_file /workspace/Mingkwan/RMSearch/beir_out/scifact/relevance_dict_rerank.json 
+--qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv
+
+#this doesnt work because we need a tab instead of comma (can be fix)
+
+python rmsearch/evaluation/evaluate_retrieval.py run --model hf --hf_model_name
+
+"""
+python rmsearch/evaluation/evaluate_retrieval.py evaluate --results_file /workspace/Mingkwan/RMSearch/beir_out/scifact/relevance_dict_adj_rerank240.json --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv
+"""
+
+python rmsearch/evaluation/evaluate_retrieval.py evaluate --results_file /workspace/Mingkwan/RMSearch/results/reranked_Qwen_Qwen3-Reranker-4B.json --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv
+
+python rmsearch/evaluation/evaluate_retrieval.py evaluate --results_file /workspace/Mingkwan/RMSearch/beir_out/scifact/openai/relevant_dict_openai.json --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv
+
+python rmsearch/evaluation/evaluate_retrieval.py evaluate --results_file /workspace/Mingkwan/RMSearch/beir_out/scifact/relevance_dict_adj_rerank.json --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv
+
+# RMSearch Evaluation Utilities 
 Utilities in `rmsearch.evaluation` reproduce the notebook evaluation
 pipeline from the CLI. They materialise BEIR-style splits, build embedding
 candidate sets, and optionally rerank those candidates with a reward model.
@@ -34,20 +74,6 @@ python -m rmsearch.evaluation.process_data \
 Both scripts fall back to deterministic stub outputs when the dataset cannot
 be downloaded.
 
-
-## Model Conversion (Optional)
-
-When you train a model with lora and try to evaluate the model checkpoint, you need to convert the checkpoint to the right format.
-
-```bash
-python -m rmsearch.evaluation.utils \
-  --type checkpoint \
-  --check-point-path /workspace/Prakhar/exp5/model1/checkpoint-400 \
-  --base-model-path /workspace/qwen4b-reranker \
-  --model-path /workspace/qwen4b-reranker-exp5-model1-400
-```
-
-
 ## `embed.py`
 
 Embed `query.csv` and `key.csv` with a vLLM embedding model and compute
@@ -57,30 +83,16 @@ written to `relevance_dict_embed.json` as
 
 ```bash
 python -m rmsearch.evaluation.embed \
-  --query-csv ./beir_out/scifact/query.csv \
-  --key-csv ./beir_out/scifact/key.csv \
-  --pair-csv ./beir_out/scifact/pair.csv \
-  --output ./beir_out/scifact/relevance_dict_embed.json \
-  --model-name /workspace/e5-mistral7b \
-  --tensor-parallel-size 1 \
-  --num-instances 1 \
-  --top-k 100 \
-  --similarity-device auto
-```
-
-```bash
-python -m rmsearch.evaluation.embed \
   --query-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/query.csv \
   --key-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/key.csv \
   --pair-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/pair.csv \
-  --output ./nfcorpus/new_emb_results.json \
+  --output /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/new_emb_results.json \
   --model-name /workspace/e5-mistral7b \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --top-k 100 \
   --similarity-device auto
 ```
-
 
 **Highlights**
 - Shares batching and checkpointing logic with `rmsearch.utils.vllm_embed`.
@@ -103,8 +115,6 @@ python -m rmsearch.evaluation.embed \
     }
     ```
 
-
-
 ## `rerank.py`
 
 Consume `relevance_dict_embed.json` and re-score each candidate set with a
@@ -113,55 +123,33 @@ embed file while adding `relevance` scores.
 
 ```bash
 python -m rmsearch.evaluation.rerank \
-  --query-csv ./beir_out/scifact/query.csv \
-  --key-csv ./beir_out/scifact/key.csv \
-  --pair-csv ./beir_out/scifact/pair.csv \
-  --embed-json ./beir_out/scifact/relevance_dict_embed.json \
-  --output ./beir_out/scifact/relevance_dict_rerank_exp5.json \
-  --model-name /workspace/qwen4b-reranker-exp5-model1-400 \
+  --query-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/query.csv \
+  --key-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/key.csv \
+  --pair-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/pair.csv \
+  --embed-json /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/new_emb_results.json \
+  --output /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/new_rerank_results.json \
+  --model-name /workspace/Prakhar/exp2/model1/checkpoint-120 \
   --tensor-parallel-size 1 \
   --num-instances 1 \
-  --timeout 10000
+  --request-batch-size 128 \
+  --timeout 100000
 ```
+I need to change the query, 
+key, 
+qrel to csv.
+also emb-json to another format
 
-```bash
 python -m rmsearch.evaluation.rerank \
   --query-csv ./beir_out/scifact/query.csv \
   --key-csv ./beir_out/scifact/key.csv \
   --pair-csv ./beir_out/scifact/pair.csv \
   --embed-json ./beir_out/scifact/relevance_dict_embed.json \
-  --output ./beir_out/scifact/relevance_dict_rerank_qwen4b.json \
-  --model-name /workspace/qwen4b-reranker \
-  --tensor-parallel-size 1 \
-  --num-instances 1 \
-  --timeout 10000
-```
-
-```bash
-python -m rmsearch.evaluation.rerank \
-  --query-csv ./beir_out/scifact/query.csv \
-  --key-csv ./beir_out/scifact/key.csv \
-  --pair-csv ./beir_out/scifact/pair.csv \
-  --embed-json ./beir_out/scifact/relevance_dict_embed.json \
-  --output ./beir_out/scifact/relevance_dict_llama3b.json \
+  --output ./beir_out/scifact/relevance_dict_rerank240.json \
   --model-name /workspace/llama3b-rm-converted-model \
   --tensor-parallel-size 1 \
   --num-instances 1 \
+  --request-batch-size 128 \
   --timeout 10000
-```
-
-```bash
-python -m rmsearch.evaluation.rerank_qwen4b \
-  --query-csv ./beir_out/scifact/query.csv \
-  --key-csv ./beir_out/scifact/key.csv \
-  --pair-csv ./beir_out/scifact/pair.csv \
-  --embed-json ./beir_out/scifact/relevance_dict_embed.json \
-  --output ./beir_out/scifact/relevance_dict_rerank_qwen4b.json \
-  --model-name /workspace/qwen4b-reranker \
-  --tensor-parallel-size 1 \
-  --num-instances 1 \
-  --timeout 10000
-```
 
 **Highlights**
 - Reuses the notebook chat template (“Without Graph”) for consistent scoring.
@@ -186,9 +174,6 @@ python -m rmsearch.evaluation.rerank_qwen4b \
     }
     ```
 
-
-
-
 ## `retrieval.py`
 
 Run the reward model across every query–key pair (or the legacy tag-tree
@@ -202,7 +187,7 @@ python -m rmsearch.evaluation.retrieval \
   --model-name /workspace/llama3b-rm-converted-model \
   --tensor-parallel-size 1 \
   --num-instances 4 \
-  --batch-size 512 \
+  --batch-size 256 \
   --k-key 100 \
   --output ./beir_out/scifact/relevance_dict.json
 ```
@@ -236,34 +221,6 @@ original notebook inputs (`df_small.csv`, `query_dict.json`, and
     }
     ```
 
-## `transform_pair.py`
-
-```bash
-python -m rmsearch.evaluation.transform_pair \
-  --input-file /workspace/kentarrito/beir_out/scifact/pair.csv \
-  --output-file /workspace/kentarrito/beir_out/scifact/qrels.tsv
-```
-
-## `transform_rerank_result.py`
-
-```bash
-python -m rmsearch.evaluation.transform_rerank_result
-```
-
-
-
-
-## `ndcg.py`
-
-a simpe script to run to evaluate the 'relevant_dict_rerank.json' file. 
-
-```bash
-pip install ijson
-pip install beir
-pip install flash_attn
-python -m rmsearch.evaluation.ndcg
-```
-Inside the file itself. We can adjust the items_to_print = 300 to match the number of queries. Also, adjustable filepath.
 ## Package Init
 
 `rmsearch/evaluation/__init__.py` re-exports the primary helpers so you can
