@@ -13,9 +13,28 @@ import pandas as pd
 
 from rmsearch.utils.vllm_reward import build_llm, search
 
+# Requires vllm>=0.8.5
+import logging
+from typing import Dict, Optional, List
+
+import json
+import logging
+
+import torch
+
+from transformers import AutoTokenizer, is_torch_npu_available
+from vllm import LLM, SamplingParams
+from vllm.distributed.parallel_state import destroy_model_parallel
+import gc
+import math
+from vllm.inputs.data import TokensPrompt
+
+
 __all__ = ["rerank_candidates"]
 
 logger = logging.getLogger(__name__)
+
+tokenizer = AutoTokenizer.from_pretrained('/workspace/qwen4b-reranker')
 
 
 def _load_json(path: Path):
@@ -192,6 +211,53 @@ def _parse_device_groups(spec: str | None, tensor_parallel_size: int, num_instan
     return groups
 
 
+
+
+
+
+
+        
+def format_instruction(instruction, query, doc):
+    text = [
+        {"role": "system", "content": "Judge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be \"yes\" or \"no\"."},
+        {"role": "user", "content": f"<Instruct>: {instruction}\n\n<Query>: {query}\n\n<Document>: {doc}"}
+    ]
+    return text
+
+def process_inputs(pairs, instruction, max_length, suffix_tokens):
+    messages = [format_instruction(instruction, query, doc) for query, doc in pairs]
+    messages =  tokenizer.apply_chat_template(
+        messages, tokenize=True, add_generation_prompt=False, enable_thinking=False
+    )
+    messages = [ele[:max_length] + suffix_tokens for ele in messages]
+    messages = [TokensPrompt(prompt_token_ids=ele) for ele in messages]
+    return messages
+
+def compute_logits(model, messages, sampling_params, true_token, false_token):
+    outputs = model.generate(messages, sampling_params, use_tqdm=False)
+    scores = []
+    for i in range(len(outputs)):
+        final_logits = outputs[i].outputs[0].logprobs[-1]
+        token_count = len(outputs[i].outputs[0].token_ids)
+        if true_token not in final_logits:
+            true_logit = -10
+        else:
+            true_logit = final_logits[true_token].logprob
+        if false_token not in final_logits:
+            false_logit = -10
+        else:
+            false_logit = final_logits[false_token].logprob
+        true_score = math.exp(true_logit)
+        false_score = math.exp(false_logit)
+        score = true_score / (true_score + false_score)
+        scores.append(score)
+    return scores
+
+
+
+
+
+
 def rerank_candidates(
     query_text_by_id: Mapping[int, str],
     key_text_by_id: Mapping[int, str],
@@ -209,6 +275,31 @@ def rerank_candidates(
     top_k: int | None = None,
     positive_pairs: Mapping[int, List[int]] | None = None,
 ) -> List[Dict[str, object]]:
+
+
+
+    number_of_gpu = torch.cuda.device_count()
+    
+    model = LLM(model='/workspace/qwen4b-reranker', tensor_parallel_size=number_of_gpu, max_model_len=10000, enable_prefix_caching=True, gpu_memory_utilization=0.8)
+    tokenizer.padding_side = "left"
+    tokenizer.pad_token = tokenizer.eos_token
+    suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    max_length=8192
+    suffix_tokens = tokenizer.encode(suffix, add_special_tokens=False)
+    true_token = tokenizer("yes", add_special_tokens=False).input_ids[0]
+    false_token = tokenizer("no", add_special_tokens=False).input_ids[0]
+    sampling_params = SamplingParams(temperature=0, 
+        max_tokens=1,
+        logprobs=20, 
+        allowed_token_ids=[true_token, false_token],
+    )
+
+            
+    task = 'Given a web search query, retrieve relevant passages that answer the query'
+    queries = []
+    documents = []
+
+
     if not query_text_by_id:
         raise ValueError("Query mapping is empty.")
     if not key_text_by_id:
@@ -217,23 +308,16 @@ def rerank_candidates(
         raise ValueError("Embedding rankings list is empty.")
 
     logger.info("Launching reward model %s for reranking", model_name)
-    rm = build_llm(
-        model_name=model_name,
-        tensor_parallel_size=tensor_parallel_size,
-        num_instances=num_instances,
-        device_groups=device_groups,
-        max_model_len=max_model_len,
-        max_num_seqs=max_num_seqs,
-        gpu_memory_utilization=gpu_memory_utilization,
-        runner="pooling",
-    )
-    tokenizer = rm.tokenizer
-    template_fn = _llm_template(tokenizer)
+
 
     requests: List[Dict[str, object]] = []
     id_maps: List[List[int]] = []
     request_query_ids: List[int] = []
     embed_scores_by_request: List[List[float]] = []
+
+    logger.info("Scoring %d requests with reward model", len(requests))
+
+    reranked: List[Dict[str, object]] = []
 
     for record in embed_records:
         query_id = int(record["query_id"])
@@ -257,46 +341,31 @@ def rerank_candidates(
         request_query_ids.append(query_id)
         embed_scores_by_request.append(embed_scores)
 
-    if not requests:
-        rm.close()
-        raise ValueError("No requests were constructed from embedding rankings.")
+        pairs = list(zip([query_text for _ in range(len(key_texts))], key_texts))
+        inputs = process_inputs(pairs, task, max_length-len(suffix_tokens), suffix_tokens)
+        scores = compute_logits(model, inputs, sampling_params, true_token, false_token)
+        #print("scores: ", len(scores), scores)
+        top_values, top_indices = torch.topk(torch.tensor(scores), k=10)
+        key_ids = []
+        top_scores = []
+        for i, id in enumerate(top_indices):
+            key_ids = []
+            key_id = record["key_ids"][id.item()]
+            key_ids.append(key_id)
+            top_scores.append(top_values[i].item())
 
-    logger.info("Scoring %d requests with reward model", len(requests))
-    try:
-        outputs = search(
-            rm,
-            requests,
-            template_fn,
-            topk=max(len(ids) for ids in id_maps),
-            batch_size=request_batch_size,
-            timeout_s=timeout_s,
-        )
-    finally:
-        rm.close()
-
-    positive_lookup = positive_pairs or {}
-    reranked: List[Dict[str, object]] = []
-    for req_query_id, result, original_ids, embed_scores in zip(request_query_ids, outputs, id_maps, embed_scores_by_request):
-        ordered_ids: List[int] = []
-        scores: List[float] = []
-        for item in result.get("keys", []):
-            local_id = int(item["key_id"])
-            if local_id < 0 or local_id >= len(original_ids):
-                continue
-            ordered_ids.append(original_ids[local_id])
-            scores.append(float(item.get("relevance", 0.0)))
-        pre_key_ids = list(original_ids)
-        limit = top_k if top_k is not None else len(ordered_ids)
-        limit = min(limit, len(ordered_ids))
         entry: Dict[str, object] = {
-            "query_id": req_query_id,
-            "pre_key_ids": pre_key_ids,
-            "key_ids": ordered_ids[:limit],
-            "embed_relevances": embed_scores,
-            "rerank_relevances": scores[:limit],
-            "positive_key_ids": positive_lookup.get(req_query_id, []),
+            "query_id": record["query_id"],
+            "pre_key_ids": record["key_ids"],
+            "key_ids": key_ids,
+            "embed_relevances": record["embed_relevances"],
+            "rerank_relevances": top_scores,
+            "positive_key_ids": record["positive_key_ids"],
         }
         reranked.append(entry)
+
+    destroy_model_parallel()
+
     return reranked
 
 

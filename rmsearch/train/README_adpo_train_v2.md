@@ -28,9 +28,9 @@ slices.
 ```bash
 python -m rmsearch.train.process_data \
   --dataset-name HuggingFaceTB/smollm-corpus \
-  --output-dir ./data/smollm-corpus \
+  --output-dir ./data/smollm-corpus6000 \
   --dataset-config cosmopedia-v2 \
-  --n-sample 1000 \
+  --n-sample 6000 \
   --stream
 ```
 
@@ -146,9 +146,23 @@ python -m rmsearch.train.make_query_dpo_pairs \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --n-query-generation 5 \
-  --batch-size 8 \
+  --batch-size 20 \
   --max-model-len 10000 \
   --output ./data/smollm-corpus/query_dpo_pairs.json
+```
+
+```bash
+nohup python -m rmsearch.train.make_query_dpo_pairs_v2 \
+  --input-csv ./data/smollm-corpus6000/df.csv \
+  --text-column text \
+  --model-name /workspace/gpt-oss-20b \
+  --tensor-parallel-size 1 \
+  --num-instances 3 \
+  --n-query-generation 5 \
+  --batch-size 20 \
+  --max-model-len 10000 \
+  --output ./data/smollm-corpus6000/query_dpo_pairs_easy.json \
+  > >(tee ./data_generate.log) 2>&1 &
 ```
 
 
@@ -183,17 +197,20 @@ python -m rmsearch.train.make_query_dpo_pairs \
 
 
 
-## `Direct adpo_sampled_query_key_set.json -> dataset_list_test.json`
+## `Direct query_dpo_pairs.json -> dataset_list_train.json, dataset_list_test.json`
 
 ```bash
 python3 - <<'PY'
 from pathlib import Path
 import json
-query_key_set_path = "data/smollm-corpus/adpo_sampled_query_key_set.json"
-output_path = Path("exp2/dataset_list_train.json")
+query_dpo_pairs_path = "data/smollm-corpus/query_dpo_pairs.json"
+output_path_train = Path("exp5/dataset_list_train.json")
+output_path_test = Path("exp5/dataset_list_test.json")
+test_size = 50
+n_query = 5
 
-with open(query_key_set_path) as f:
-  query_key_set = json.load(f)
+with open(query_dpo_pairs_path) as f:
+  query_dpo_pairs = json.load(f)
 
 def _format_prompt(query: str, key: str) -> str:
   return (
@@ -204,25 +221,26 @@ def _format_prompt(query: str, key: str) -> str:
 
 dataset_list = []
 n_error = 0
-for query_key_dict in query_key_set:
+for ds_id, query_dpo_pairs_dict in enumerate(query_dpo_pairs):
   try:
-    query_id = query_key_dict["query_id"]
-    query = query_key_dict["query"]
-    correspond_keys = query_key_dict["correspond_keys"]
-    correspond_key_ids = query_key_dict["correspond_key_ids"]
-    sampled_keys = query_key_dict["sampled_keys"]
-    sampled_key_ids = query_key_dict["sampled_key_ids"]
-    keys = correspond_keys + sampled_keys
-    key_ids = correspond_key_ids + sampled_key_ids
+    queries = query_dpo_pairs_dict["queries"]
+    key = query_dpo_pairs_dict["key"]
+    df_id = query_dpo_pairs_dict["df_id"]
+    query_types = query_dpo_pairs_dict["query-types"]
 
     batch = []
-    for i, key in enumerate(keys):
-      batch.append({"msg": [{"role": "user", "content": _format_prompt(query, key)}], "query_id":query_id, "key_id":key_ids[i]})
+    for query_id, query in enumerate(queries):
+      batch.append({"msg": [{"role": "user", "content": _format_prompt(query, key)}], "query_id":query_id, "key_id":df_id, "ds_id":ds_id})
+
+    n_queries = len(queries)
+
+    if n_queries < n_query:
+      raise Exception
 
     dpo_pairs = []
-    for c_id in range(len(correspond_key_ids)):
-      for s_id in range(len(sampled_key_ids)):
-        dpo_pairs.append([c_id, s_id + len(correspond_key_ids)])
+    for c_id in range(n_queries - 1):
+      for r_id in range(c_id + 1, n_queries):
+        dpo_pairs.append([c_id, r_id])
 
     dataset_list.append(
         {
@@ -246,77 +264,18 @@ for query_key_dict in query_key_set:
     print(e)
 
 print("n_error: ", n_error)
-output_path.parent.mkdir(parents=True, exist_ok=True)
-output_path.write_text(json.dumps(dataset_list, ensure_ascii=False, indent=2))
-print(f"Wrote dataset list with {len(dataset_list)} entries to {output_path}")
-PY
-```
 
+dataset_list_train = dataset_list[:-test_size]
+dataset_list_test = dataset_list[-test_size:]
 
-```bash
-python3 - <<'PY'
-from pathlib import Path
-import json
-query_key_set_path = "data/arguana/adpo_sampled_query_key_set.json"
-output_path = Path("exp2/dataset_list_test.json")
+print("len(dataset_list_train): ", len(dataset_list_train))
+print("len(dataset_list_test): ", len(dataset_list_test))
 
-with open(query_key_set_path) as f:
-  query_key_set = json.load(f)
-
-def _format_prompt(query: str, key: str) -> str:
-  return (
-      "Give me relevant score between query and sentence;\n\n"
-      f"Query:{query}\n\n"
-      f"Sentence:```{key}```"
-  )
-
-dataset_list = []
-n_error = 0
-for query_key_dict in query_key_set:
-  try:
-    query_id = query_key_dict["query_id"]
-    query = query_key_dict["query"]
-    correspond_keys = query_key_dict["correspond_keys"]
-    correspond_key_ids = query_key_dict["correspond_key_ids"]
-    sampled_keys = query_key_dict["sampled_keys"]
-    sampled_key_ids = query_key_dict["sampled_key_ids"]
-    keys = correspond_keys + sampled_keys
-    key_ids = correspond_key_ids + sampled_key_ids
-
-    batch = []
-    for i, key in enumerate(keys):
-      batch.append({"msg": [{"role": "user", "content": _format_prompt(query, key)}], "query_id":query_id, "key_id":key_ids[i]})
-
-    dpo_pairs = []
-    for c_id in range(len(correspond_key_ids)):
-      for s_id in range(len(sampled_key_ids)):
-        dpo_pairs.append([c_id, s_id + len(correspond_key_ids)])
-
-    dataset_list.append(
-        {
-            "batch": batch,
-            #[
-            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[1])}], "query_id":query_id, "key_id":},
-            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":},
-            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":}
-            #],
-            "dpo_pairs": dpo_pairs,
-            #[
-            #  [0,1],  # [(chosen_msg_id), (rejected_msg_id)]
-            #  [0,2],
-            #  [1,2]
-            #]
-        }
-    )
-  
-  except Exception as e:
-    n_error += 1
-    print(e)
-
-print("n_error: ", n_error)
-output_path.parent.mkdir(parents=True, exist_ok=True)
-output_path.write_text(json.dumps(dataset_list, ensure_ascii=False, indent=2))
-print(f"Wrote dataset list with {len(dataset_list)} entries to {output_path}")
+output_path_train.parent.mkdir(parents=True, exist_ok=True)
+output_path_test.parent.mkdir(parents=True, exist_ok=True)
+output_path_train.write_text(json.dumps(dataset_list_train, ensure_ascii=False, indent=2))
+output_path_test.write_text(json.dumps(dataset_list_test, ensure_ascii=False, indent=2))
+print(f"Wrote dataset list with {len(dataset_list)} entries to {output_path_train} and {output_path_test}")
 PY
 ```
 

@@ -34,6 +34,20 @@ python -m rmsearch.evaluation.process_data \
 Both scripts fall back to deterministic stub outputs when the dataset cannot
 be downloaded.
 
+
+## Model Conversion (Optional)
+
+When you train a model with lora and try to evaluate the model checkpoint, you need to convert the checkpoint to the right format.
+
+```bash
+python -m rmsearch.evaluation.utils \
+  --type checkpoint \
+  --check-point-path /workspace/Prakhar/exp5/model1/checkpoint-400 \
+  --base-model-path /workspace/qwen4b-reranker \
+  --model-path /workspace/qwen4b-reranker-exp5-model1-400
+```
+
+
 ## `embed.py`
 
 Embed `query.csv` and `key.csv` with a vLLM embedding model and compute
@@ -53,6 +67,20 @@ python -m rmsearch.evaluation.embed \
   --top-k 100 \
   --similarity-device auto
 ```
+
+```bash
+python -m rmsearch.evaluation.embed \
+  --query-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/query.csv \
+  --key-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/key.csv \
+  --pair-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/pair.csv \
+  --output ./nfcorpus/new_emb_results.json \
+  --model-name /workspace/e5-mistral7b \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --top-k 100 \
+  --similarity-device auto
+```
+
 
 **Highlights**
 - Shares batching and checkpointing logic with `rmsearch.utils.vllm_embed`.
@@ -75,6 +103,8 @@ python -m rmsearch.evaluation.embed \
     }
     ```
 
+
+
 ## `rerank.py`
 
 Consume `relevance_dict_embed.json` and re-score each candidate set with a
@@ -87,11 +117,49 @@ python -m rmsearch.evaluation.rerank \
   --key-csv ./beir_out/scifact/key.csv \
   --pair-csv ./beir_out/scifact/pair.csv \
   --embed-json ./beir_out/scifact/relevance_dict_embed.json \
-  --output ./beir_out/scifact/relevance_dict_rerank.json \
+  --output ./beir_out/scifact/relevance_dict_rerank_exp5.json \
+  --model-name /workspace/qwen4b-reranker-exp5-model1-400 \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --timeout 10000
+```
+
+```bash
+python -m rmsearch.evaluation.rerank \
+  --query-csv ./beir_out/scifact/query.csv \
+  --key-csv ./beir_out/scifact/key.csv \
+  --pair-csv ./beir_out/scifact/pair.csv \
+  --embed-json ./beir_out/scifact/relevance_dict_embed.json \
+  --output ./beir_out/scifact/relevance_dict_rerank_qwen4b.json \
+  --model-name /workspace/qwen4b-reranker \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --timeout 10000
+```
+
+```bash
+python -m rmsearch.evaluation.rerank \
+  --query-csv ./beir_out/scifact/query.csv \
+  --key-csv ./beir_out/scifact/key.csv \
+  --pair-csv ./beir_out/scifact/pair.csv \
+  --embed-json ./beir_out/scifact/relevance_dict_embed.json \
+  --output ./beir_out/scifact/relevance_dict_llama3b.json \
   --model-name /workspace/llama3b-rm-converted-model \
   --tensor-parallel-size 1 \
   --num-instances 1 \
-  --request-batch-size 128 \
+  --timeout 10000
+```
+
+```bash
+python -m rmsearch.evaluation.rerank_qwen4b \
+  --query-csv ./beir_out/scifact/query.csv \
+  --key-csv ./beir_out/scifact/key.csv \
+  --pair-csv ./beir_out/scifact/pair.csv \
+  --embed-json ./beir_out/scifact/relevance_dict_embed.json \
+  --output ./beir_out/scifact/relevance_dict_rerank_qwen4b.json \
+  --model-name /workspace/qwen4b-reranker \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
   --timeout 10000
 ```
 
@@ -117,6 +185,9 @@ python -m rmsearch.evaluation.rerank \
       "positive_key_ids": [7]
     }
     ```
+
+
+
 
 ## `retrieval.py`
 
@@ -165,12 +236,31 @@ original notebook inputs (`df_small.csv`, `query_dict.json`, and
     }
     ```
 
+## `transform_pair.py`
+
+```bash
+python -m rmsearch.evaluation.transform_pair \
+  --input-file /workspace/kentarrito/beir_out/scifact/pair.csv \
+  --output-file /workspace/kentarrito/beir_out/scifact/qrels.tsv
+```
+
+## `transform_rerank_result.py`
+
+```bash
+python -m rmsearch.evaluation.transform_rerank_result
+```
+
+
+
+
 ## `ndcg.py`
 
 a simpe script to run to evaluate the 'relevant_dict_rerank.json' file. 
 
 ```bash
 pip install ijson
+pip install beir
+pip install flash_attn
 python -m rmsearch.evaluation.ndcg
 ```
 Inside the file itself. We can adjust the items_to_print = 300 to match the number of queries. Also, adjustable filepath.

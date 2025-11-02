@@ -161,7 +161,7 @@ def build_relevance_dict(
     similarity_device: str = "cpu",
     query_checkpoint: Path | None = None,
     key_checkpoint: Path | None = None,
-) -> List[List[int]]:
+) -> Tuple[List[List[int]], List[List[float]]]:
     if not queries:
         raise ValueError("Query list is empty.")
     if not keys:
@@ -208,9 +208,9 @@ def build_relevance_dict(
     if k <= 0:
         raise ValueError("top_k must be positive.")
     scores, indices = torch.topk(relevance, k=k, dim=1)
-    del relevance, scores
+    del relevance
 
-    return indices.cpu().tolist()
+    return indices.cpu().tolist(), scores.cpu().tolist()
 
 
 def parse_args() -> argparse.Namespace:
@@ -271,7 +271,7 @@ def main() -> None:
         key_column=args.pair_key_column,
     ) if args.pair_csv else {}
 
-    indices = build_relevance_dict(
+    indices, scores = build_relevance_dict(
         queries,
         keys,
         model_name=args.model_name,
@@ -289,7 +289,7 @@ def main() -> None:
         key_checkpoint=args.key_checkpoint,
     )
 
-    if len(indices) != len(query_ids):
+    if len(indices) != len(query_ids) or len(scores) != len(query_ids):
         raise RuntimeError("Mismatch between embedded queries and loaded query ids.")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -297,9 +297,13 @@ def main() -> None:
     for idx, key_idx_list in enumerate(indices):
         query_id = int(query_ids[idx])
         resolved_key_ids = [int(key_ids[key_idx]) for key_idx in key_idx_list]
+        resolved_scores = [float(score) for score in scores[idx]]
+        if len(resolved_scores) != len(resolved_key_ids):
+            raise RuntimeError("Mismatch between resolved key ids and embedding relevances.")
         entry: Dict[str, object] = {
             "query_id": query_id,
             "key_ids": resolved_key_ids,
+            "embed_relevances": resolved_scores,
         }
         if positive_pairs:
             entry["positive_key_ids"] = positive_pairs.get(query_id, [])
