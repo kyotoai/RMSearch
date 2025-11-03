@@ -1,92 +1,28 @@
-# Run evalaute
+# Run evalaution
 
-python rmsearch/evaluation/evaluate_retrieval.py run \
-  --model hf \
-  --hf_model_name BAAI/bge-large-en-v1.5 \
-  --corpus_file /workspace/Mingkwan/RMSearch/beir_out/scifact/key.csv \
-  --queries_file /workspace/Mingkwan/RMSearch/beir_out/scifact/query.csv \
-  --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv \
-  --output_file /workspace/Mingkwan/RMSearch/beir_out/scifact/hf/rel_emb.json \
-  --top_k 100 
+Some checkpoints for you to consider before running evaluation
+- If your model hasn't been converted, it need to be convert with utils.py
+- This only work for BEIR dataset with ones that have a (0,1) score
+- If the dataset folder exist already, you might need to delete it first before running the scripts
+- The --output is the output you use as the input of rerank.py script, the --output-eval is for input of ndcg.py script (scoring)
 
-### Install hf_transfer
-# This command runs the reranker on the candidates we just created
-python rmsearch/evaluation/reranker_run.py \
-  --candidate_results_file /workspace/Mingkwan/RMSearch/beir_out/scifact/hf/rel_emb.json \
-  --corpus_file /workspace/Mingkwan/RMSearch/beir_out/scifact/key.csv \
-  --queries_file /workspace/Mingkwan/RMSearch/beir_out/scifact/query.csv \
-  --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv \
-  --reranker_model_name Qwen/Qwen3-Reranker-4B \
-  --top_k 10 \
-  --trust_remote_code 
+## Inital Setup
 
-This will load `zeroentropy/zerank-1`, rerank the top 100 documents from `candidates_bge.json`, save the new Top 10 results to `results/reranked_zeroentropy_zerank-1.json`, and then print the final evaluation scores.
-
-python evaluate_retrieval.py evaluate  --results_file /workspace/Mingkwan/RMSearch/beir_out/scifact/relevance_dict_rerank.json 
---qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv
-
-#this doesnt work because we need a tab instead of comma (can be fix)
-
-python rmsearch/evaluation/evaluate_retrieval.py run --model hf --hf_model_name
-
-"""
-python rmsearch/evaluation/evaluate_retrieval.py evaluate --results_file /workspace/Mingkwan/RMSearch/beir_out/scifact/relevance_dict_adj_rerank240.json --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv
-"""
-
-python rmsearch/evaluation/evaluate_retrieval.py evaluate --results_file /workspace/Mingkwan/RMSearch/results/reranked_Qwen_Qwen3-Reranker-4B.json --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv
-
-python rmsearch/evaluation/evaluate_retrieval.py evaluate --results_file /workspace/Mingkwan/RMSearch/beir_out/scifact/openai/relevant_dict_openai.json --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv
-
-python rmsearch/evaluation/evaluate_retrieval.py evaluate --results_file /workspace/Mingkwan/RMSearch/beir_out/scifact/relevance_dict_adj_rerank.json --qrels_file /workspace/Mingkwan/RMSearch/beir_out/scifact/qrels.csv
-
-# RMSearch Evaluation Utilities 
-Utilities in `rmsearch.evaluation` reproduce the notebook evaluation
-pipeline from the CLI. They materialise BEIR-style splits, build embedding
-candidate sets, and optionally rerank those candidates with a reward model.
-
-## Dataset Preparation
-
-Two options exist for producing the `query.csv`, `key.csv`, and `pair.csv`
-artifacts consumed by the downstream scripts:
-
-```bash
-# Convert BEIR datasets directly
-python rmsearch/evaluation/dataset/beir_to_pairs.py \
-  --outdir ./beir_out \
-  --split test \
-  scifact nq
-
-# Or download from HuggingFace using datasets.load_dataset
-python -m rmsearch.evaluation.process_data \
-  --dataset-name BeIR/fiqa \
-  --output-dir ./data/BeIR/fiqa \
-  --query-split queries \
-  --key-split corpus \
-  --pair-split qrels \
-  --max-queries 1000 \
-  --max-keys 5000
 ```
-
-- `query.csv`: ordered list of query records (`id`, `original_query_id`, `text`).
-- `key.csv`: ordered list of candidate sentence records (`id`, `original_key_id`, `text`).
-- `pair.csv`: positive relations between the two (`query_id`, `key_id`, plus originals).
-
-Both scripts fall back to deterministic stub outputs when the dataset cannot
-be downloaded.
+cd /workspace/Mingkwan/RMSearch
+source .venv/bin/activate
+#if any missing dependancies
+pip install -r rmsearch/evaluation/
+```
 
 ## `embed.py`
 
-Embed `query.csv` and `key.csv` with a vLLM embedding model and compute
-dot-product similarity to retrieve the top-N keys per query. Results are
-written to `relevance_dict_embed.json` as
-`{"query_id": int, "key_ids": [int, ...], "positive_key_ids": [...]}`.
-
 ```bash
 python -m rmsearch.evaluation.embed \
-  --query-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/query.csv \
-  --key-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/key.csv \
-  --pair-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/pair.csv \
-  --output /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/new_emb_results.json \
+  --dataset-path /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact \
+  --split test \
+  --output /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact/relevant_emb.json \
+  --output-eval /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact/relevant_emb_eval.json \
   --model-name /workspace/e5-mistral7b \
   --tensor-parallel-size 1 \
   --num-instances 1 \
@@ -95,140 +31,77 @@ python -m rmsearch.evaluation.embed \
 ```
 
 **Highlights**
-- Shares batching and checkpointing logic with `rmsearch.utils.vllm_embed`.
-- Optional L2 normalisation before similarity to mimic cosine scoring.
-- Automatically maps embedding indices back to the dataset ids.
+- Autmatically detect existance of dataset and download them if needed.
+- Output two separate json files for next step reranking and scoring with nDCGå
 - **Arguments**
-  - `--query-csv` / `--key-csv`: CSV artefacts generated by `beir_to_pairs.py` or `process_data.py`.
-  - `--pair-csv`: Optional positives to persist as `positive_key_ids`.
+  - `--dataset-path` path to your dataset
   - `--top-k`: Maximum number of keys kept per query (default `100`).
   - `--similarity-device`: Device used for the similarity matrix (`cpu`, `cuda`, or `auto`).
-  - Full list available via `python -m rmsearch.evaluation.embed --help`.
 - **Outputs**
-  - `relevance_dict_embed.json` containing ordered candidate ids per query.
+  - `relevance_emb.json` containing ordered candidate ids per query.
   - Example entry:
     ```json
     {
       "query_id": 42,
       "key_ids": [12, 7, 105, 3],
-      "positive_key_ids": [7]
+      "positive_key_ids": [7],
+      "embed_relevances": [0.6149212121963501]
+    }
+    ```
+
+  - `relevance_emb_eval.json` for evaluating with ndcg.py
+  - Example entry:
+    ```json
+    {
+  "0": {
+    "766": 0.6149212121963501,}
     }
     ```
 
 ## `rerank.py`
 
-Consume `relevance_dict_embed.json` and re-score each candidate set with a
-reward model to produce `relevance_dict_rerank.json`. The output mirrors the
+Consume `relevance_emb.json` and re-score each candidate set with a
+reward model to produce `relevance_rerank_eval.json`. The output mirrors the
 embed file while adding `relevance` scores.
 
 ```bash
 python -m rmsearch.evaluation.rerank \
-  --query-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/query.csv \
-  --key-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/key.csv \
-  --pair-csv /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/csv_files/pair.csv \
-  --embed-json /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/new_emb_results.json \
-  --output /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/new_rerank_results.json \
-  --model-name /workspace/Prakhar/exp2/model1/checkpoint-120 \
+  --dataset-path /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact \
+  --embed-output /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact/relevant_emb.json \
+  --output-eval /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact/relevant_rerank_eval.json \
+  --model-name /workspace/Mingkwan/RMSearch/models/Pra1_1240-converted-model \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --request-batch-size 128 \
   --timeout 100000
 ```
-I need to change the query, 
-key, 
-qrel to csv.
-also emb-json to another format
 
-python -m rmsearch.evaluation.rerank \
-  --query-csv ./beir_out/scifact/query.csv \
-  --key-csv ./beir_out/scifact/key.csv \
-  --pair-csv ./beir_out/scifact/pair.csv \
-  --embed-json ./beir_out/scifact/relevance_dict_embed.json \
-  --output ./beir_out/scifact/relevance_dict_rerank240.json \
-  --model-name /workspace/llama3b-rm-converted-model \
-  --tensor-parallel-size 1 \
-  --num-instances 1 \
-  --request-batch-size 128 \
-  --timeout 10000
-
-**Highlights**
-- Reuses the notebook chat template (“Without Graph”) for consistent scoring.
-- Device groups can be pinned explicitly for multi-GPU layouts.
-- Preserves embedding order while attaching reward model scores and positive ids.
 - **Arguments**
-  - `--query-csv` / `--key-csv`: Query/key CSV artefacts with `id` and `text` columns.
-  - `--embed-json`: Output from `embed.py` supplying `pre_key_ids`.
-  - `--top-k`: Number of most relevant keys to emit per query in `key_ids` (default `10`).
-  - `--pair-csv`: Optional positive supervision to carry into the output.
-  - All available options documented in `python -m rmsearch.evaluation.rerank --help`.
+  - `--dataset-path` Input your dataset path here
+  - `--embed-output`: Output from `embed.py` supplying `pre_key_ids`.
+
 - **Outputs**
-  - `relevance_dict_rerank.json` preserving `pre_key_ids` while trimming `key_ids`.
+  - `relevance_rerank_eval.json` preserving `pre_key_ids` while trimming `key_ids`.
   - Example entry:
     ```json
     {
-      "query_id": 42,
-      "pre_key_ids": [12, 7, 105, 3],
-      "key_ids": [7, 12, 105],
-      "relevance": [8.1, 7.4, 6.9],
-      "positive_key_ids": [7]
+  "0": {
+    "1383": 0.7981379628181458,
+    "1377": 0.788284957408905,
+    "1382": 0.778290867805481,
+    "1": 0.7754657864570618,
+    "1379": 0.7737131714820862,
+    "1375": 0.771685004234314,
+    "1373": 0.7712595462799072,
+    "1104": 0.7644272446632385,
+    "2776": 0.761962711811065}
     }
     ```
 
-## `retrieval.py`
+  ## ndcg.py
+Go inside the script and change the 
+dataset = "nfcorpus"
+data_path = "/workspace/kentarrito/beir_out/_raw/scifact"
+emb_results_filepath = "/workspace/Prakhar/beir_out/scifact/relevance_dict_rerank_exp2-qwen-reward_adj.json"
 
-Run the reward model across every query–key pair (or the legacy tag-tree
-evaluation) to generate `relevance_dict.json`.
-
-```bash
-python -m rmsearch.evaluation.retrieval \
-  --query-csv ./beir_out/scifact/query.csv \
-  --key-csv ./beir_out/scifact/key.csv \
-  --pair-csv ./beir_out/scifact/pair.csv \
-  --model-name /workspace/llama3b-rm-converted-model \
-  --tensor-parallel-size 1 \
-  --num-instances 4 \
-  --batch-size 256 \
-  --k-key 100 \
-  --output ./beir_out/scifact/relevance_dict.json
-```
-
-If `--query-csv` / `--key-csv` are unavailable, the script falls back to the
-original notebook inputs (`df_small.csv`, `query_dict.json`, and
-`tag2query-tag_tree.json`) beneath `--working-dir`.
-
-**Highlights**
-- Direct “without graph” mode scores every key per query using BEIR pairs.
-- Legacy mode still supports tag-tree traversal when those artifacts exist.
-- Outputs include the reward scores plus optional `positive_key_ids`.
-- **Arguments**
-  - `--query-csv` / `--key-csv`: BEIR-style inputs; omit to fall back to the legacy notebook artefacts.
-  - `--pair-csv`: Optional positives that populate `positive_key_ids` and `correct_id`.
-  - `--k-key`: Number of keys per query to request from the reward model.
-  - `--batch-size`, `--tensor-parallel-size`, `--num-instances`: Control reward model throughput.
-  - Full CLI documented via `python -m rmsearch.evaluation.retrieval --help`.
-- **Outputs**
-  - `relevance_dict.json` with reward scores for each query.
-  - Example entry:
-    ```json
-    {
-      "query_id": 42,
-      "keys": [
-        {"key": "...", "key_id": 0, "relevance": 8.7, "relevant_id": 7},
-        {"key": "...", "key_id": 1, "relevance": 7.9, "relevant_id": 12}
-      ],
-      "positive_key_ids": [7],
-      "correct_id": 7
-    }
-    ```
-
-## Package Init
-
-`rmsearch/evaluation/__init__.py` re-exports the primary helpers so you can
-write `from rmsearch.evaluation import process_data, build_relevance_dict,
-rerank_candidates, retrieval_evaluation`.
-
----
-
-All scripts assume local access to the required embedding and reward models
-and benefit from GPU acceleration. Run them in the order above to reproduce
-the evaluation artifacts referenced throughout the project.
+then run python/rmsearch/evaluation/ndcg.py
