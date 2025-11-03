@@ -19,8 +19,6 @@ from beir.datasets.data_loader import GenericDataLoader
 from beir.retrieval import models
 from beir.retrieval.evaluation import EvaluateRetrieval
 from beir.retrieval.search.dense import DenseRetrievalExactSearch as DRES
-from sentence_transformers import CrossEncoder
-from beir.reranking import Rerank
 
 logging.basicConfig(
     format="%(asctime)s - %(message)s",
