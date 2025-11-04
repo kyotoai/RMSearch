@@ -3,6 +3,7 @@ Allows for evaluating dense retrievers, i.e., in the tevatron format on BEIR dat
 models.HuggingFace allows for multi-gpu inference with DDP.
 
 Example usage: CUDA_VISIBLE_DEVICES=0,1,2,3 python evaluate_huggingface.py (for multi-gpu inference)
+score of 0-1
 """
 
 import logging

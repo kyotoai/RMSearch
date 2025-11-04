@@ -1,4 +1,4 @@
-"""Generate embedding-based relevance rankings for BEIR datasets."""
+"""Generate embedding-based relevance rankings for BEIR datasets. Using vllm"""
 
 from __future__ import annotations
 
