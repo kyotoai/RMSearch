@@ -4,6 +4,58 @@ RMSearch FastAPI service exposing reward-model ranking over a REST endpoint.
 Run the server after installing RMSearch with:
 
     uvicorn rmsearch:app --host 0.0.0.0 --port 8000
+
+# Example usage:
+# ---------------------------------------------------------------------------
+# # 1) Direct async usage inside your application
+# import asyncio
+# from rmsearch import Search
+#
+# async def main():
+#     search = Search(
+#         model_name="/workspace/llama3b-rm",
+#         tensor_parallel_size=1,
+#         pipeline_parallel_size=1,
+#     )
+#     queries = ["Summarise retrieval augmented generation."]
+#     keys = [
+#         "Retrieval augmented generation (RAG) combines external documents with LLMs.",
+#         "An unrelated sentence about cooking pasta.",
+#     ]
+#     results = await search(queries, keys, k=1)
+#     search.close()
+#     print(results[0]["keys"][0])
+#
+# asyncio.run(main())
+#
+# # 2) Provide chat-form queries
+# async def with_chat_queries():
+#     search = Search(
+#         model_name="/workspace/llama3b-rm",
+#         tensor_parallel_size=1,
+#         pipeline_parallel_size=1,
+#         query_batch_size=32,
+#     )
+#     queries = [
+#         {
+#             "message": [
+#                 {"role": "user", "content": "Suggest a healthy hiking snack."},
+#                 {"role": "assistant", "content": "Trail mix and jerky are good."},
+#                 {"role": "user", "content": "Rank these options."},
+#             ]
+#         }
+#     ]
+#     keys = ["Trail mix is nutrient dense.", "Pack extra batteries."]
+#     ranked = await search(queries, keys, k=2, batch_size=2)
+#     search.close()
+#     return ranked
+#
+# asyncio.run(with_chat_queries())
+#
+# # 3) Call the HTTP API once uvicorn is running
+curl -X POST http://localhost:8000/rmsearch \
+  -H "Content-Type: application/json" \
+  -d '{"queries": ["How to tune a reward model?"], "keys": ["Reward models score sequences."]}'
 """
 
 from __future__ import annotations
