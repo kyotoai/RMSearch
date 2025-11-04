@@ -165,6 +165,20 @@ nohup python -m rmsearch.train.make_query_dpo_pairs_v2 \
   > >(tee ./data_generate.log) 2>&1 &
 ```
 
+```bash
+nohup python -m rmsearch.train.make_query_dpo_pairs_v3 \
+  --input-csv ./data/smollm-corpus6000/df.csv \
+  --text-column text \
+  --model-name /workspace/gpt-oss-20b \
+  --tensor-parallel-size 1 \
+  --num-instances 4 \
+  --n-query-generation 3 \
+  --batch-size 20 \
+  --max-model-len 10000 \
+  --output ./data/smollm-corpus6000/query_dpo_pairs_v3.json \
+  > >(tee ./data_generate.log) 2>&1 &
+```
+
 
 **Algorithm**
 1. Load all keys from df.csv
@@ -192,13 +206,14 @@ nohup python -m rmsearch.train.make_query_dpo_pairs_v2 \
   ```
 
 **Notices**
-- Use the same method for LLM generation as `make_query_and_less_relevant_keys_recs-gptoss,py`.
+- Use the same method for LLM generation as `make_query_and_less_relevant_keys_recs-gptoss.py`.
 
 
 
 
 ## `Direct query_dpo_pairs.json -> dataset_list_train.json, dataset_list_test.json`
 
+* For make_query_dpo_pairs.py v1 and v2
 ```bash
 python3 - <<'PY'
 from pathlib import Path
@@ -240,6 +255,86 @@ for ds_id, query_dpo_pairs_dict in enumerate(query_dpo_pairs):
     dpo_pairs = []
     for c_id in range(n_queries - 1):
       for r_id in range(c_id + 1, n_queries):
+        dpo_pairs.append([c_id, r_id])
+
+    dataset_list.append(
+        {
+            "batch": batch,
+            #[
+            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[1])}], "query_id":query_id, "key_id":},
+            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":},
+            #  {"msg": [{"role": "user", "content": _format_prompt(query, keys[0])}], "query_id":query_id, "key_id":}
+            #],
+            "dpo_pairs": dpo_pairs,
+            #[
+            #  [0,1],  # [(chosen_msg_id), (rejected_msg_id)]
+            #  [0,2],
+            #  [1,2]
+            #]
+        }
+    )
+  
+  except Exception as e:
+    n_error += 1
+    print(e)
+
+print("n_error: ", n_error)
+
+dataset_list_train = dataset_list[:-test_size]
+dataset_list_test = dataset_list[-test_size:]
+
+print("len(dataset_list_train): ", len(dataset_list_train))
+print("len(dataset_list_test): ", len(dataset_list_test))
+
+output_path_train.parent.mkdir(parents=True, exist_ok=True)
+output_path_test.parent.mkdir(parents=True, exist_ok=True)
+output_path_train.write_text(json.dumps(dataset_list_train, ensure_ascii=False, indent=2))
+output_path_test.write_text(json.dumps(dataset_list_test, ensure_ascii=False, indent=2))
+print(f"Wrote dataset list with {len(dataset_list)} entries to {output_path_train} and {output_path_test}")
+PY
+```
+
+
+* For make_query_dpo_pairs.py v3
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import json
+query_dpo_pairs_path = "data/smollm-corpus6000/query_dpo_pairs_v3.json"
+output_path_train = Path("exp7/dataset_list_train.json")
+output_path_test = Path("exp7/dataset_list_test.json")
+test_size = 50
+n_query = 3
+
+with open(query_dpo_pairs_path) as f:
+  query_dpo_pairs = json.load(f)
+
+def _format_prompt(query: str, key: str) -> str:
+  return (
+      "Give me relevant score between query and sentence;\n\n"
+      f"Query:{query}\n\n"
+      f"Sentence:```{key}```"
+  )
+
+dataset_list = []
+n_error = 0
+for ds_id, query_dpo_pairs_dict in enumerate(query_dpo_pairs):
+  try:
+    chosen_queries = query_dpo_pairs_dict["chosen_queries"]
+    rejected_queries = query_dpo_pairs_dict["rejected_queries"]
+    if not len(chosen_queries) == n_query or not len(rejected_queries) == n_query: raise Exception()
+    queries = chosen_queries + rejected_queries
+    key = query_dpo_pairs_dict["key"]
+    df_id = query_dpo_pairs_dict["df_id"]
+    query_types = query_dpo_pairs_dict["query-types"]
+
+    batch = []
+    for query_id, query in enumerate(queries):
+      batch.append({"msg": [{"role": "user", "content": _format_prompt(query, key)}], "query_id":query_id, "key_id":df_id, "ds_id":ds_id})
+
+    dpo_pairs = []
+    for c_id in range(n_query):
+      for r_id in range(n_query, n_query*2):
         dpo_pairs.append([c_id, r_id])
 
     dataset_list.append(
