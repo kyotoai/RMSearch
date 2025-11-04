@@ -1,4 +1,4 @@
-"""Rerank embedding candidates with a reward model, mirroring the notebook workflow."""
+"""Rerank embedding candidates with a reward model and output evaluation format using vllm."""
 
 from __future__ import annotations
 
@@ -6,10 +6,9 @@ import argparse
 import json
 import logging
 import multiprocessing as mp
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Mapping, Sequence
-
-import pandas as pd
 
 from rmsearch.utils.vllm_reward import build_llm, search
 
@@ -18,136 +17,123 @@ __all__ = ["rerank_candidates"]
 logger = logging.getLogger(__name__)
 
 
-def _load_json(path: Path):
-    return json.loads(path.read_text(encoding="utf-8"))
+# ============================================================================
+# Data Loading Functions
+# ============================================================================
+
+def load_dataset_from_paths(
+    queries_path: Path,
+    corpus_path: Path,
+    qrels_path: Path | None = None,
+    split: str = "test"
+) -> tuple[Dict[str, str], Dict[str, str], Dict[str, Dict[str, int]]]:
+    """
+    Load queries, corpus, and qrels from BEIR JSONL/TSV files.
+    
+    Returns:
+        (queries, corpus, qrels)
+    """
+    logger.info("Loading dataset from file paths...")
+    
+    # Load queries
+    queries = {}
+    with open(queries_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                data = json.loads(line)
+                queries[data['_id']] = data['text']
+    
+    # Load corpus
+    corpus = {}
+    with open(corpus_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                data = json.loads(line)
+                title = data.get('title', '')
+                text = data.get('text', '')
+                combined = f"{title} {text}".strip() if title else text
+                corpus[data['_id']] = combined
+    
+    # Load qrels if provided
+    qrels = defaultdict(dict)
+    if qrels_path and qrels_path.exists():
+        with open(qrels_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    parts = line.strip().split('\t')
+                    if len(parts) == 3:
+                        qid, docid, rel = parts
+                        if rel == 'score':  # Skip header
+                            continue
+                        qrels[qid][docid] = int(rel)
+                except (IndexError, ValueError):
+                    continue
+    
+    logger.info("Loaded %d queries, %d documents, %d qrels", len(queries), len(corpus), len(qrels))
+    return queries, corpus, dict(qrels)
 
 
-def _load_strings_from_json(path: Path, *, field: str | None = None) -> List[str]:
-    data = _load_json(path)
-    if isinstance(data, list):
-        values = data
-    elif isinstance(data, dict):
-        values = list(data.values())
-    else:
-        raise TypeError(f"Unsupported payload in {path} (expected list or dict).")
-    strings: List[str] = []
-    for item in values:
-        if isinstance(item, str):
-            strings.append(item)
-        elif isinstance(item, dict):
-            if field and field in item:
-                strings.append(str(item[field]))
-            elif "text" in item:
-                strings.append(str(item["text"]))
-            elif "query" in item:
-                strings.append(str(item["query"]))
-        else:
-            raise TypeError(f"Unsupported entry in {path}: {item!r}")
-    if not strings:
-        raise ValueError(f"No textual entries found in {path}")
-    return strings
+def load_embed_output(embed_json_path: Path) -> tuple[Dict[int, str], Dict[int, str], List[Dict]]:
+    """
+    Load embed output JSON and extract queries, corpus, and ranking records.
+    
+    The embed output contains mappings we can use to reconstruct the original data.
+    Returns:
+        (query_mapping, corpus_mapping, embed_records)
+    """
+    logger.info("Loading embed output from %s", embed_json_path)
+    
+    with open(embed_json_path, 'r', encoding='utf-8') as f:
+        embed_records = json.load(f)
+    
+    if not isinstance(embed_records, list):
+        raise TypeError(f"Expected list in {embed_json_path}")
+    
+    # Extract unique query and key IDs from records
+    query_ids = set()
+    key_ids = set()
+    
+    for record in embed_records:
+        query_ids.add(int(record['query_id']))
+        key_ids.update(int(k) for k in record['key_ids'])
+    
+    logger.info("Found %d unique queries and %d unique keys in embed output", 
+                len(query_ids), len(key_ids))
+    
+    # We don't have the actual text in embed output, so we need to load from source files
+    # Return empty mappings that will be populated from BEIR files
+    return {}, {}, embed_records
 
 
-def _load_strings_from_csv(path: Path, *, text_column: str, id_column: str | None) -> Dict[int, str]:
-    df = pd.read_csv(path)
-    if text_column not in df.columns:
-        raise ValueError(f"Column '{text_column}' not present in {path}")
-    df = df[df[text_column].notna()].copy()
-    if df.empty:
-        raise ValueError(f"Column '{text_column}' in {path} is empty")
-    if id_column and id_column in df.columns:
-        df[id_column] = df[id_column].astype(int)
-        df = df.sort_values(id_column)
-        mapping = {int(row[id_column]): str(row[text_column]) for _, row in df.iterrows()}
-    else:
-        mapping = {idx: str(val) for idx, val in enumerate(df[text_column].astype(str).tolist())}
-    return mapping
+def create_id_mappings(
+    queries: Dict[str, str],
+    corpus: Dict[str, str]
+) -> tuple[Dict[int, str], Dict[int, str], Dict[str, int], Dict[str, int]]:
+    """
+    Create numeric ID mappings from string IDs.
+    
+    Returns:
+        (query_text_by_numeric_id, corpus_text_by_numeric_id, 
+         query_str_to_numeric, corpus_str_to_numeric)
+    """
+    query_text_by_id = {}
+    query_mapping = {}
+    for idx, (qid, text) in enumerate(queries.items()):
+        query_mapping[qid] = idx
+        query_text_by_id[idx] = text
+    
+    corpus_text_by_id = {}
+    corpus_mapping = {}
+    for idx, (docid, text) in enumerate(corpus.items()):
+        corpus_mapping[docid] = idx
+        corpus_text_by_id[idx] = text
+    
+    return query_text_by_id, corpus_text_by_id, query_mapping, corpus_mapping
 
 
-def _load_queries(
-    query_json: Path | None,
-    query_csv: Path | None,
-    *,
-    text_column: str,
-    id_column: str,
-) -> Dict[int, str]:
-    if query_csv and query_csv.is_file():
-        logger.info("Loading queries from CSV: %s", query_csv)
-        return _load_strings_from_csv(query_csv, text_column=text_column, id_column=id_column)
-    if query_json and query_json.is_file():
-        logger.info("Loading queries from JSON: %s", query_json)
-        strings = _load_strings_from_json(query_json, field="query")
-        return {idx: text for idx, text in enumerate(strings)}
-    raise FileNotFoundError("Provide --query-csv or --query-json (no query file found).")
-
-
-def _load_keys(
-    key_json: Path | None,
-    key_csv: Path | None,
-    *,
-    text_column: str,
-    id_column: str,
-) -> Dict[int, str]:
-    if key_csv and key_csv.is_file():
-        logger.info("Loading keys from CSV: %s", key_csv)
-        return _load_strings_from_csv(key_csv, text_column=text_column, id_column=id_column)
-    if key_json and key_json.is_file():
-        logger.info("Loading keys from JSON: %s", key_json)
-        strings = _load_strings_from_json(key_json, field="text")
-        return {idx: text for idx, text in enumerate(strings)}
-    raise FileNotFoundError("Provide --key-csv or --key-json (no key file found).")
-
-
-def _load_positive_pairs(
-    pair_csv: Path | None,
-    *,
-    query_column: str,
-    key_column: str,
-) -> Dict[int, List[int]]:
-    if pair_csv is None:
-        return {}
-    if not pair_csv.is_file():
-        raise FileNotFoundError(f"Pair CSV not found: {pair_csv}")
-    df = pd.read_csv(pair_csv)
-    for column in (query_column, key_column):
-        if column not in df.columns:
-            raise ValueError(f"Column '{column}' not present in {pair_csv}")
-    df = df[[query_column, key_column]].dropna()
-    df[query_column] = df[query_column].astype(int)
-    df[key_column] = df[key_column].astype(int)
-    grouped = df.groupby(query_column)[key_column].apply(list)
-    return {int(qid): [int(k) for k in keys] for qid, keys in grouped.items()}
-
-
-def _load_embed_records(path: Path) -> List[Dict[str, object]]:
-    data = _load_json(path)
-    if not isinstance(data, list):
-        raise TypeError(f"Embedding rankings in {path} must be a list.")
-    records: List[Dict[str, object]] = []
-    for item in data:
-        if not isinstance(item, dict):
-            raise TypeError(f"Embedding ranking entry must be an object, got {type(item)!r}")
-        query_id = int(item.get("query_id", -1))
-        key_ids = item.get("key_ids")
-        if not isinstance(key_ids, list):
-            raise TypeError(f"'key_ids' must be a list in {item!r}")
-        embed_relevances = item.get("embed_relevances")
-        if not isinstance(embed_relevances, list):
-            raise TypeError(f"'embed_relevances' must be a list in {item!r}")
-        resolved_key_ids = [int(k) for k in key_ids]
-        resolved_embed_scores = [float(score) for score in embed_relevances]
-        if len(resolved_key_ids) != len(resolved_embed_scores):
-            raise ValueError("'key_ids' and 'embed_relevances' must have the same length.")
-        record: Dict[str, object] = {
-            "query_id": query_id,
-            "key_ids": resolved_key_ids,
-            "embed_relevances": resolved_embed_scores,
-        }
-        if "positive_key_ids" in item and isinstance(item["positive_key_ids"], list):
-            record["positive_key_ids"] = [int(k) for k in item["positive_key_ids"]]
-        records.append(record)
-    return records
-
+# ============================================================================
+# Reranking Functions
+# ============================================================================
 
 def _llm_template(tokenizer):
     def format_row(row: Dict[str, str]) -> str:
@@ -239,7 +225,8 @@ def rerank_candidates(
         query_id = int(record["query_id"])
         query_text = query_text_by_id.get(query_id)
         if query_text is None:
-            raise KeyError(f"Query id {query_id} missing from query mapping.")
+            logger.warning("Query id %d missing from query mapping, skipping", query_id)
+            continue
         candidate_ids = [int(k) for k in record["key_ids"]]  # type: ignore[index]
         if not candidate_ids:
             continue
@@ -247,15 +234,24 @@ def rerank_candidates(
         if len(embed_scores) != len(candidate_ids):
             raise ValueError(f"Embedding relevances for query {query_id} do not align with key ids.")
         key_texts: List[str] = []
-        for kid in candidate_ids:
+        valid_ids: List[int] = []
+        valid_embed_scores: List[float] = []
+        for kid, score in zip(candidate_ids, embed_scores):
             key_text = key_text_by_id.get(kid)
             if key_text is None:
-                raise KeyError(f"Key id {kid} missing from key mapping.")
+                logger.warning("Key id %d missing from key mapping, skipping", kid)
+                continue
             key_texts.append(key_text)
+            valid_ids.append(kid)
+            valid_embed_scores.append(score)
+        
+        if not key_texts:
+            continue
+            
         requests.append({"query": query_text, "keys": key_texts, "return_relevance": True})
-        id_maps.append(candidate_ids)
+        id_maps.append(valid_ids)
         request_query_ids.append(query_id)
-        embed_scores_by_request.append(embed_scores)
+        embed_scores_by_request.append(valid_embed_scores)
 
     if not requests:
         rm.close()
@@ -276,7 +272,9 @@ def rerank_candidates(
 
     positive_lookup = positive_pairs or {}
     reranked: List[Dict[str, object]] = []
-    for req_query_id, result, original_ids, embed_scores in zip(request_query_ids, outputs, id_maps, embed_scores_by_request):
+    for req_query_id, result, original_ids, embed_scores in zip(
+        request_query_ids, outputs, id_maps, embed_scores_by_request
+    ):
         ordered_ids: List[int] = []
         scores: List[float] = []
         for item in result.get("keys", []):
@@ -300,88 +298,180 @@ def rerank_candidates(
     return reranked
 
 
+# ============================================================================
+# Output Transformation
+# ============================================================================
+
+def transform_to_eval_format(reranked_output: List[Dict]) -> Dict[int, Dict[int, float]]:
+    """
+    Transform reranked output to evaluation format.
+    Input: [{"query_id": X, "key_ids": [...], "rerank_relevances": [...]}, ...]
+    Output: {query_id: {key_id: score, ...}, ...}
+    """
+    result = {}
+    
+    for query in reranked_output:
+        query_id = query.get("query_id")
+        key_ids = query.get("key_ids", [])
+        rerank_scores = query.get("rerank_relevances", [])
+        
+        # Create dictionary mapping key_id to rerank score
+        query_results = {}
+        for key_id, score in zip(key_ids, rerank_scores):
+            query_results[key_id] = score
+        
+        result[query_id] = query_results
+    
+    return result
+
+
+# ============================================================================
+# Main Function
+# ============================================================================
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Rerank embedding candidates with a reward model.")
-    parser.add_argument("--query-csv", type=Path, default=Path("query.csv"), help="CSV file containing queries.")
-    parser.add_argument("--query-json", type=Path, default=Path("query.json"), help="Fallback JSON file containing queries.")
-    parser.add_argument("--query-text-column", type=str, default="text", help="Column holding query text in --query-csv.")
-    parser.add_argument("--query-id-column", type=str, default="id", help="Column holding query ids in --query-csv.")
-    parser.add_argument("--key-csv", type=Path, default=Path("key.csv"), help="CSV file containing keys.")
-    parser.add_argument("--key-json", type=Path, default=Path("key.json"), help="Fallback JSON file containing keys.")
-    parser.add_argument("--key-text-column", type=str, default="text", help="Column holding key text in --key-csv.")
-    parser.add_argument("--key-id-column", type=str, default="id", help="Column holding key ids in --key-csv.")
-    parser.add_argument("--pair-csv", type=Path, help="Optional CSV of positive pairs (query_id,key_id).")
-    parser.add_argument("--pair-query-column", type=str, default="query_id", help="Query id column inside --pair-csv.")
-    parser.add_argument("--pair-key-column", type=str, default="key_id", help="Key id column inside --pair-csv.")
-    parser.add_argument(
-        "--embed-json",
-        type=Path,
-        default=Path("relevance_dict_embed.json"),
-        help="Embedding-based ranking JSON to rerank.",
+    parser = argparse.ArgumentParser(
+        description="Rerank embedding candidates with a reward model for BEIR datasets."
     )
+    
+    # Input: BEIR dataset files
+    parser.add_argument(
+        "--dataset-path",
+        type=Path,
+        help="Path to BEIR dataset folder (for loading original text). Alternative to manual paths."
+    )
+    parser.add_argument("--queries", type=Path, help="BEIR queries JSONL file (manual mode)")
+    parser.add_argument("--corpus", type=Path, help="BEIR corpus JSONL file (manual mode)")
+    parser.add_argument("--qrels", type=Path, help="BEIR qrels TSV file (manual mode, optional)")
+    
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="test",
+        choices=["train", "dev", "test"],
+        help="Which split to use for qrels (default: test)"
+    )
+    
+    # Input: Embed output (required)
+    parser.add_argument(
+        "--embed-output",
+        type=Path,
+        required=True,
+        help="Embedding output JSON from embed.py (e.g., relevant_emb.json)"
+    )
+    
+    # Output files
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("relevance_dict_rerank.json"),
-        help="Destination for reranked results.",
+        help="Output JSON file for intermediate reranked results (original format). If not specified, only eval output is saved."
     )
-    parser.add_argument("--model-name", type=str, required=True, help="Reward model identifier or checkpoint.")
-    parser.add_argument("--tensor-parallel-size", type=int, default=1, help="Tensor parallel size for reward model.")
-    parser.add_argument("--num-instances", type=int, default=1, help="Number of reward model worker instances.")
+    parser.add_argument(
+        "--output-eval",
+        type=Path,
+        required=True,
+        help="Output JSON file for evaluation reranked results (transformed format)"
+    )
+    
+    # Model configuration
+    parser.add_argument("--model-name", type=str, required=True, help="Reward model identifier or checkpoint")
+    parser.add_argument("--tensor-parallel-size", type=int, default=1, help="Tensor parallel size for reward model")
+    parser.add_argument("--num-instances", type=int, default=1, help="Number of reward model worker instances")
     parser.add_argument(
         "--device-groups",
         type=str,
-        help="Explicit GPU mapping, e.g. '0,1;2,3' for tensor_parallel_size=2 and num_instances=2.",
+        help="Explicit GPU mapping, e.g. '0,1;2,3' for tensor_parallel_size=2 and num_instances=2",
     )
-    parser.add_argument("--max-model-len", type=int, default=2500, help="Maximum sequence length for the reward model.")
-    parser.add_argument("--max-num-seqs", type=int, default=64, help="Maximum concurrent sequences per worker.")
+    parser.add_argument("--max-model-len", type=int, default=2500, help="Maximum sequence length for the reward model")
+    parser.add_argument("--max-num-seqs", type=int, default=64, help="Maximum concurrent sequences per worker")
     parser.add_argument(
         "--gpu-memory-utilization",
         type=float,
         default=0.90,
-        help="Fraction of GPU memory assigned to the reward model.",
+        help="Fraction of GPU memory assigned to the reward model",
     )
-    parser.add_argument("--request-batch-size", type=int, default=128, help="Number of (query,key) pairs per scoring batch.")
-    parser.add_argument("--timeout", type=float, default=10_000.0, help="Timeout in seconds for reward scoring batches.")
-    parser.add_argument("--top-k", type=int, default=10, help="Number of most relevant keys to keep per query in the output.")
-    parser.add_argument("--log-level", type=str, default="INFO", help="Python logging level.")
+    
+    # Reranking options
+    parser.add_argument("--request-batch-size", type=int, default=128, help="Number of (query,key) pairs per scoring batch")
+    parser.add_argument("--timeout", type=float, default=10_000.0, help="Timeout in seconds for reward scoring batches")
+    parser.add_argument("--top-k", type=int, default=10, help="Number of most relevant keys to keep per query in output")
+    
+    # Other
+    parser.add_argument("--log-level", type=str, default="INFO", help="Python logging level")
+    
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     mp.set_start_method("spawn", force=True)
-
-    query_text_by_id = _load_queries(
-        args.query_json,
-        args.query_csv,
-        text_column=args.query_text_column,
-        id_column=args.query_id_column,
+    
+    logger.info("=" * 60)
+    logger.info("BEIR Reranking Evaluation Pipeline")
+    logger.info("=" * 60)
+    
+    # Step 1: Load embed output
+    logger.info("\nStep 1: Loading embed output...")
+    _, _, embed_records = load_embed_output(args.embed_output)
+    
+    # Step 2: Load BEIR dataset for text
+    logger.info("\nStep 2: Loading BEIR dataset for text...")
+    if args.queries and args.corpus:
+        # Manual mode
+        queries, corpus, qrels = load_dataset_from_paths(
+            args.queries,
+            args.corpus,
+            args.qrels,
+            args.split
+        )
+    elif args.dataset_path:
+        # Auto-load mode
+        queries_path = args.dataset_path / "queries.jsonl"
+        corpus_path = args.dataset_path / "corpus.jsonl"
+        qrels_path = args.dataset_path / "qrels" / f"{args.split}.tsv"
+        
+        queries, corpus, qrels = load_dataset_from_paths(
+            queries_path,
+            corpus_path,
+            qrels_path if qrels_path.exists() else None,
+            args.split
+        )
+    else:
+        raise ValueError(
+            "Must specify either:\n"
+            "  1. --queries and --corpus (manual mode), OR\n"
+            "  2. --dataset-path (auto-load mode)"
+        )
+    
+    # Step 3: Create ID mappings
+    logger.info("\nStep 3: Creating ID mappings...")
+    query_text_by_id, corpus_text_by_id, query_mapping, corpus_mapping = create_id_mappings(
+        queries, corpus
     )
-    key_text_by_id = _load_keys(
-        args.key_json,
-        args.key_csv,
-        text_column=args.key_text_column,
-        id_column=args.key_id_column,
-    )
-    embed_records = _load_embed_records(args.embed_json)
-
-    positive_pairs: Dict[int, List[int]] = _load_positive_pairs(
-        args.pair_csv,
-        query_column=args.pair_query_column,
-        key_column=args.pair_key_column,
-    ) if args.pair_csv else {}
-
+    
+    # Extract positive pairs from embed records
+    positive_pairs = {}
     for record in embed_records:
         if "positive_key_ids" in record and isinstance(record["positive_key_ids"], list):
-            positive_pairs.setdefault(int(record["query_id"]), list(record["positive_key_ids"]))  # type: ignore[arg-type]
-
-    device_groups = _parse_device_groups(args.device_groups, args.tensor_parallel_size, args.num_instances)
-
+            query_id = int(record["query_id"])
+            positive_pairs[query_id] = [int(k) for k in record["positive_key_ids"]]
+    
+    # Step 4: Parse device groups
+    device_groups = _parse_device_groups(
+        args.device_groups,
+        args.tensor_parallel_size,
+        args.num_instances
+    )
+    
+    # Step 5: Rerank
+    logger.info("\nStep 4: Reranking with reward model...")
     reranked = rerank_candidates(
         query_text_by_id,
-        key_text_by_id,
+        corpus_text_by_id,
         embed_records,
         model_name=args.model_name,
         tensor_parallel_size=args.tensor_parallel_size,
@@ -395,11 +485,36 @@ def main() -> None:
         top_k=args.top_k,
         positive_pairs=positive_pairs,
     )
+    
+    # Step 6: Save intermediate output (optional)
+    if args.output:
+        logger.info("\nStep 5: Saving intermediate output...")
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(reranked, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8"
+        )
+        logger.info("✓ Saved intermediate output to %s", args.output)
+    
+    # Step 7: Transform and save evaluation output
+    logger.info("\nStep 6: Transforming to evaluation format...")
+    eval_output = transform_to_eval_format(reranked)
+    
+    args.output_eval.parent.mkdir(parents=True, exist_ok=True)
+    args.output_eval.write_text(
+        json.dumps(eval_output, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8"
+    )
+    logger.info("✓ Saved evaluation output to %s", args.output_eval)
+    
+    logger.info("\n" + "=" * 60)
+    logger.info("✓ Complete!")
+    logger.info("  Queries reranked: %d", len(reranked))
+    if args.output:
+        logger.info("  Intermediate output: %s", args.output)
+    logger.info("  Evaluation output: %s", args.output_eval)
+    logger.info("=" * 60)
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(reranked, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    logger.info("Saved reranked results for %d queries to %s", len(reranked), args.output)
 
-
-if __name__ == "__main__":  # pragma: no cover - CLI entry point.
+if __name__ == "__main__":
     main()
