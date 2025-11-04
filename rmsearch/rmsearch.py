@@ -148,13 +148,52 @@ class Search:
 
         return await asyncio.to_thread(_run_search)
 
+    def close(self, *, kill: bool = False) -> None:
+        self.model.close(kill=kill)
 
-# ── Search engine instance ────────────────────────────────────────────────────
-search_engine = Search(
-    model_name=DEFAULT_MODEL_NAME,
-    tensor_parallel_size=DEFAULT_TENSOR_PARALLEL,
-    pipeline_parallel_size=DEFAULT_PIPELINE_PARALLEL,
-)
+
+# ── Search engine lifecycle helpers ──────────────────────────────────────────
+search_engine: Optional[Search] = None
+_search_lock = asyncio.Lock()
+
+
+async def _create_search_engine() -> Search:
+    return await asyncio.to_thread(
+        Search,
+        DEFAULT_MODEL_NAME,
+        DEFAULT_TENSOR_PARALLEL,
+        DEFAULT_PIPELINE_PARALLEL,
+    )
+
+
+async def get_search_engine() -> Search:
+    global search_engine
+    if search_engine is not None:
+        return search_engine
+    async with _search_lock:
+        if search_engine is None:
+            search_engine = await _create_search_engine()
+    return search_engine
+
+
+async def shutdown_search_engine() -> None:
+    global search_engine
+    if search_engine is None:
+        return
+
+    engine = search_engine
+    search_engine = None
+    await asyncio.to_thread(engine.close)
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    await get_search_engine()
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    await shutdown_search_engine()
 
 
 # ── Endpoint ─────────────────────────────────────────────────────────────────
@@ -188,7 +227,8 @@ async def rmsearch(req: SearchRequest) -> List[QueryOut]:
     """
 
     keys = req.keys or DEFAULT_KEYS
-    output = await search_engine(
+    engine = await get_search_engine()
+    output = await engine(
         req.queries,
         keys,
         k=req.k,

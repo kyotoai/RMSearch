@@ -616,9 +616,11 @@ smollm
 
 - [x] Delete rmtrain.py
 
-- [ ] API Call in rmsearch/rmsearch.py
+- [x] API Call in rmsearch/rmsearch.py
   1. use utils/vllm_reward.py for search function
   2. handle both request types, string list and message list
   3. after RMSearch installation, make it available just by use command `uvicorn rmsearch:app --host 0.0.0.0 --port 8000`
+
+- [x] Debug 1 API Call in rmsearch/rmsearch.py
 
 
