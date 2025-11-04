@@ -1,583 +1,220 @@
-import os, asyncio, json
-import pandas as pd
-import itertools
-from datasets import Dataset
-import torch
-import traceback
-from typing import Any, Dict, List
-import numpy as np
-import ray
-from packaging.version import Version
-from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
-from vllm import LLM, PoolingParams, SamplingParams, AsyncEngineArgs, AsyncLLMEngine
-assert Version(ray.__version__) >= Version(
-    "2.22.0"), "Ray version must be at least 2.22.0"
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForCausalLM
-import time
-from tqdm.notebook import tqdm
-from tqdm.asyncio import tqdm_asyncio
+"""
+RMSearch FastAPI service exposing reward-model ranking over a REST endpoint.
 
-class pooler_config:
-    def __init__(self):
-        self.pooling_type = "LAST"
-        self.normalize = False
-        self.softmax = False
-        self.softmax = False
-        self.step_tag_id = None
-        self.returned_token_ids = None
+Run the server after installing RMSearch with:
 
-pooler_config_ = pooler_config()
+    uvicorn rmsearch:app --host 0.0.0.0 --port 8000
+"""
 
-# Read one text file from S3. Ray Data supports reading multiple files
-# from cloud storage (such as JSONL, Parquet, CSV, binary format).
-#ds = ray.data.read_text("s3://anonymous@air-example-data/prompts.txt")
+from __future__ import annotations
 
-# For tensor_parallel_size > 1, we need to create placement groups for vLLM
-# to use. Every actor has to have its own placement group.
-def scheduling_strategy_fn():
-    # One bundle per tensor parallel worker
-    pg = ray.util.placement_group(
-        [{
-            "GPU": 1,
-            "CPU": 1
-        }] * tensor_parallel_size,
-        strategy="STRICT_PACK",
-    )
-    return dict(scheduling_strategy=PlacementGroupSchedulingStrategy(
-        pg, placement_group_capture_child_tasks=True))
+import asyncio
+import os
+from typing import Any, Dict, List, Optional, Sequence, Union
+
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
+
+from rmsearch.utils.vllm_reward import build_llm, search as reward_search
 
 
-#top_advice_rewards, advice_indices = torch.topk(reshaped_advice_rewards, k=num_retrival) # [len(problems), num_advices]
-#torch.save(advice_indices, retrieved_advice_ids_save_path)  #all_advice_indices: [len(test_problem_ids), num_retrival]
+# ── FastAPI application ───────────────────────────────────────────────────────
+app = FastAPI()
 
 
+# ── Configuration defaults (overridable via environment variables) ───────────
+DEFAULT_MODEL_NAME = os.getenv("RMSEARCH_MODEL_NAME", "/workspace/llama3b-rm")
+DEFAULT_TENSOR_PARALLEL = int(os.getenv("RMSEARCH_TENSOR_PARALLEL", "1"))
+DEFAULT_PIPELINE_PARALLEL = int(os.getenv("RMSEARCH_PIPELINE_PARALLEL", "1"))
+DEFAULT_QUERY_BATCH_SIZE = int(os.getenv("RMSEARCH_QUERY_BATCH_SIZE", "128"))
+
+
+# ── Fallback keys (used when the caller omits `keys`) ────────────────────────
+DEFAULT_KEYS: List[str] = (
+    ["LLM is Large Language Model which can be made ..." * 7,
+     "Japanese capital is ..." * 7] * 5
+)
+
+
+# ── Request / Response schemas ───────────────────────────────────────────────
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatQuery(BaseModel):
+    message: List[ChatMessage]
+
+
+QueryInput = Union[str, ChatQuery]
+
+
+class SearchRequest(BaseModel):
+    queries: List[QueryInput]
+    keys: Optional[List[str]] = None
+    k: int = Field(default=5, ge=1)
+    batch_size: Optional[int] = Field(default=None, ge=1)
+    query_batch_size: Optional[int] = Field(default=None, ge=1)
+
+
+class KeyOut(BaseModel):
+    key_id: int
+    key: str
+    relevance: float
+
+
+class QueryOut(BaseModel):
+    query: str
+    query_id: int
+    keys: List[KeyOut]
+
+
+# ── Search helper built on the vLLM reward worker ────────────────────────────
 class Search:
+    """Thin wrapper that formats requests for `utils.vllm_reward.search`."""
 
     def __init__(
         self,
-        model_name,
-        tensor_parallel_size = 1,
-        pipeline_parallel_size = 1,
-        data_parallel = 1,
-        llm_template = None,
-        max_request = None,
-    ):
+        model_name: str,
+        tensor_parallel_size: int,
+        pipeline_parallel_size: int,
+        *,
+        query_batch_size: int = DEFAULT_QUERY_BATCH_SIZE,
+        **llm_kwargs: Any,
+    ) -> None:
+        self.model = build_llm(
+            model_name=model_name,
+            tensor_parallel_size=tensor_parallel_size,
+            num_instances=pipeline_parallel_size,
+            **llm_kwargs,
+        )
+        self.tokenizer = self.model.tokenizer
+        self.query_batch_size = query_batch_size
 
-        tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_eos_token=True, add_bos_token=True)
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        Search.tokenizer = tokenizer
+    def _format_chat_history(self, query: ChatQuery) -> str:
+        """Flatten chat history into a deterministic text block."""
+        segments = [f"{turn.role}: {turn.content}" for turn in query.message]
+        return "\n".join(segments)
 
-        self.model_unsupported = False
-        self.progress_bar = None
-        self.max_request = max_request
+    def _normalise_query(self, query: QueryInput) -> str:
+        if isinstance(query, str):
+            return query
+        if isinstance(query, ChatQuery):
+            return self._format_chat_history(query)
+        raise TypeError(f"Unsupported query type: {type(query)!r}")
 
-        if max_request:
-            self.requests = []
-            self.request_ids = []
-            self.results = []
-            self.results_dict = {}
-            self.finished_ids = []
+    def _llm_template(self, row: Dict[str, Any]) -> str:
+        message = [
+            {
+                "role": "user",
+                "content": (
+                    "Provide a relevance score between the query and the sentence.\n\n"
+                    f"Query: {row['query']}\n\n"
+                    f"Sentence: {row['key']}"
+                ),
+            }
+        ]
+        return self.tokenizer.apply_chat_template(message, tokenize=False)
 
-        self.model_name = model_name
-        self.tensor_parallel_size = tensor_parallel_size
-        self.pipeline_parallel_size = pipeline_parallel_size
-        self.data_parallel_size = data_parallel_size
+    async def __call__(
+        self,
+        queries: Sequence[QueryInput],
+        keys: Sequence[str],
+        *,
+        k: int,
+        batch_size: Optional[int] = None,
+        query_batch_size: Optional[int] = None,
+        **gen_kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        if not keys:
+            raise ValueError("keys must contain at least one entry.")
 
-        if not llm_template:
-            def llm_template_func(query, key):
-                message = [
-                  {'role': 'user', 'content': f"Give me a key that matches the query below;\n\nQuery:{query}"},
-                  {'role': 'assistant', 'content': f"{key}"}
-                ]
-                prompt = tokenizer.apply_chat_template(message, tokenize=False)
-                return prompt
+        normalized_queries = [self._normalise_query(query) for query in queries]
+        requests = [{"query": q, "keys": list(keys)} for q in normalized_queries]
 
-            self.llm_template = llm_template_func
+        effective_query_batch = query_batch_size or self.query_batch_size
+        if batch_size is not None:
+            gen_kwargs["batch_size"] = batch_size
 
-        else:
-            self.llm_template = llm_template
-
-        self.model_supported = True
-
-        if self.data_parallel_size == 1:
-            try:
-                if os.path.exists(model_name):
-                    
-                    self.engine_args = AsyncEngineArgs(
-                        model = model_name,
-                        dtype="bfloat16",
-                        tensor_parallel_size = tensor_parallel_size,
-                        pipeline_parallel_size = pipeline_parallel_size,
-                        distributed_executor_backend = "mp",
-                        gpu_memory_utilization=0.95,
-                        task="embed",
-                        override_pooler_config=pooler_config_,
-                        disable_log_stats=True,
-                    )
-    
-                    if "engine" not in dir(Search):
-                        Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
-                        Search.engine.log_requests = False
-                        if os.path.exists(f"{model_name}/score.pt"):
-                            self.model_supported = False
-                            Search.score = torch.load(f"{model_name}/score.pt")
-                        
-                else:
-                    self.engine_args = AsyncEngineArgs(
-                        model = model_name,
-                        dtype="bfloat16",
-                        tensor_parallel_size = tensor_parallel_size,
-                        pipeline_parallel_size = pipeline_parallel_size,
-                        distributed_executor_backend = "mp",
-                        gpu_memory_utilization=0.95,
-                        task="embed",
-                        override_pooler_config=pooler_config_,
-                        disable_log_stats=True,
-                    )
-    
-                    if "engine" not in dir(Search):
-                        Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
-                        Search.engine.log_requests = False
-                
-            except Exception as e:
-                if "Model architectures" in f"{e}":
-                    raise Exception(f"{e}\n\nplease try to convert your model to by utils.convert_model")
-                    '''
-                    save_dir = f"{model_name}-converted-model"
-                    score_save_path = f"{model_name}-converted-score.pt"
-                    self.model_unsupported = True
-                    if not os.path.exists(save_dir):
-                        tokenizer.save_pretrained(save_dir)
-    
-                        reward_model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
-                        self.score = reward_model.score.weight.data
-                        torch.save(reward_model.score.weight.data, score_save_path)
-                        del reward_model
-                        
-                        generate_model = AutoModelForCausalLM.from_pretrained(model_name)
-                        generate_model.save_pretrained(save_dir)
-                        del generate_model
-    
-                    else:
-                        self.score = torch.load(score_save_path)
-                    
-                    model_name = save_dir
-    
-                    self.engine_args = AsyncEngineArgs(
-                        model = model_name,
-                        dtype="bfloat16",
-                        tensor_parallel_size = tensor_parallel_size,
-                        pipeline_parallel_size = pipeline_parallel_size,
-                        distributed_executor_backend = "mp",
-                        gpu_memory_utilization=0.95,
-                        task="embed",
-                        override_pooler_config=pooler_config_,
-                    )
-    
-                    if "engine" not in dir(Search):
-                        Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
-                    '''
-                else:
-                    traceback.print_exc()
-                    raise Exception(e)
-    
-            #self.PoolingParams = PoolingParams()
-
-        else:
-            #Search.engine = AsyncLLMEngine.from_engine_args(self.engine_args)
-
-            self.device_groups = []
-            device_id = 0
-            for dp in range(self.data_parallel_size):
-                device_group = []
-                for tp in range(self.tensor_parallel_size):
-                    device_group.append(device_id)
-                    device_id += 1
-
-                self.device_groups.append(device_group)
-
-            Search.llm = build_llm(
-                model_name=self.model_name,
-                tensor_parallel_size=len(self.device_groups[0]),
-                num_instances=len(self.device_groups),
-                device_groups=self.device_groups,
-                max_model_len=2500,
-                max_num_seqs=64,
-                gpu_memory_utilization=0.90,
-            )
-            
-
-        '''
-        resources_kwarg: Dict[str, Any] = {}
-        if tensor_parallel_size == 1:
-            # For tensor_parallel_size == 1, we simply set num_gpus=1.
-            resources_kwarg["num_gpus"] = 1
-        else:
-            # Otherwise, we have to set num_gpus=0 and provide
-            # a function that will create a placement group for
-            # each instance.
-            resources_kwarg["num_gpus"] = 0
-            resources_kwarg["ray_remote_args_fn"] = scheduling_strategy_fn
-
-        self.resources_kwarg = resources_kwarg
-        '''
-
-    async def __call__(self,
-                queires,
-                keys,
-                k=5,
-                return_relevance=False,
-                disable_log=False,
-                progress_bar=None):
-
-
-        relevance = await self.get_relevance(queires, keys, disable_log, progress_bar)
-        top_relevance, top_key_ids = torch.topk(relevance, k=k)
-
-        return_dicts = []
-        for query_id, query in enumerate(queires):
-            return_dict = {"query":query, "query_id":query_id, "keys":[]}
-            for i in range(len(top_key_ids[query_id])):
-                torch_key_id = top_key_ids[query_id, i]
-                key_id = torch_key_id.item()
-                if return_relevance:
-                    return_dict["keys"].append({"key_id":key_id, "key":keys[key_id], "relevance":relevance[query_id, key_id].item()})
-                else:
-                    return_dict["keys"].append({"key_id":key_id, "key":keys[key_id]})
-                    
-            return_dicts.append(return_dict)
-
-        return return_dicts  # [{"query":, "query_id":, "keys":[{"key_id":, "key":,} ...]}, ... ]
-    
-
-    async def search_by_df(
-            self,
-            df,  # pandas.DataFrame : A row will get a relevance value. Each row must not have column named "prompt" or "relevance"
-            k=10,
-            topk_with_group=False,  # When this is true, topk keys are taken from each group. The row of df must have "group" and "k"
-            disable_log=False,  # disable log of searching
-            progress_bar=None,
-            progress_save_dir = "progress_search_log",
-    ):
-        
-        if topk_with_group:
-            if (not "group" in df) or (not "k" in df):
-                raise Exception("df must have both columns named group and k")
-        
-        df = await self.get_relevance_by_df(df, disable_log, progress_bar, progress_save_dir)
-
-        if topk_with_group:
-            # df.columns: ["relevance", "group", "k", **kwargs]
-
-            def get_top_k(group: pd.DataFrame) -> list[dict]:
-                k_val = int(group['k'].iloc[0])            # k for this group
-                top = group.nlargest(k_val, 'relevance')   # keep k rows with highest relevance
-                # Convert to list‑of‑dicts ordered by descending relevance
-                return top.to_dict(orient='records')
-
-            top_k_dict_by_group = df.groupby('group').apply(get_top_k).to_dict()
-
-            # Example output format
-            # {
-            #   group_id1: [ {'key_id': 17, 'relevance': 0.98},
-            #        {'key_id': 42, 'relevance': 0.95},
-            #        ... ],
-            #   group_id2: [ {'key_id':  5, 'relevance': 1.23},
-            #        {'key_id': 99, 'relevance': 0.87},
-            #        ... ],
-            #   ...
-            # }
-
-        else:
-            top_k_rows = df.nlargest(k, 'relevance')
-            top_k_dict_by_group = top_k_rows.to_dict(orient='records')
-
-            # Example output format
-            # [ 
-            #   {'key_id': 17, 'relevance': 0.98},
-            #   {'key_id': 42, 'relevance': 0.95},
-            #   ... 
-            # ]
-
-
-        return top_k_dict_by_group
-    
-
-
-
-    async def get_relevance_by_df(self,
-                      df,
-                      disable_log=False,
-                      progress_bar=None,
-                      progress_save_dir=None
-                     ):
-
-        #from datasets.utils.logging import disable_progress_bar, set_verbosity_error
-        #disable_progress_bar()            # or datasets.disable_progress_bars() # 1️⃣ Hide every tqdm progress‑bar that Datasets shows
-        #set_verbosity_error() # 2️⃣ Keep only real errors (no infos / warnings)
-
-        
-        from datasets import Dataset
-        dataset1 = Dataset.from_pandas(df)
-        
-        def format(row):
-            prompt = self.llm_template(row)
-            prompt = prompt[17:]  # to eliminate <|begin_of_text|> because vllm automatically add it to prompt  ####### need to be modified accordingly
-            row["prompt"] = prompt
-            return row
-        
-        formatted_dataset = dataset1.map(format)
-        df_formatted = formatted_dataset.to_pandas()
-        list_of_prompts = df_formatted[['prompt']].to_dict('records')  # [{"prompt":".."}, ...]
-
-        #total_num_tokens = 0
-        #for prompt_dict in list_of_prompts:
-        #    inputs = Search.tokenizer(prompt_dict["prompt"], return_tensors = "pt")
-        #    total_num_tokens += len(inputs["input_ids"][0])
-
-        #mean_num_tokens = total_num_tokens/len(list_of_prompts)
-
-        start = time.time()
-
-        if self.max_request:
-            
-            self.requests = []
-            self.request_ids = []
-            self.results_dict = {}
-            
-            for request_id, prompt_dict in enumerate(list_of_prompts):
-                prompt_dict["request_id"] = request_id
-                self.requests.append(prompt_dict)
-                self.request_ids.append(request_id)
-
-            #task_save_result = asyncio.create_task(self.save_results(progress_save_dir))
-
-            tasks = [self.process_n_requests() for _ in range(self.max_request)]+[self.save_results(progress_save_dir)]
-            await asyncio.gather(
-                *tasks
-            )
-            
-            #await task_save_result
-
-            rewards = []
-            for request_id in range(len(list_of_prompts)):
-                result_dict = self.results_dict[request_id]
-                reward = result_dict["reward"]
-                rewards.append(reward)
-
-        elif disable_log:
-            rewards = await asyncio.gather(
-                *[self.process(prompt_dict["prompt"], i, progress_bar) 
-                  for i, prompt_dict in enumerate(list_of_prompts)]
+        def _run_search() -> List[Dict[str, Any]]:
+            return reward_search(
+                self.model,
+                requests,
+                self._llm_template,
+                topk=k,
+                query_batch_size=effective_query_batch,
+                **gen_kwargs,
             )
 
-        else:
-            rewards = await tqdm_asyncio.gather(
-                *[self.process(prompt_dict["prompt"], i, progress_bar) 
-                  for i, prompt_dict in enumerate(list_of_prompts)],
-                desc="Searching: "
+        return await asyncio.to_thread(_run_search)
+
+
+# ── Search engine instance ────────────────────────────────────────────────────
+search_engine = Search(
+    model_name=DEFAULT_MODEL_NAME,
+    tensor_parallel_size=DEFAULT_TENSOR_PARALLEL,
+    pipeline_parallel_size=DEFAULT_PIPELINE_PARALLEL,
+)
+
+
+# ── Endpoint ─────────────────────────────────────────────────────────────────
+@app.post("/rmsearch", response_model=List[QueryOut])
+async def rmsearch(req: SearchRequest) -> List[QueryOut]:
+    """
+    Request bodies can provide either plain string queries or chat histories.
+
+    Examples:
+
+    1) Provide only queries (server uses default keys):
+        {"queries": ["How to make LLM?", "What's the capital of Japan?"]}
+
+    2) Provide queries and custom keys:
+        {
+          "queries": ["How to make LLM?"],
+          "keys":    ["LLM is Large Language Model ..."]
+        }
+
+    3) Chat-style queries (each item is a message list):
+        {
+          "queries": [
+            {"message": [{"role": "user", "content": "How to make LLM?"}]},
+            {"message": [
+              {"role": "user", "content": "What's the capital of Japan?"},
+              {"role": "assistant", "content": "The capital of Japan is ..."},
+              {"role": "user", "content": "What's the historical reason behind it?"}
+            ]}
+          ]
+        }
+    """
+
+    keys = req.keys or DEFAULT_KEYS
+    output = await search_engine(
+        req.queries,
+        keys,
+        k=req.k,
+        batch_size=req.batch_size,
+        query_batch_size=req.query_batch_size,
+    )
+
+    response: List[QueryOut] = []
+    for row in output:
+        key_objs = [
+            KeyOut(
+                key_id=int(key_info["key_id"]),
+                key=key_info["key"],
+                relevance=float(key_info.get("relevance", 0.0)),
             )
-
-        # rewards : []
-        
-        #rewards = await asyncio.gather(
-        #    *[self.process(prompt_dict["prompt"], i) for i, prompt_dict in enumerate(tqdm(list_of_prompts, desc="Searching"))]
-        #)
-
-        end = time.time()
-
-        #print()
-        #print("----------")
-        #print("total number of inputs : ", len(list_of_prompts))
-        #print("mean number of tokens : ", mean_num_tokens)
-        #print("calculation time(s) : ", end - start)
-
-        df["relevance"] = torch.tensor(rewards).detach().cpu().float().numpy()
-        #df["relevance"] = rewards
-        
-        return df
-    
-
-
-    async def get_relevance(self,
-                      queries,
-                      keys,
-                      disable_log=False,
-                      progress_bar=None,
-                     ):
-
-        from datasets.utils.logging import disable_progress_bar, set_verbosity_error
-
-        # 1️⃣ Hide every tqdm progress‑bar that Datasets shows
-        disable_progress_bar()            # or datasets.disable_progress_bars()
-        
-        # 2️⃣ Keep only real errors (no infos / warnings)
-        set_verbosity_error()
-
-        # Generate the Cartesian product
-        query_ids = list(range(len(queries)))
-        combinations = list(itertools.product(query_ids, keys))
-        df = pd.DataFrame(combinations, columns=['query_id', 'key'])
-        df['query'] = df['query_id'].apply(lambda idx: queries[idx])
-        
-        from datasets import Dataset
-        dataset1 = Dataset.from_pandas(df)
-        
-        def format(row):
-            query = row["query"]
-            key = row["key"]
-            prompt = self.llm_template(query, key)
-            prompt = prompt[17:]  # to eliminate <|begin_of_text|> because vllm automatically add it to prompt  ####### need to be modified accordingly
-            row["prompt"] = prompt
-            return row
-        
-        formatted_dataset = dataset1.map(format)
-        df_formatted = formatted_dataset.to_pandas()
-        list_of_prompts = df_formatted[['prompt']].to_dict('records')  # [{"prompt":".."}, ...]
-
-        total_num_tokens = 0
-        for prompt_dict in list_of_prompts:
-            inputs = Search.tokenizer(prompt_dict["prompt"], return_tensors = "pt")
-            total_num_tokens += len(inputs["input_ids"][0])
-
-        mean_num_tokens = total_num_tokens/len(list_of_prompts)
-
-        start = time.time()
-
-        if disable_log:
-            rewards = await asyncio.gather(
-                *[self.process(prompt_dict["prompt"], i, progress_bar) 
-                  for i, prompt_dict in enumerate(list_of_prompts)]
+            for key_info in row["keys"]
+        ]
+        response.append(
+            QueryOut(
+                query=row["query"],
+                query_id=int(row["query_id"]),
+                keys=key_objs,
             )
+        )
 
-        else:
-            rewards = await tqdm_asyncio.gather(
-                *[self.process(prompt_dict["prompt"], i, progress_bar) 
-                  for i, prompt_dict in enumerate(list_of_prompts)],
-                desc="Searching: "
-            )
-        
-        #rewards = await asyncio.gather(
-        #    *[self.process(prompt_dict["prompt"], i) for i, prompt_dict in enumerate(tqdm(list_of_prompts, desc="Searching"))]
-        #)
-
-        end = time.time()
-
-        #print()
-        #print("----------")
-        #print("total number of inputs : ", len(list_of_prompts))
-        #print("mean number of tokens : ", mean_num_tokens)
-        #print("calculation time(s) : ", end - start)
-
-        relevance = torch.stack(rewards).reshape(len(queries), len(keys))
-        
-        return relevance
-
-        
-    async def process(self, prompt, request_id, progress_bar=None):
-
-        results_generator = Search.engine.encode(prompt, 
-                                    PoolingParams(), 
-                                    request_id
-                                    )
-
-        final_output = None
-        async for request_output in results_generator:
-            """
-            if await request.is_disconnected():
-                # Abort the request if the client disconnects.
-                await engine.abort(request_id)
-                # Return or raise an error
-                raise Exception()
-            """
-            final_output = request_output
+    return response
 
 
-        print(f"Finished request_id: {request_id}")
-
-        if not self.model_supported:
-
-            #embedding = final_output.outputs.embedding
-            embedding = final_output.outputs.data
-            embedding = torch.tensor(embedding).float()
-    
-            reward = torch.matmul(torch.tensor(embedding).unsqueeze(0), self.score.to(embedding.device).transpose(0,1))
-        else:
-            reward = torch.tensor(final_output.outputs.data).float()
-
-        #if not progress_bar: progress_bar.update(1)
-        
-        return reward
-
-
-    async def save_results(self, save_dir):
-
-        while True:
-
-            if len(self.requests) == 0:
-                break
-            else:
-                await asyncio.sleep(60)
-
-            with open(f"{save_dir}/results_dict.json", "w") as f:
-                json.dump(self.results_dict, f)
-            with open(f"{save_dir}/results.json", "w") as f:
-                json.dump(self.results, f)
-            with open(f"{save_dir}/finished_ids.json", "w") as f:
-                json.dump(self.finished_ids, f)
-        
-    
-    async def process_n_requests(self):
-
-        while len(self.requests) != 0:
-            
-            request_dict = self.requests.pop(0)
-            request_id = self.request_ids.pop(0)
-
-            prompt = request_dict["prompt"]
-            
-            results_generator = Search.engine.encode(prompt, 
-                                    PoolingParams(), 
-                                    request_id
-                                )
-            
-            try:
-
-                final_output = None
-                async for request_output in results_generator:
-                    """
-                    if await request.is_disconnected():
-                        # Abort the request if the client disconnects.
-                        await engine.abort(request_id)
-                        # Return or raise an error
-                        raise Exception()
-                    """
-                    final_output = request_output
-
-            except Exception as e:
-                print(e)
-
-
-            if not self.model_supported:
-    
-                #embedding = final_output.outputs.embedding
-                embedding = final_output.outputs.data
-                embedding = torch.tensor(embedding).float()
-        
-                reward = torch.matmul(torch.tensor(embedding).unsqueeze(0), self.score.to(embedding.device).transpose(0,1)).item()
-            else:
-                reward = torch.tensor(final_output.outputs.data).float().item()
-
-
-            request_dict["reward"] = reward
-
-            self.results_dict[request_id] = request_dict
-            self.results.append(request_dict)
-            self.finished_ids.append(request_id)
-    
-            if self.progress_bar: self.progress_bar.update(1)
-    
-    
-        
-      
+__all__ = ["app", "Search"]
