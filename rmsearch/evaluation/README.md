@@ -19,10 +19,10 @@ pip install -r rmsearch/evaluation/
 
 ```bash
 python -m rmsearch.evaluation.embed \
-  --dataset-path /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact \
+  --dataset-path /workspace/Mingkwan/beir_out/scifact \
   --split test \
-  --output /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact/relevant_emb.json \
-  --output-eval /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact/relevant_emb_eval.json \
+  --output /workspace/Mingkwan/beir_out/scifact/output/relevant_emb.json \
+  --output-eval /workspace/Mingkwan/beir_out/scifact/output/relevant_emb_eval.json \
   --model-name /workspace/e5-mistral7b \
   --tensor-parallel-size 1 \
   --num-instances 1 \
@@ -66,10 +66,10 @@ embed file while adding `relevance` scores.
 
 ```bash
 python -m rmsearch.evaluation.rerank \
-  --dataset-path /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact \
-  --embed-output /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact/relevant_emb.json \
-  --output-eval /workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/scifact/relevant_rerank_eval.json \
-  --model-name /workspace/Mingkwan/RMSearch/models/Pra1_1240-converted-model \
+  --dataset-path /workspace/Mingkwan/beir_out/scifact \
+  --embed-output /workspace/Prakhar/beir_out/scifact/relevance_dict_embed.json \
+  --output-eval /workspace/Mingkwan/beir_out/scifact/output/relevant_rerank_eval.json \
+  --model-name /workspace/qwen4b-reward-step560 \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --request-batch-size 128 \

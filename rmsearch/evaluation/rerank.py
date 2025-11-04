@@ -1,4 +1,4 @@
-"""Rerank embedding candidates with a reward model and output evaluation format."""
+"""Rerank embedding candidates with a reward model and output evaluation format using vllm."""
 
 from __future__ import annotations
 

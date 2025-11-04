@@ -1,0 +1,8 @@
+beir
+sentence-transformers
+openai
+google-generativeai
+tqdm
+vllm
+ray
+hf-transfer
