@@ -61,8 +61,17 @@ asyncio.run(with_chat_queries())
 ```
 curl -X POST http://localhost:8000/rmsearch \
   -H "Content-Type: application/json" \
-  -d '{"queries": ["How to tune a reward model?"], "keys": ["Reward models score sequences."]}'
+  -d '{"queries": ["How to tune a reward model?", "What is LLM?"], "keys": ["Reward models score sequences.", "LLM is large language model"]}'
 ```
+
+Example Output
+```
+[
+    {"query":"How to tune a reward model?","query_id":0,"keys":[{"key_id":0,"key":"Reward models score sequences.","relevance":0.026297779753804207},{"key_id":1,"key":"LLM is large language model","relevance":-0.011371633969247341}]},
+    {"query":"What is LLM?","query_id":1,"keys":[{"key_id":1,"key":"LLM is large language model","relevance":0.04102550819516182},{"key_id":0,"key":"Reward models score sequences.","relevance":0.0008699230384081602}]}
+]
+```
+
 """
 
 from __future__ import annotations
