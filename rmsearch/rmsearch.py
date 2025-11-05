@@ -3,7 +3,7 @@ RMSearch FastAPI service exposing reward-model ranking over a REST endpoint.
 
 Run the server after installing RMSearch with:
 
-    `uvicorn rmsearch:app --host 0.0.0.0 --port 8000`
+    `nohup uvicorn rmsearch:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &`
 
 
 Example usage:
@@ -64,7 +64,7 @@ curl -X POST http://localhost:8000/rmsearch \
   -d '{"queries": ["How to tune a reward model?", "What is LLM?"], "keys": ["Reward models score sequences.", "LLM is large language model"]}'
 ```
 
-Example Output
+Example Output:
 ```
 [
     {"query":"How to tune a reward model?","query_id":0,"keys":[{"key_id":0,"key":"Reward models score sequences.","relevance":0.026297779753804207},{"key_id":1,"key":"LLM is large language model","relevance":-0.011371633969247341}]},

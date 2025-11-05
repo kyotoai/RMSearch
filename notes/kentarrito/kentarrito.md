@@ -630,3 +630,5 @@ smollm
 
 - [x] Debug 3 API Call in rmsearch/rmsearch.py
   * add pooling_task
+
+- [ ] Make gpt-oss-20b & reward model opener
