@@ -627,3 +627,6 @@ smollm
 
 - [x] Debug 2 API Call in rmsearch/rmsearch.py
   * converted-model
+
+- [x] Debug 3 API Call in rmsearch/rmsearch.py
+  * add pooling_task

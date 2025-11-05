@@ -3,60 +3,66 @@ RMSearch FastAPI service exposing reward-model ranking over a REST endpoint.
 
 Run the server after installing RMSearch with:
 
-    uvicorn rmsearch:app --host 0.0.0.0 --port 8000
+    `uvicorn rmsearch:app --host 0.0.0.0 --port 8000`
 
 
-# Example usage:
-# ---------------------------------------------------------------------------
-# # 1) Direct async usage inside your application
-# import asyncio
-# from rmsearch import Search
-#
-# async def main():
-#     search = Search(
-#         model_name="/workspace/llama3b-rm",
-#         tensor_parallel_size=1,
-#         pipeline_parallel_size=1,
-#     )
-#     queries = ["Summarise retrieval augmented generation."]
-#     keys = [
-#         "Retrieval augmented generation (RAG) combines external documents with LLMs.",
-#         "An unrelated sentence about cooking pasta.",
-#     ]
-#     results = await search(queries, keys, k=1)
-#     search.close()
-#     print(results[0]["keys"][0])
-#
-# asyncio.run(main())
-#
-# # 2) Provide chat-form queries
-# async def with_chat_queries():
-#     search = Search(
-#         model_name="/workspace/llama3b-rm",
-#         tensor_parallel_size=1,
-#         pipeline_parallel_size=1,
-#         query_batch_size=32,
-#     )
-#     queries = [
-#         {
-#             "message": [
-#                 {"role": "user", "content": "Suggest a healthy hiking snack."},
-#                 {"role": "assistant", "content": "Trail mix and jerky are good."},
-#                 {"role": "user", "content": "Rank these options."},
-#             ]
-#         }
-#     ]
-#     keys = ["Trail mix is nutrient dense.", "Pack extra batteries."]
-#     ranked = await search(queries, keys, k=2, batch_size=2)
-#     search.close()
-#     return ranked
-#
-# asyncio.run(with_chat_queries())
-#
-# # 3) Call the HTTP API once uvicorn is running
+Example usage:
+---------------------------------------------------------------------------
+# 1) Direct async usage inside your application
+```
+import asyncio
+from rmsearch import Search
+
+async def main():
+    search = Search(
+        model_name="/workspace/llama3b-rm",
+        tensor_parallel_size=1,
+        pipeline_parallel_size=1,
+    )
+    queries = ["Summarise retrieval augmented generation."]
+    keys = [
+        "Retrieval augmented generation (RAG) combines external documents with LLMs.",
+        "An unrelated sentence about cooking pasta.",
+    ]
+    results = await search(queries, keys, k=1)
+    search.close()
+    print(results[0]["keys"][0])
+
+asyncio.run(main())
+```
+
+# 2) Provide chat-form queries
+```
+async def with_chat_queries():
+    search = Search(
+        model_name="/workspace/llama3b-rm",
+        tensor_parallel_size=1,
+        pipeline_parallel_size=1,
+        query_batch_size=32,
+    )
+    queries = [
+        {
+            "message": [
+                {"role": "user", "content": "Suggest a healthy hiking snack."},
+                {"role": "assistant", "content": "Trail mix and jerky are good."},
+                {"role": "user", "content": "Rank these options."},
+            ]
+        }
+    ]
+    keys = ["Trail mix is nutrient dense.", "Pack extra batteries."]
+    ranked = await search(queries, keys, k=2, batch_size=2)
+    search.close()
+    return ranked
+
+asyncio.run(with_chat_queries())
+```
+
+# 3) Call the HTTP API once uvicorn is running
+```
 curl -X POST http://localhost:8000/rmsearch \
   -H "Content-Type: application/json" \
   -d '{"queries": ["How to tune a reward model?"], "keys": ["Reward models score sequences."]}'
+```
 """
 
 from __future__ import annotations
@@ -76,7 +82,7 @@ app = FastAPI()
 
 
 # ── Configuration defaults (overridable via environment variables) ───────────
-DEFAULT_MODEL_NAME = os.getenv("RMSEARCH_MODEL_NAME", "/workspace/llama3b-rm-converted-model")
+DEFAULT_MODEL_NAME = os.getenv("RMSEARCH_MODEL_NAME", "/workspace/qwen4b-reward-converted-model")
 DEFAULT_TENSOR_PARALLEL = int(os.getenv("RMSEARCH_TENSOR_PARALLEL", "1"))
 DEFAULT_PIPELINE_PARALLEL = int(os.getenv("RMSEARCH_PIPELINE_PARALLEL", "1"))
 DEFAULT_QUERY_BATCH_SIZE = int(os.getenv("RMSEARCH_QUERY_BATCH_SIZE", "128"))
@@ -139,6 +145,7 @@ class Search:
             model_name=model_name,
             tensor_parallel_size=tensor_parallel_size,
             num_instances=pipeline_parallel_size,
+            runner="pooling",
             **llm_kwargs,
         )
         self.tokenizer = self.model.tokenizer
