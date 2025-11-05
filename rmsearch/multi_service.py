@@ -5,9 +5,74 @@ mirrors ``rmsearch.Search`` while generation is delegated to
 ``utils.vllm_generate``.
 
 By default the service expects at least four GPUs and splits them so each model
-consumes two (can be overridden via environment variables). Example launch:
+consumes two (can be overridden via environment variables).
 
     uvicorn rmsearch.multi_service:app --host 0.0.0.0 --port 8000
+
+Example usage:
+----------------------------------------------------------------------------
+# 1) Python (async) call to /rmsearch
+```
+import asyncio
+import httpx
+
+async def main():
+    payload = {
+        "queries": ["Summarise retrieval augmented generation."],
+        "keys": [
+            "Retrieval augmented generation (RAG) mixes docs with LLMs.",
+            "A sentence about cooking pasta.",
+        ],
+        "k": 1,
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post("http://localhost:8000/rmsearch", json=payload)
+        resp.raise_for_status()
+        print(resp.json())
+
+asyncio.run(main())
+```
+
+# 2) Python (async) call to /generate
+```
+import asyncio
+import httpx
+
+async def main():
+    payload = {
+        "prompts": ["Suggest three remote team rituals."],
+        "max_tokens": 128,
+        "temperature": 0.7,
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post("http://localhost:8000/generate", json=payload)
+        resp.raise_for_status()
+        print(resp.json())
+
+asyncio.run(main())
+```
+
+# 3) cURL request to /rmsearch
+```
+curl -X POST http://localhost:8000/rmsearch \
+  -H "Content-Type: application/json" \
+  -d '{
+        "queries": ["How to tune a reward model?", "What is LLM?"],
+        "keys": ["Reward models score sequences.", "LLM is large language model"],
+        "k": 2
+      }'
+```
+
+# 4) cURL request to /generate
+```
+curl -X POST http://localhost:8000/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+        "prompts": ["List two prompts for evaluating factual recall."],
+        "temperature": 0.2,
+        "max_tokens": 80
+      }'
+```
 
 Endpoints:
   - POST /rmsearch   → relevance ranking using the reward model.
