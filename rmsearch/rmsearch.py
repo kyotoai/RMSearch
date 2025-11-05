@@ -5,6 +5,7 @@ Run the server after installing RMSearch with:
 
     uvicorn rmsearch:app --host 0.0.0.0 --port 8000
 
+
 # Example usage:
 # ---------------------------------------------------------------------------
 # # 1) Direct async usage inside your application
@@ -75,7 +76,7 @@ app = FastAPI()
 
 
 # ── Configuration defaults (overridable via environment variables) ───────────
-DEFAULT_MODEL_NAME = os.getenv("RMSEARCH_MODEL_NAME", "/workspace/llama3b-rm")
+DEFAULT_MODEL_NAME = os.getenv("RMSEARCH_MODEL_NAME", "/workspace/llama3b-rm-converted-model")
 DEFAULT_TENSOR_PARALLEL = int(os.getenv("RMSEARCH_TENSOR_PARALLEL", "1"))
 DEFAULT_PIPELINE_PARALLEL = int(os.getenv("RMSEARCH_PIPELINE_PARALLEL", "1"))
 DEFAULT_QUERY_BATCH_SIZE = int(os.getenv("RMSEARCH_QUERY_BATCH_SIZE", "128"))

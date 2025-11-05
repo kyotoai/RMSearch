@@ -623,6 +623,7 @@ smollm
 
 - [x] Debug 1 API Call in rmsearch/rmsearch.py
 
-- [ ] Write detailed example usages as comment out in rmsearch.py. Also write basic usage in rmsearch/README.md
+- [x] Write detailed example usages as comment out in rmsearch.py. Also write basic usage in rmsearch/README.md
 
-
+- [x] Debug 2 API Call in rmsearch/rmsearch.py
+  * converted-model
