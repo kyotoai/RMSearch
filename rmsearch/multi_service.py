@@ -70,7 +70,7 @@ curl -X POST http://localhost:8000/generate \
   -d '{
         "prompts": ["List two prompts for evaluating factual recall."],
         "temperature": 0.2,
-        "max_tokens": 80
+        "max_tokens": 3000
       }'
 ```
 
@@ -454,7 +454,7 @@ class GenerateRequest(BaseModel):
     prompts: List[str]
     temperature: Optional[float] = Field(default=0.7, ge=0.0)
     top_p: Optional[float] = Field(default=0.95, ge=0.0, le=1.0)
-    max_tokens: Optional[int] = Field(default=256, ge=1)
+    max_tokens: Optional[int] = Field(default=3000, ge=1)
     batch_size: Optional[int] = Field(default=None, ge=1)
     timeout_s: Optional[float] = Field(default=180.0, ge=0.0)
 
