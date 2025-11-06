@@ -9,11 +9,14 @@ from typing import Dict, List, Optional, Sequence
 
 from datasets import Dataset
 from transformers import AutoModelForSequenceClassification, AutoTokenizer,BitsAndBytesConfig
-
+from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from .utils import extract_int, extract_text
+# from trl.trainer.reward_trainer import DataCollatorForPreference
+
+
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 __all__ = ["make_dataset_list", "train_reward_model"]
 
@@ -35,7 +38,7 @@ def _format_preference_pair(
     example: Dict[str, object],
     tokenizer,
     *,
-    max_length: int,
+    max_length: int=4000,
     max_characters: int,
 ) -> Dict[str, List[int]]:
     chosen_msg = example["chosen_msg"]
@@ -77,13 +80,19 @@ def _format_preference_pair(
         "input_ids_rejected": rejected_tokens["input_ids"][0],
         "attention_mask_rejected": rejected_tokens["attention_mask"][0],
     }
+#     return {
+#    "chosen_input_ids": chosen_tokens["input_ids"][0],
+#    "chosen_attention_mask": chosen_tokens["attention_mask"][0],
+#    "rejected_input_ids": rejected_tokens["input_ids"][0],
+#    "rejected_attention_mask": rejected_tokens["attention_mask"][0],
+#  }
 
 
 def _build_dataset_split(
     records: Sequence[Dict[str, object]],
     tokenizer,
     *,
-    max_length: int,
+    max_length: int=4000,
     max_characters: int,
 ) -> Optional[Dataset]:
     if not records:
@@ -101,7 +110,16 @@ def _build_dataset_split(
 
     tokenized = dataset.map(format_example)
 
-    keep_columns = {
+    # keep_columns = {
+    #     "chosen_input_ids",
+    #     "chosen_attention_mask",
+    #     "rejected_input_ids",
+    #     "rejected_attention_mask",
+    #     "chosen_sentence_id",
+    #     "rejected_sentence_id",
+
+    # }
+    keep_columns={
         "input_ids_chosen",
         "attention_mask_chosen",
         "input_ids_rejected",
@@ -173,6 +191,7 @@ def make_dataset_list(
             }
         )
 
+
     # dataset_list (list): preference pairs used by TRL, where each element is
     #   {
     #     "chosen_msg": [{"role": "user", "content": "<prompt with positive sentence>"}],
@@ -194,7 +213,7 @@ def train_reward_model(
     per_device_train_batch_size: int = 8,
     per_device_eval_batch_size: int = 2,
     evaluation_steps: int = 40,
-    save_steps: int = 20,
+    save_steps: int = 40,
     logging_steps: int = 1,
     num_train_epochs: int = 50,
     wandb_project: Optional[str] = None,
@@ -208,13 +227,14 @@ def train_reward_model(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left", add_bos_token=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_name,
+    padding_side="left",
+     add_bos_token=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     quantization_config = BitsAndBytesConfig(
-    load_in_8bit=True,          # Enable 8-bit quantization
-    # llm_int8_threshold=4.0,     
+    load_in_8bit=True,          # Enable 8-bit quantization     
 )
 
     model = AutoModelForSequenceClassification.from_pretrained(model_name,
@@ -222,6 +242,7 @@ def train_reward_model(
                                                                 quantization_config=quantization_config,
                                                                 device_map="auto" )
 
+    model = prepare_model_for_kbit_training(model)
     peft_config = LoraConfig(
         task_type=TaskType.SEQ_CLS,
         inference_mode=False,
@@ -287,12 +308,21 @@ def train_reward_model(
     training_args = RewardConfig(
         output_dir=str(output_dir),
         run_name=wandb_run_name,
+        max_length=4000,
         per_device_train_batch_size=per_device_train_batch_size,
         per_device_eval_batch_size=per_device_eval_batch_size,
         gradient_accumulation_steps=4,
+        optim="paged_adamw_8bit",   # if bitsandbytes is present
+        # torch_compile=True, 
+        learning_rate=1e-4,              
+        weight_decay=0.05,               # small regularization helps with high LR
+        lr_scheduler_type="cosine",      # good default for high LR
+        # lr_scheduler_kwargs={"num_cycles": 4},
+        warmup_steps=40,           
+        max_grad_norm=1.0,
         eval_strategy=evaluation_strategy,
         eval_steps=evaluation_steps,
-        # eval_on_start=bool(eval_dataset),
+        eval_on_start=bool(eval_dataset),
         save_strategy="steps",
         save_steps=save_steps,
         logging_steps=logging_steps,
@@ -300,6 +330,10 @@ def train_reward_model(
         report_to=report_to,
         remove_unused_columns=False,
     )
+
+    # collator = DataCollatorForPreference(pad_token_id=tokenizer.pad_token_id)
+
+    print("train cols:", train_dataset.column_names)
 
     trainer = RewardTrainer(
         model=model,
@@ -379,7 +413,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save-steps",
         type=int,
-        default=20,
+        default=40,
         help="Frequency (in steps) to save checkpoints.",
     )
     parser.add_argument(

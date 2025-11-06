@@ -1,6 +1,6 @@
 transformers
 datasets
-trl
+trl==0.11.4
 peft
 pandas
 matplotlib
@@ -10,3 +10,4 @@ evaluate
 sentence_transformers
 wandb
 hf_transfer
+bitsandbytes

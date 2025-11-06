@@ -543,7 +543,7 @@ def train_reward_model(
     max_characters: int = 4000,
     per_device_train_batch_size: int = 1,
     per_device_eval_batch_size: int = 2,
-    evaluation_steps: int = 40,
+    evaluation_steps: int = 80,
     save_steps: int = 40,
     logging_steps: int = 1,
     num_train_epochs: int = 5,
@@ -670,7 +670,6 @@ def train_reward_model(
         warmup_steps=40,           
         max_grad_norm=1.0, 
         fp16=True,
-        # fp16_init_scale=8192,     # instead of 65536 for no overflow of initial loss [not available]
         eval_on_start=bool(eval_dataset),
         save_strategy="steps",
         save_steps=save_steps,
@@ -847,7 +846,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save-steps",
         type=int,
-        default=20,
+        default=40,
         help="Frequency (in steps) to save checkpoints.",
     )
     parser.add_argument(
