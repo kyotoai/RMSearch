@@ -7,7 +7,7 @@ mirrors ``rmsearch.Search`` while generation is delegated to
 By default the service expects at least four GPUs and splits them so each model
 consumes two (can be overridden via environment variables). Example launch:
 
-    uvicorn rmsearch.multi_service:app --host 0.0.0.0 --port 8000
+    `nohup uvicorn rmsearch.multi_service:app --host 0.0.0.0 --port 8000 > server.log 2>&1 &`
 
 Endpoints:
   - POST /rmsearch   → relevance ranking using the reward model.
@@ -26,8 +26,11 @@ from vllm import SamplingParams
 
 from rmsearch.utils.vllm_reward import build_llm as build_reward_llm
 from rmsearch.utils.vllm_reward import search as reward_search
-from rmsearch.utils.vllm_generate import build_llm as build_generate_llm
-from rmsearch.utils.vllm_generate import generate as run_generate
+from rmsearch.utils.vllm_generate_gptoss import build_llm as build_generate_llm
+from rmsearch.utils.vllm_generate_gptoss import generate as run_generate
+
+#os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # stable ordering
+#os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"       # <- same as `export CUDA_VISIBLE_DEVICES=0,1`
 
 
 # ── Environment helpers ──────────────────────────────────────────────────────
@@ -147,9 +150,9 @@ TOTAL_EXPECTED_GPUS = (
     REWARD_TENSOR_PARALLEL * REWARD_PIPELINE_PARALLEL
     + GEN_TENSOR_PARALLEL * GEN_NUM_INSTANCES
 )
-if TOTAL_EXPECTED_GPUS <= 2:
+if TOTAL_EXPECTED_GPUS < 2:
     raise ValueError(
-        "Configuration must allocate more than 2 GPUs in total for the combined "
+        "Configuration must allocate more than 1 GPU in total for the combined "
         "service. Increase tensor/instance counts."
     )
 
