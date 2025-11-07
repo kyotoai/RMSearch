@@ -91,7 +91,7 @@ app = FastAPI()
 
 
 # ── Configuration defaults (overridable via environment variables) ───────────
-DEFAULT_MODEL_NAME = os.getenv("RMSEARCH_MODEL_NAME", "/workspace/qwen4b-reward-converted-model")
+DEFAULT_MODEL_NAME = os.getenv("RMSEARCH_MODEL_NAME", "/workspace/qwen4b-reward-step560")
 DEFAULT_TENSOR_PARALLEL = int(os.getenv("RMSEARCH_TENSOR_PARALLEL", "1"))
 DEFAULT_PIPELINE_PARALLEL = int(os.getenv("RMSEARCH_PIPELINE_PARALLEL", "1"))
 DEFAULT_QUERY_BATCH_SIZE = int(os.getenv("RMSEARCH_QUERY_BATCH_SIZE", "128"))
