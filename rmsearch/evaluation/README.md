@@ -19,14 +19,16 @@ pip install -r rmsearch/evaluation/
 
 ```bash
 python -m rmsearch.evaluation.embed \
-  --dataset-path /workspace/Mingkwan/beir_out/scifact \
+  --dataset-path /workspace/Mingkwan/beir_out/nfcorpus \
   --split test \
-  --output /workspace/Mingkwan/beir_out/scifact/output/relevant_emb.json \
-  --output-eval /workspace/Mingkwan/beir_out/scifact/output/relevant_emb_eval.json \
+  --output /workspace/Mingkwan/beir_out/nfcorpus/output/relevant_emb.json \
+  --output-eval /workspace/Mingkwan/beir_out/nfcorpus/output/relevant_emb_eval.json \
   --model-name /workspace/e5-mistral7b \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --top-k 100 \
+  --max-model-len 10000 \
+  --truncate-tokens 4000 \
   --similarity-device auto
 ```
 
@@ -66,16 +68,29 @@ embed file while adding `relevance` scores.
 
 ```bash
 python -m rmsearch.evaluation.rerank \
-  --dataset-path /workspace/Mingkwan/beir_out/scifact \
-  --embed-output /workspace/Prakhar/beir_out/scifact/relevance_dict_embed.json \
-  --output-eval /workspace/Mingkwan/beir_out/scifact/output/relevant_rerank_eval.json \
-  --model-name /workspace/qwen4b-reward-step560 \
+  --dataset-path /workspace/Mingkwan/beir_out/nfcorpus \
+  --embed-output /workspace/Mingkwan/beir_out/nfcorpus/output/relevant_emb.json \
+  --output-eval /workspace/Mingkwan/beir_out/nfcorpus/output/relevant_rerank_q4_eval.json \
+  --model-name /workspace/qwen4b-reward-converted-model/ \
   --tensor-parallel-size 1 \
   --num-instances 1 \
   --request-batch-size 128 \
   --timeout 100000
 ```
 
+```bash
+python -m rmsearch.evaluation.rerank \
+  --dataset-path /workspace/Mingkwan/beir_out/fiqa \
+  --embed-output /workspace/Mingkwan/beir_out/fiqa/output/relevant_emb.json \
+  --output-eval /workspace/Mingkwan/beir_out/fiqa/output/relevant_rerank_q4_eval.json \
+  --model-name /workspace/qwen4b-reward-converted-model/ \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --request-batch-size 128 \
+  --timeout 100000
+```
+  --model-name /workspace/qwen4b-reward-converted-model/ \
+    --model-name /workspace/Mingkwan/models/qwen4b-exp2-checkpoint-640 \
 - **Arguments**
   - `--dataset-path` Input your dataset path here
   - `--embed-output`: Output from `embed.py` supplying `pre_key_ids`.
@@ -99,9 +114,16 @@ python -m rmsearch.evaluation.rerank \
     ```
 
   ## ndcg.py
-Go inside the script and change the 
+Go inside the script and change the dataset to the one you want
+```bash
 dataset = "nfcorpus"
-data_path = "/workspace/kentarrito/beir_out/_raw/scifact"
-emb_results_filepath = "/workspace/Prakhar/beir_out/scifact/relevance_dict_rerank_exp2-qwen-reward_adj.json"
+```
+Then copy paste the three commented line for that dataset. If you used and save a new model, use that model output file name. Normally, I run these three one at a time to get three results from embedding, base rerank, trained model respectively
+```bash
+##SCIDOCS
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/scidocs/output/relevant_emb_eval.json"
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/scidocs/output/relevant_rerank_q4_eval.json"
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/scidocs/output/relevant_rerank_q4_640_eval.json"
+```
 
 then run python/rmsearch/evaluation/ndcg.py

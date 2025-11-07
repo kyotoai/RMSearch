@@ -20,6 +20,73 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# Token Truncation Functions
+# ============================================================================
+
+def truncate_texts_by_tokens(
+    texts: Sequence[str],
+    model_name: str,
+    max_tokens: int = 4000,
+) -> List[str]:
+    """
+    Truncate texts to a maximum number of tokens using the model's tokenizer.
+    
+    Args:
+        texts: List of text strings to truncate
+        model_name: Model name/path to load the appropriate tokenizer
+        max_tokens: Maximum number of tokens per text (default: 4000)
+    
+    Returns:
+        List of truncated texts
+    """
+    try:
+        from transformers import AutoTokenizer
+    except ImportError:
+        raise ImportError(
+            "transformers package is required for token truncation. "
+            "Install it with: pip install transformers"
+        )
+    
+    logger.info("Loading tokenizer for %s...", model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    
+    truncated_texts = []
+    truncated_count = 0
+    
+    logger.info("Truncating %d texts to max %d tokens...", len(texts), max_tokens)
+    
+    for idx, text in enumerate(texts):
+        # Tokenize
+        tokens = tokenizer.encode(text, add_special_tokens=False)
+        
+        # Check if truncation is needed
+        if len(tokens) > max_tokens:
+            # Truncate tokens
+            truncated_tokens = tokens[:max_tokens]
+            # Decode back to text
+            truncated_text = tokenizer.decode(truncated_tokens, skip_special_tokens=True)
+            truncated_texts.append(truncated_text)
+            truncated_count += 1
+            
+            if idx < 3:  # Log first few truncations as examples
+                logger.debug(
+                    "Truncated text %d: %d -> %d tokens",
+                    idx, len(tokens), len(truncated_tokens)
+                )
+        else:
+            truncated_texts.append(text)
+    
+    if truncated_count > 0:
+        logger.info(
+            "✓ Truncated %d/%d texts (%.1f%%)",
+            truncated_count, len(texts), 100 * truncated_count / len(texts)
+        )
+    else:
+        logger.info("✓ No truncation needed - all texts within limit")
+    
+    return truncated_texts
+
+# ============================================================================
 # Dataset Download and Management
 # ============================================================================
 
@@ -179,6 +246,62 @@ def convert_to_lists(
     
     return query_texts, query_ids, query_mapping, corpus_texts, corpus_ids, corpus_mapping, positive_pairs
 
+def save_csv_files(
+    dataset_path: Path,
+    queries: Dict[str, str],
+    corpus: Dict[str, str],
+    qrels: Dict[str, Dict[str, int]],
+    query_mapping: Dict[str, int],
+    corpus_mapping: Dict[str, int]
+):
+    """
+    Save queries, corpus, and qrels as CSV files in the dataset directory.
+    
+    Creates:
+        - query.csv: id, text
+        - key.csv: id, text
+        - pair.csv: query_id, key_id, score
+    """
+    import csv
+    
+    csv_dir = dataset_path / "csv_files"
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save queries
+    query_csv = csv_dir / "query.csv"
+    with open(query_csv, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['id', 'text'])
+        for qid, text in queries.items():
+            numeric_id = query_mapping[qid]
+            writer.writerow([numeric_id, text])
+    logger.info("✓ Saved queries to %s", query_csv)
+    
+    # Save corpus
+    key_csv = csv_dir / "key.csv"
+    with open(key_csv, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['id', 'text'])
+        for docid, text in corpus.items():
+            numeric_id = corpus_mapping[docid]
+            writer.writerow([numeric_id, text])
+    logger.info("✓ Saved corpus to %s", key_csv)
+    
+    # Save qrels
+    pair_csv = csv_dir / "pair.csv"
+    with open(pair_csv, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['query_id', 'key_id', 'score'])
+        for qid, docs in qrels.items():
+            if qid in query_mapping:
+                numeric_qid = query_mapping[qid]
+                for docid, score in docs.items():
+                    if docid in corpus_mapping:
+                        numeric_docid = corpus_mapping[docid]
+                        writer.writerow([numeric_qid, numeric_docid, score])
+    logger.info("✓ Saved qrels to %s", pair_csv)
+    
+    return csv_dir
 
 # ============================================================================
 # Embedding Functions
@@ -214,7 +337,7 @@ def build_relevance_dict(
     model_name: str,
     tensor_parallel_size: int = 1,
     num_instances: int = 1,
-    max_model_len: int = 4000,
+    max_model_len: int = 12000,
     max_num_seqs: int = 64,
     gpu_memory_utilization: float = 0.90,
     query_batch_size: int = 256,
@@ -222,11 +345,18 @@ def build_relevance_dict(
     top_k: int = 100,
     normalize: bool = True,
     similarity_device: str = "cpu",
+    truncate_tokens: int | None = None,
 ) -> Tuple[List[List[int]], List[List[float]]]:
     if not queries:
         raise ValueError("Query list is empty.")
     if not keys:
         raise ValueError("Key list is empty.")
+
+    if truncate_tokens is not None:
+        logger.info("Token truncation enabled: max %d tokens", truncate_tokens)
+        queries = truncate_texts_by_tokens(queries, model_name, truncate_tokens)
+        keys = truncate_texts_by_tokens(keys, model_name, truncate_tokens)
+        
     logger.info("Embedding %d queries and %d keys with model %s", len(queries), len(keys), model_name)
 
     embedder = vllm_embed.build_embedding_model(
@@ -351,6 +481,13 @@ def parse_args() -> argparse.Namespace:
         help="Path to BEIR dataset folder (will auto-download if doesn't exist). Alternative to --queries/--corpus/--qrels."
     )
     
+    parser.add_argument(
+        "--truncate-tokens",
+        type=int,
+        default=None,
+        help="Truncate all texts to this many tokens before embedding (e.g., 4000 or 8000). If not specified, no truncation is applied."
+    )
+    
     # Manual file paths (takes precedence over --dataset-path)
     parser.add_argument("--queries", type=Path, help="BEIR queries JSONL file (manual mode)")
     parser.add_argument("--corpus", type=Path, help="BEIR corpus JSONL file (manual mode)")
@@ -383,7 +520,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-name", type=str, required=True, help="Embedding model identifier or checkpoint")
     parser.add_argument("--tensor-parallel-size", type=int, default=1, help="Tensor parallelism for embedding workers")
     parser.add_argument("--num-instances", type=int, default=1, help="Number of embedding worker instances")
-    parser.add_argument("--max-model-len", type=int, default=4000, help="Maximum sequence length for the model")
+    parser.add_argument("--max-model-len", type=int, default=12000, help="Maximum sequence length for the model")
     parser.add_argument("--max-num-seqs", type=int, default=64, help="Maximum concurrent sequences per worker")
     parser.add_argument(
         "--gpu-memory-utilization",
@@ -476,6 +613,40 @@ def main() -> None:
         queries, corpus, qrels
     )
     
+    # Step 1.5: Save CSV files if dataset_path is provided
+    if args.dataset_path:
+        logger.info("\nStep 1.5: Saving CSV files...")
+        csv_dir = save_csv_files(
+            args.dataset_path,
+            queries,
+            corpus,
+            qrels,
+            query_mapping,
+            corpus_mapping
+        )
+        logger.info("CSV files saved to: %s", csv_dir)
+    elif args.queries and args.corpus:
+        # If manual paths, save to parent directory of queries file
+        output_dir = args.queries.parent
+        logger.info("\nStep 1.5: Saving CSV files to %s...", output_dir)
+        
+        # Create a temporary path object for the directory
+        class TempPath:
+            def __init__(self, path):
+                self.path = path
+            def __truediv__(self, other):
+                return self.path / other
+        
+        csv_dir = save_csv_files(
+            TempPath(output_dir),
+            queries,
+            corpus,
+            qrels,
+            query_mapping,
+            corpus_mapping
+        )
+        logger.info("CSV files saved to: %s", csv_dir)
+        
     # Step 2: Compute embeddings and rankings
     logger.info("\nStep 2: Computing embeddings and rankings...")
     indices, scores = build_relevance_dict(
@@ -492,6 +663,7 @@ def main() -> None:
         top_k=args.top_k,
         normalize=not args.no_normalize,
         similarity_device=args.similarity_device,
+        truncate_tokens=args.truncate_tokens,
     )
     
     if len(indices) != len(query_ids) or len(scores) != len(query_ids):

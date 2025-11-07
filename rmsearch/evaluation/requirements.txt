@@ -6,3 +6,7 @@ tqdm
 vllm
 ray
 hf-transfer
+pandas
+datasets
+ray
+peft

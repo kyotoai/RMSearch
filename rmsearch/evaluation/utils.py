@@ -13,9 +13,9 @@ Examples:
 ```bash
 python -m rmsearch.evaluation.utils \
   --type checkpoint \
-  --check-point-path /workspace/Prakhar/exp5/model1/checkpoint-400 \
-  --base-model-path /workspace/qwen4b-reranker \
-  --model-path /workspace/qwen4b-reranker-exp5-model1-400
+  --check-point-path /workspace/Prakhar/exp2/modelQwenReward/checkpoint-640 \
+  --base-model-path /workspace/qwen4b-reward \
+  --model-path /workspace/Mingkwan/models/qwen4b-exp2-checkpoint-640
 ```
 
 2. When converting a model (reranker, reward, etc.) from huggingface to converted-model compatible with rmsearch.utils.vllm_reward.py

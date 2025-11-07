@@ -28,22 +28,41 @@ logging.basicConfig(
     handlers=[LoggingHandler()],
 )
 
-dataset = "scifact"
-data_path = f"/workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/{dataset}"
+dataset = "trec-covid"
+data_path = f"/workspace/Mingkwan/beir_out/{dataset}"
+qrels_tsv_path = f"{data_path}/csv_files/pair.csv"
 
 corpus, queries, qrels = GenericDataLoader(data_folder=data_path).load(split="test")
-qrels_tsv_path = "/workspace/kentarrito/beir_out/scifact/qrels.tsv"
-emb_results_filepath = "/workspace/Prakhar/beir_out/scifact/relevance_dict_rerank_exp2-qwen-reward_adj.json"
-emb_results_filepath = "/workspace/Prakhar/beir_out/scifact/relevance_dict_rerank_exp5_llama_adj.json"
 
-QUERY_COL = 'query-id'  # e.g., 'qid'
-DOC_COL = 'corpus-id'  # e.g., 'docid'
-SCORE_COL = 'score' # e.g., 'label' or 'score'
+## TREC-COVID
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/trec-covid/output/relevant_emb_eval.json"
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/trec-covid/output/relevant_rerank_q4_eval.json"
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/trec-covid/output/relevant_rerank_q4_640_eval.json"
+
+##SCIFACT
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/scifact/output/relevant_emb_eval.json"
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/scifact/output/relevant_rerank_q4_eval.json"
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/scifact/output/relevant_rerank_q4_640_eval.json"
+
+##FIQA
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/fiqa/output/relevant_emb_eval.json"
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/fiqa/output/relevant_rerank_q4_eval.json"
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/fiqa/output/relevant_rerank_q4_640_eval.json"
+
+##SCIDOCS
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/scidocs/output/relevant_emb_eval.json"
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/scidocs/output/relevant_rerank_q4_eval.json"
+# emb_results_filepath = "/workspace/Mingkwan/beir_out/scidocs/output/relevant_rerank_q4_640_eval.json"
+
+QUERY_COL = 'query_id'  
+DOC_COL = 'key_id' 
+SCORE_COL = 'score'
 
 # --- Step 1: Load and Process the TSV using Pandas ---
 try:
     # Read the TSV file, specifying the separator is a tab ('\t')
-    df = pd.read_csv(qrels_tsv_path, sep='\t') 
+    # df = pd.read_csv(qrels_tsv_path, sep='\t') 
+    df = pd.read_csv(qrels_tsv_path, sep=',') 
 
     # --- Data Cleaning and Validation ---
     
@@ -82,22 +101,20 @@ pooling = "eos"
 normalize = True
 append_eos_token = True
 
-
 if os.path.exists(emb_results_filepath):
     with open(emb_results_filepath, 'r') as f:
         results = json.load(f)
-    print("found file emb!! no need for E5 model")
     retriever = EvaluateRetrieval(None, score_function="cos_sim")
 
 #### Evaluate your retrieval using NDCG@k, MAP@K ...
 
 logging.info(f"Retriever evaluation for k in: 10")
-ndcg, _map, recall, precision = retriever.evaluate(qrels, results, [1,3,5,10])
-mrr = retriever.evaluate_custom(qrels, results, [1,3,5,10], metric="mrr")
+ndcg, _map, recall, precision = retriever.evaluate(qrels, results, [1,3,5,10,100])
+mrr = retriever.evaluate_custom(qrels, results, [1,3,5,10,100], metric="mrr")
 
 results_dir = os.path.join(pathlib.Path(__file__).parent.absolute(), "results")
 os.makedirs(results_dir, exist_ok=True)
 
 #### Save the evaluation runfile & results
-util.save_runfile(os.path.join(results_dir, f"{data_path}/rerank_qwen_score.trec"), results)
-util.save_results(os.path.join(results_dir, f"{data_path}/rerank_qwen_score.json"), ndcg, _map, recall, precision, mrr)
+util.save_runfile(os.path.join(results_dir, f"{data_path}/rerank_qwen_640_score.trec"), results)
+util.save_results(os.path.join(results_dir, f"{data_path}/rerank_qwen_640_score.json"), ndcg, _map, recall, precision, mrr)
