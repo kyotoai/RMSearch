@@ -368,8 +368,6 @@ kentarrito todo
 - [ ] Make baseline to create agent system (rmsearch/agents/) 1day -> pass it to cameron
 - [ ] 
 
-
-
 runpod: /workspace/kentarrito/exp1 -> lora_example.py, README.md, prepare_arguana_dataset.md
         /workspace/kentarrito/exp2 -> custom_trainer_lora_example.py, advanced_dpo_batching.md
 
@@ -632,3 +630,65 @@ smollm
   * add pooling_task
 
 - [ ] Make gpt-oss-20b & reward model opener
+
+
+RMSearch API
+SEIMEI CLI
+
+You need to modify this library to add cli chat feature. Now I need to write this code
+
+```
+orchestrator = seimei(
+        agent_config=[{"file_path": "seimei/agents/code_act.py"}],
+        llm_kwargs={"model": "gpt-5-nano"}, #"base_url": "https://0lhuputae2fexu-8000.proxy.runpod.net/generate"},
+        #rm_kwargs={"url": "https://ny4itsw5vgdcme-8000.proxy.runpod.net/rmsearch", "agent_routing":False, "knowledge_search":True},
+        allow_code_exec=True,
+        #allowed_commands=["ls", "echo"],
+        agent_log_head_lines=1,
+        max_tokens_per_question=20000,
+        #load_knowledge_path="seimei_knowledge/excel.csv",
+    )
+
+    result = await orchestrator(
+        messages=[
+            {"role": "system", "content": "You are an execution assistant that never runs unasked commands."},
+            {"role": "user", "content": "Analyze exp1/csv/ecommerce_orders_001.csv inside and see some features in the csv file."},
+        ],
+        generate_knowledge=True,
+        save_knowledge_path="seimei_knowledge/excel.csv",
+        knowledge_prompt_path="seimei/knowledge/prompts/excel.md",
+    )
+```
+
+to ask something to LLM but it's a bit trouble some. instead let user directly write their question or task to terminal and LLM answers. Here's more detailed design for the cli chat feature
+
+1. user runs command seimei in terminal adn cli app starts
+2. On top of the cli app write something like
+
+```
+
+     ___                    _   _                 _
+    /  _ \ _ __   ___ _ __ | | | | __ _ _ __   __| |___
+    | | | | '_ \ / _ \ '_ \| |_| |/ _` | '_ \ / _` / __|
+    | |_| | |_) |  __/ | | |  _  | (_| | | | | (_| \__ \
+    \___ /| .__/ \___|_| |_|_| |_|\__,_|_| |_|\__,_|___/
+          |_|
+    
+OpenHands CLI v0.47.0
+
+Initialized conversation 92858e7b-8fee-4a59-814d-3a6f57f46643-aa70e8bcabc149c4
+
+Let's start building!
+
+What do you want to build? Type /help for help
+
+> 
+```
+
+btw it's from another library, so change the name to SEIMEI.
+
+3. You can chat by writing question after ">"
+4. While agent is running, it logs out logs of the agent same as seimei does, but you need to remove all the logs after you get the final answer and show user input -> final answer. 
+5. Let user be able to continue the chat after the final answer. since agent output is very long, you should recreate message_history removing all the agent outputs in all_message_history. (be sure  to keep agent outputs in all_message_history for saving the history
+
+Try to think how you make the modification first and tell me what files you will modify and how before you start modifying the file. If there is something ambiguous about my instruction, ask some questions to me before you modify the files.

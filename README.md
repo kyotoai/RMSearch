@@ -463,8 +463,8 @@ Don't forget to give the project a star! Thanks again!
 ### Top contributors:
 
 <!--<a href="https://github.com/github_username/repo_name/graphs/contributors">-->
-<a href="https://github.com/kyotoai/SEIMEI/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=kyotoai/SEIMEI" alt="contrib.rocks image" />
+<a href="https://github.com/kyotoai/RMSearch/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=kyotoai/RMSearch" alt="contrib.rocks image" />
 </a>
 
 
