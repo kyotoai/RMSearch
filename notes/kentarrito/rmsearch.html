@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>RMSearch Field Notes</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Tailwind CDN (for static docs this is usually fine) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+      :root {
+        --primary: 129 140 248; /* indigo-400 */
+        --primary-dark: 79 70 229; /* indigo-600 */
+        --bg-dark: 15 23 42; /* slate-900 */
+        --bg-darker: 0 0 0;
+      }
+
+      body {
+        background-color: rgb(var(--bg-dark));
+        color: rgb(226, 232, 240);
+      }
+
+      ::selection {
+        background: rgba(129, 140, 248, 0.35);
+      }
+
+      /* Thin scrollbar similar to the docs you pasted */
+      .thin-scrollbar::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      .thin-scrollbar::-webkit-scrollbar-thumb {
+        background-color: rgba(148, 163, 184, 0.6);
+        border-radius: 999px;
+      }
+
+      pre code {
+        font-variant-ligatures: none;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen antialiased">
+    <div class="min-h-screen flex bg-slate-950 text-slate-100">
+      <!-- SIDEBAR -->
+      <aside
+        class="hidden lg:flex w-64 flex-col border-r border-slate-800 bg-slate-950/90 backdrop-blur-sm"
+      >
+        <div class="px-6 py-4 border-b border-slate-800 flex items-center gap-3">
+          <div
+            class="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-400 via-purple-500 to-sky-400 flex items-center justify-center text-xs font-bold"
+          >
+            K
+          </div>
+          <div class="flex flex-col">
+            <span class="text-sm font-semibold tracking-tight">KyotoAI</span>
+            <span class="text-xs text-slate-400">RMSearch Field Notes</span>
+          </div>
+        </div>
+
+        <nav
+          class="flex-1 overflow-y-auto thin-scrollbar px-4 py-4 text-sm space-y-6"
+        >
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
+              Overview
+            </h3>
+            <ul class="space-y-1">
+              <li>
+                <a
+                  href="#intro"
+                  class="block rounded-lg px-2 py-1.5 text-slate-200 bg-slate-900/70 font-medium"
+                  >Overview</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#setup"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Setup</a
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
+              Pipelines
+            </h3>
+            <ul class="space-y-1">
+              <li>
+                <a
+                  href="#runtime"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Runtime</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#training"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Training</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#advanced-dpo"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Advanced DPO</a
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
+              Operations
+            </h3>
+            <ul class="space-y-1">
+              <li>
+                <a
+                  href="#evaluation"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Evaluation</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#roadmap"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Roadmap</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#links"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Links</a
+                >
+              </li>
+            </ul>
+          </div>
+        </nav>
+
+        <div
+          class="border-t border-slate-800 px-4 py-3 text-xs text-slate-500 space-y-1"
+        >
+          <div class="flex items-center justify-between">
+            <span>Docs Version</span>
+            <span class="font-mono text-slate-300">v0.1</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span>Project</span>
+            <span class="font-mono text-slate-300">RMSearch</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- MAIN CONTENT -->
+      <main
+        class="flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-12 py-10 lg:py-12"
+      >
+        <!-- Top breadcrumb / header -->
+        <header id="intro" class="mb-8">
+          <div class="mb-2 text-sm font-semibold text-indigo-300">
+            Reward-model native retrieval
+          </div>
+          <h1
+            class="text-3xl sm:text-4xl font-bold tracking-tight text-slate-50 mb-3"
+          >
+            RMSearch aligns retrieval with downstream rewards
+          </h1>
+          <p class="text-slate-300 text-base sm:text-lg max-w-3xl">
+            RMSearch swaps traditional embedding-only similarity for an optimized reward model so the search stack can reason
+            like an agent. Each query/key pair is scored through a vLLM-backed reward head, letting the engine pick agents
+            that unlock chain-of-thought reasoning paths (as highlighted in the project README and SEIMEI examples).
+          </p>
+
+          <div
+            class="mt-4 inline-flex items-center gap-2 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-200"
+          >
+            <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Supports step-by-step CoT planning, aligning with SEIMEI's agent search demos.</span>
+          </div>
+        </header>
+
+        <section
+          id="overview-details"
+          class="prose prose-invert max-w-none prose-headings:scroll-mt-24"
+        >
+          <h2 class="text-xl font-semibold text-slate-50 mb-3">
+            Key traits, stack, and use cases
+          </h2>
+          <div class="grid gap-4 md:grid-cols-3 text-sm text-slate-200/90">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <h3 class="text-sm font-semibold mb-1.5">Key Traits</h3>
+              <ul class="list-disc list-inside space-y-1.5 text-slate-300">
+                <li>State-of-the-art retrieval on BigCodeBench / DeepSeek-R1 benchmarks after reward-model training.</li>
+                <li>Performs better than semantic embeddings (e.g., vs. e5-mistral-7b) when selecting agents with dissimilar text.</li>
+                <li>Supports step-by-step CoT planning, aligning with SEIMEI's agent search demos.</li>
+              </ul>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <h3 class="text-sm font-semibold mb-1.5">Stack</h3>
+              <ul class="list-disc list-inside space-y-1.5 text-slate-300">
+                <li>vLLM</li>
+                <li>Hugging Face</li>
+                <li>TRL + PEFT LoRA</li>
+                <li>FastAPI / Uvicorn</li>
+                <li>PyTorch + CUDA</li>
+              </ul>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <h3 class="text-sm font-semibold mb-1.5">Use Cases</h3>
+              <ul class="list-disc list-inside space-y-1.5 text-slate-300">
+                <li>Search for the best agent persona to answer a query.</li>
+                <li>Reward-aligned reranking for RAG pipelines.</li>
+                <li>Tag tree routing with representative tags per document cluster.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="setup" class="mt-10">
+          <h2 class="text-xl font-semibold text-slate-50 mb-3">
+            Environment checklist
+          </h2>
+          <div class="grid gap-6 md:grid-cols-2 text-slate-300">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-100 mb-2">Hardware &amp; OS</h3>
+                <ul class="list-disc list-inside space-y-1.5">
+                  <li>Linux environment with CUDA-visible GPUs (&gt;=12&nbsp;GB VRAM recommended in README).</li>
+                  <li>Python 3.9+ with PyTorch + CUDA installed; vLLM handles inference.</li>
+                  <li>Plenty of disk space for Hugging Face datasets and checkpoints.</li>
+                  <li>Collaborators mirror the RunPod convention: work under <code>/workspace/&lt;name&gt;/</code>.</li>
+                </ul>
+              </div>
+              <div>
+                <h3 class="text-sm font-semibold text-slate-100 mb-2">Install Options</h3>
+                <pre class="thin-scrollbar overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/50 p-4 text-xs"><code># pip release (placeholder while packaging finishes)
+pip install rmsearch
+
+# editable install from the repo
+git clone https://github.com/kyotoai/RMSearch.git
+cd RMSearch
+pip install -e .</code></pre>
+              </div>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 space-y-4">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-100 mb-2">Optional Model Downloads</h3>
+                <p>All training README files provide <code>hf_transfer</code> commands for local checkpoints:</p>
+                <ul class="list-disc list-inside space-y-1.5">
+                  <li>Reward: <code>Ray2333/GRM-Llama3.2-3B-rewardmodel-ft</code></li>
+                  <li>Instruction/Q&amp;A: <code>Qwen/Qwen3-4B-Instruct-2507</code></li>
+                  <li>Reranker: <code>Qwen/Qwen3-Reranker-4B</code></li>
+                  <li>Embedding baseline: <code>intfloat/e5-mistral-7b-instruct</code></li>
+                </ul>
+              </div>
+              <div>
+                <pre class="thin-scrollbar overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/50 p-4 text-xs"><code>HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download \
+  Ray2333/GRM-Llama3.2-3B-rewardmodel-ft \
+  --local-dir ./llama3b-rm/</code></pre>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="runtime" class="mt-10">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">
+            Search programmatically or via FastAPI
+          </h2>
+
+          <div
+            class="code-group mt-4 mb-4 rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden"
+            data-code-group
+          >
+            <div
+              class="flex items-center justify-between border-b border-slate-800 px-4 py-2"
+            >
+              <div class="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  class="code-tab px-2 py-1 rounded-md bg-slate-800 text-indigo-300 font-medium"
+                  data-lang-tab="python"
+                >
+                  Python
+                </button>
+                <button
+                  type="button"
+                  class="code-tab px-2 py-1 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  data-lang-tab="shell"
+                >
+                  Shell
+                </button>
+              </div>
+              <button
+                type="button"
+                class="copy-btn text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800/80"
+                data-copy
+              >
+                Copy
+              </button>
+            </div>
+
+            <div
+              class="p-4 text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto"
+            >
+              <pre data-lang="python">
+<code>import asyncio
+from rmsearch import Search
+
+async def main():
+    search = Search(
+        model_name="/workspace/llama3b-rm",
+        tensor_parallel_size=1,
+        pipeline_parallel_size=1,
+    )
+    queries = ["Summarise retrieval augmented generation."]
+    keys = [
+        "Retrieval augmented generation (RAG) combines external documents with LLMs.",
+        "An unrelated sentence about cooking pasta.",
+    ]
+    results = await search(queries, keys, k=1)
+    print(results[0]["keys"][0])
+    search.close()
+
+asyncio.run(main())</code>
+              </pre>
+
+              <pre data-lang="shell" class="hidden">
+<code># launch REST endpoint (default app inside rmsearch package)
+uvicorn rmsearch:app --host 0.0.0.0 --port 8000
+
+# send a request
+time curl -X POST http://localhost:8000/rmsearch \
+  -H "Content-Type: application/json" \
+  -d '{"queries": ["How to tune a reward model?"],
+       "keys": ["Reward models score sequences."]}'</code>
+              </pre>
+            </div>
+          </div>
+
+          <p class="text-slate-300">
+            The <code>Search</code> runtime exposes helpers such as <code>search_by_df</code> and <code>get_relevance</code> for batched
+            scoring. All public methods are coroutine-friendly; wrap calls with <code>asyncio.run</code> inside scripts.
+          </p>
+          <p class="text-slate-300">
+            FastAPI responses mirror the async client: you receive <code>query_id</code>, <code>key_id</code>, the matched text, and
+            optional relevance scores.
+          </p>
+
+          <div class="mt-5 grid gap-4 lg:grid-cols-2 text-sm text-slate-300">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <h3 class="text-sm font-semibold mb-2">Runtime modules</h3>
+              <ul class="list-disc list-inside space-y-1.5">
+                <li><code>rmsearch.py</code>: async top-k search, checkpoint-aware streaming, <code>save_results</code>.</li>
+                <li><code>utils/vllm_*.py</code>: builders for generation, embedding, reward, and HTTP-backed inference.</li>
+                <li><code>multi_service.py</code>: multi-model utility combining search, generation, and embeddings.</li>
+              </ul>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <h3 class="text-sm font-semibold mb-2">Tag tree workflow</h3>
+              <ul class="list-disc list-inside space-y-1.5">
+                <li><code>tree/generate_tag.py</code> creates JSON tag inventories.</li>
+                <li><code>tree/embed_tags.py</code> pools embeddings per tag.</li>
+                <li><code>tree/assign_key.py</code> walks the tag tree to map queries to optimal paths.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="training" class="mt-10">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">
+            Dataset creation → LoRA fine-tune
+          </h2>
+          <p class="text-slate-300">
+            The training README files break the process into reproducible CLI stages that mirror <code>examples/train_en.ipynb</code>.
+            Execute them sequentially inside a GPU workspace.
+          </p>
+          <ol class="list-decimal list-inside space-y-1.5 text-slate-300">
+            <li><strong>Collect corpora</strong> with <code>rmsearch.train.process_data</code>. Supports Hugging Face streaming, sampling, and deterministic shuffles. Produces <code>dataset_dict.json</code>, <code>df.csv</code>, and <code>df_small.csv</code>.</li>
+            <li><strong>Generate queries</strong> using <code>make_query_recs.py</code> followed by <code>filter_query_recs.py</code> to focus on titles/questions/keywords.</li>
+            <li><strong>Retrieve candidates</strong> by embedding queries and keys (<code>get_top_relevant_keys_embed.py</code>), or rely on an RM run.</li>
+            <li><strong>Sample preference pairs</strong> with <code>sample_dpo_batch.py</code>, then judge them via <code>judge_dataset.py</code> to produce <code>dataset_list_train/test.json</code>.</li>
+            <li><strong>Train</strong> using <code>lora_example.py</code>, logging to Weights &amp; Biases if desired.</li>
+          </ol>
+
+          <div class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+            <h3 class="text-sm font-semibold text-slate-100 mb-3">LoRA training command</h3>
+            <pre class="thin-scrollbar overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/50 p-4 text-xs"><code>export WANDB_API_KEY=&lt;key&gt;
+wandb login
+
+python -m rmsearch.train.lora_example \
+  --dataset-list-train ./exp1/dataset_list_train.json \
+  --dataset-list-test ./exp1/dataset_list_test.json \
+  --model-name /workspace/llama3b-rm \
+  --output-dir ./exp1/model1 \
+  --wandb-project rmsearch \
+  --wandb-run-name example-lora</code></pre>
+            <p class="text-slate-300 mt-3">
+              Default LoRA configuration targets projection layers (e.g., <code>k_proj</code>, <code>q_proj</code>, <code>gate_proj</code>)
+              with <code>r=16</code> and <code>lora_alpha=16</code>. Adjust inside <code>rmsearch/train/lora_example.py</code>.
+            </p>
+          </div>
+
+          <div class="mt-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+            <h3 class="text-sm font-semibold text-slate-100 mb-2">Script highlights</h3>
+            <ul class="list-disc list-inside space-y-1.5 text-slate-300">
+              <li><code>process_data.py</code>: streaming HF download, subset sampling, CSV export.</li>
+              <li><code>get_top_relevant_keys_embed.py</code>: uses <code>utils/vllm_embed.py</code> with configurable batch sizes and GPU similarity.</li>
+              <li><code>sample_dpo_batch.py</code>: mixes retrieved positives with df-based negatives.</li>
+              <li><code>judge_dataset.py</code>: prompts an LLM (via vLLM) to pick chosen/rejected keys per query.</li>
+            </ul>
+          </div>
+
+          <p class="text-slate-300 mt-4">
+            For test-set construction the team processes the <code>mteb/arguana</code> split, merges <code>corpus.jsonl</code> +
+            <code>queries.jsonl</code>, and generates query records manually before running the same sampling steps.
+          </p>
+        </section>
+
+        <section id="advanced-dpo" class="mt-10">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">Advanced DPO batching</h2>
+          <p class="text-slate-300 mb-4">
+            Beyond the standard DPO pipeline, the <code>README_adpo_*.md</code> guides outline qualitative datasets where every
+            query/key pair is accompanied by systematically degraded alternatives.
+          </p>
+          <div class="grid gap-4 md:grid-cols-2 text-slate-300">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <h3 class="text-sm font-semibold text-slate-100 mb-2">Less relevant key generation</h3>
+              <ul class="list-disc list-inside space-y-1.5">
+                <li><code>make_query_and_less_relevant_keys_recs.py</code> uses Qwen or GPT-OSS to produce a query plus <code>n_key_generation</code> variants, ensuring <code>key[0] &gt; key[1] &gt; ...</code> in relevance.</li>
+                <li>Prompts cycle through instructions (titles, paragraphs, etc.) so the data is not biased toward a single pattern.</li>
+                <li>The exported JSON stores <code>correspond_key</code> and <code>less_relevant_keys</code> per df row.</li>
+              </ul>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <h3 class="text-sm font-semibold text-slate-100 mb-2">Query difficulty ladders</h3>
+              <ul class="list-disc list-inside space-y-1.5">
+                <li><code>make_query_dpo_pairs.py/v2/v3</code> generate queries spanning highly relevant to partially off-target.</li>
+                <li>Configurations support large runs (<code>n_query_generation</code> up to 5, multi-instance vLLM workers).</li>
+                <li>Pairs can be fed directly into <code>adpo_lora_example.py</code> for training with explicit difficulty order.</li>
+              </ul>
+            </div>
+          </div>
+          <p class="text-slate-300 mt-4">
+            Use <code>sample_advanced_dpo_batch.py</code> to mix the structured positives with randomly sampled negatives
+            (<code>n-sampled-keys</code>) before exporting <code>adpo_sampled_query_key_set.json</code>.
+          </p>
+        </section>
+
+        <section id="evaluation" class="mt-10">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">
+            End-to-end evaluation on BEIR datasets
+          </h2>
+          <p class="text-slate-300 mb-4">
+            The evaluation README focuses on BEIR tasks that expose binary relevance scores. Each stage consumes the previous
+            output, so clean up the dataset folder if you need a fresh run.
+          </p>
+          <div class="grid gap-4 md:grid-cols-2 text-slate-300">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <h3 class="text-sm font-semibold text-slate-100 mb-2">Embedding stage</h3>
+              <pre class="thin-scrollbar overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/50 p-4 text-xs"><code>python -m rmsearch.evaluation.embed \
+  --dataset-path /workspace/beir_out/scifact \
+  --split test \
+  --output .../relevant_emb.json \
+  --output-eval .../relevant_emb_eval.json \
+  --model-name /workspace/e5-mistral7b \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --top-k 100 \
+  --similarity-device auto</code></pre>
+              <ul class="list-disc list-inside space-y-1.5">
+                <li>Automatically downloads the BEIR dataset when missing.</li>
+                <li>Writes two JSON files: one for reranking, one for nDCG scoring.</li>
+                <li>Example entry stores <code>query_id</code>, <code>key_ids</code>, <code>positive_key_ids</code>, and embedding scores.</li>
+              </ul>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-3">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-100 mb-2">Rerank + nDCG</h3>
+                <pre class="thin-scrollbar overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/50 p-4 text-xs"><code>python -m rmsearch.evaluation.rerank \
+  --dataset-path /workspace/beir_out/scifact \
+  --embed-output .../relevant_emb.json \
+  --output-eval .../relevant_rerank_eval.json \
+  --model-name /workspace/qwen4b-reward-step560 \
+  --tensor-parallel-size 1 \
+  --num-instances 1 \
+  --request-batch-size 128</code></pre>
+              </div>
+              <p>
+                Edit <code>rmsearch/evaluation/ndcg.py</code> to point to your dataset, path, and rerank output, then run
+                <code>python rmsearch/evaluation/ndcg.py</code> to compute nDCG scores.
+              </p>
+              <p>Remember to convert reward checkpoints (if necessary) with <code>utils.py</code> before evaluation.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="roadmap" class="mt-10">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">Roadmap excerpts</h2>
+          <div class="grid gap-4 md:grid-cols-2 text-slate-300">
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <h3 class="text-sm font-semibold text-slate-100 mb-2">Search</h3>
+              <ul class="list-disc list-inside space-y-1.5">
+                <li>Async vLLM integration enhancements.</li>
+                <li>Automatic compatibility solver for distributed inference.</li>
+              </ul>
+            </div>
+            <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+              <h3 class="text-sm font-semibold text-slate-100 mb-2">Training</h3>
+              <ul class="list-disc list-inside space-y-1.5">
+                <li>Reward trainer polish + expanded examples.</li>
+                <li>MCTS-style example notebooks for reasoning search.</li>
+              </ul>
+            </div>
+          </div>
+          <p class="text-slate-300 mt-4">
+            Track open issues on GitHub for the latest tasks across search, training, and evaluation.
+          </p>
+        </section>
+
+        <section id="links" class="mt-10 mb-16">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">Key links</h2>
+          <ul class="list-disc list-inside text-slate-300 space-y-1.5">
+            <li>Repository: <a href="https://github.com/kyotoai/RMSearch" target="_blank" rel="noreferrer">github.com/kyotoai/RMSearch</a></li>
+            <li>Demo gallery: <a href="https://github.com/kyotoai/RMSearch/tree/main/demo">demo/</a></li>
+            <li>Roadmap &amp; planning: see <code>ROADMAP.md</code> and pinned GitHub issues.</li>
+            <li>Contact KyotoAI Inc.: <a href="mailto:office@kyotoai.org">office@kyotoai.org</a> · <a href="https://kyotoai.org" target="_blank" rel="noreferrer">kyotoai.org</a></li>
+            <li>License: Apache-2.0 (see <code>LICENSE</code>).</li>
+          </ul>
+        </section>
+      </main>
+    </div>
+
+    <!-- Minimal JS for tabs + copy buttons -->
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const groups = document.querySelectorAll("[data-code-group]");
+
+        groups.forEach((group) => {
+          const tabs = group.querySelectorAll("[data-lang-tab]");
+          const pres = group.querySelectorAll("pre[data-lang]");
+          const copyBtn = group.querySelector("[data-copy]");
+
+          if (!tabs.length || !pres.length || !copyBtn) return;
+
+          let activeLang =
+            tabs[0].dataset.langTab || pres[0].dataset.lang || "python";
+
+          function setActive(lang) {
+            activeLang = lang;
+            tabs.forEach((tab) => {
+              const isActive = tab.dataset.langTab === lang;
+              tab.classList.toggle("bg-slate-800", isActive);
+              tab.classList.toggle("text-indigo-300", isActive);
+              tab.classList.toggle("font-medium", isActive);
+              tab.classList.toggle("text-slate-400", !isActive);
+            });
+            pres.forEach((pre) => {
+              pre.classList.toggle("hidden", pre.dataset.lang !== lang);
+            });
+          }
+
+          tabs.forEach((tab) => {
+            tab.addEventListener("click", () => {
+              setActive(tab.dataset.langTab);
+            });
+          });
+
+          copyBtn.addEventListener("click", async () => {
+            const codeEl = group.querySelector(
+              `pre[data-lang="${activeLang}"] code`
+            );
+            if (!codeEl) return;
+
+            const text = codeEl.textContent || "";
+            try {
+              await navigator.clipboard.writeText(text);
+              const old = copyBtn.textContent;
+              copyBtn.textContent = "Copied";
+              setTimeout(() => {
+                copyBtn.textContent = old;
+              }, 1200);
+            } catch (e) {
+              console.error("copy failed", e);
+            }
+          });
+
+          // Initialize
+          setActive(activeLang);
+        });
+      });
+    </script>
+  </body>
+</html>

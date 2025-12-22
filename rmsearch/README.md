@@ -23,6 +23,44 @@ git clone --branch develop https://github.com/kyotoai/RMSearch.git
 pip install -e RMSearch/.
 ```
 
+## Basic Usage
+
+### Programmatic search
+```python
+import asyncio
+from rmsearch import Search
+
+async def main():
+    search = Search(
+        model_name="/workspace/llama3b-rm",
+        tensor_parallel_size=1,
+        pipeline_parallel_size=1,
+    )
+    queries = ["Summarise retrieval augmented generation."]
+    keys = [
+        "Retrieval augmented generation (RAG) combines external documents with LLMs.",
+        "An unrelated sentence about cooking pasta.",
+    ]
+    results = await search(queries, keys, k=1)
+    search.close()
+    print(results[0]["keys"][0])
+
+asyncio.run(main())
+```
+
+### FastAPI service
+After installing the package, start the REST endpoint:
+```bash
+uvicorn rmsearch:app --host 0.0.0.0 --port 8000
+```
+
+Send a request with either plain strings or chat-style queries:
+```bash
+curl -X POST http://localhost:8000/rmsearch \
+  -H "Content-Type: application/json" \
+  -d '{"queries": ["How to tune a reward model?"], "keys": ["Reward models score sequences."]}'
+```
+
 
 ## Minimal Experiment - Training
 
