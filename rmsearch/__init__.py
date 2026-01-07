@@ -1,3 +1,3 @@
-from .rmsearch import Search
+from .rmsearch import Search, app
 
-__all__ = ['Search']
+__all__ = ["Search", "app"]

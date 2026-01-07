@@ -8,12 +8,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from datasets import Dataset
-from transformers import AutoModelForSequenceClassification, AutoTokenizer,BitsAndBytesConfig
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, BitsAndBytesConfig
 from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from .utils import extract_int, extract_text
-# from trl.trainer.reward_trainer import DataCollatorForPreference
-
-
 
 import os
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -34,112 +31,104 @@ def _truncate_message(content: str, limit: int) -> str:
     return text[:limit] + "..."
 
 
-def _format_preference_pair(
+# --- replace the old helper that returned list[dict] with this one ---
+def _format_preference_pair_standard(
     example: Dict[str, object],
     tokenizer,
     *,
-    max_length: int=4000,
     max_characters: int,
-) -> Dict[str, List[int]]:
-    chosen_msg = example["chosen_msg"]
-    rejected_msg = example["rejected_msg"]
+) -> Dict[str, object]:
+    """
+    Build TRL-standard preference fields as STRINGS:
+      {"chosen": "<templated text>", "rejected": "<templated text>"}
+
+    TRL RewardTrainer expects columns 'chosen' and 'rejected' and does tokenization internally.
+    Docs: https://huggingface.co/docs/trl/en/reward_trainer  (Dataset formats - Preference)
+    """
+    chosen_msg = example.get("chosen_msg")
+    rejected_msg = example.get("rejected_msg")
 
     if not isinstance(chosen_msg, list) or not isinstance(rejected_msg, list):
         raise ValueError("Both 'chosen_msg' and 'rejected_msg' must be chat message lists.")
 
     trimmed_chosen = [
-        {**message, "content": _truncate_message(message.get("content", ""), max_characters)}
-        for message in chosen_msg
+        {**m, "content": _truncate_message(m.get("content", ""), max_characters)}
+        for m in chosen_msg
     ]
     trimmed_rejected = [
-        {**message, "content": _truncate_message(message.get("content", ""), max_characters)}
-        for message in rejected_msg
+        {**m, "content": _truncate_message(m.get("content", ""), max_characters)}
+        for m in rejected_msg
     ]
 
-    prompt_plus_chosen = tokenizer.apply_chat_template(trimmed_chosen, tokenize=False)
-    prompt_plus_rejected = tokenizer.apply_chat_template(trimmed_rejected, tokenize=False)
-
-    chosen_tokens = tokenizer(
-        [prompt_plus_chosen],
-        padding="max_length",
-        truncation=True,
-        max_length=max_length,
-        add_special_tokens=False,
+    # Convert messages -> single templated strings (NOT tokenized yet)
+    chosen_text = tokenizer.apply_chat_template(
+        trimmed_chosen, tokenize=False, add_generation_prompt=False
     )
-    rejected_tokens = tokenizer(
-        [prompt_plus_rejected],
-        padding="max_length",
-        truncation=True,
-        max_length=max_length,
-        add_special_tokens=False,
+    rejected_text = tokenizer.apply_chat_template(
+        trimmed_rejected, tokenize=False, add_generation_prompt=False
     )
 
-    return {
-        "input_ids_chosen": chosen_tokens["input_ids"][0],
-        "attention_mask_chosen": chosen_tokens["attention_mask"][0],
-        "input_ids_rejected": rejected_tokens["input_ids"][0],
-        "attention_mask_rejected": rejected_tokens["attention_mask"][0],
+    out = {
+        "chosen": chosen_text,
+        "rejected": rejected_text,
     }
-#     return {
-#    "chosen_input_ids": chosen_tokens["input_ids"][0],
-#    "chosen_attention_mask": chosen_tokens["attention_mask"][0],
-#    "rejected_input_ids": rejected_tokens["input_ids"][0],
-#    "rejected_attention_mask": rejected_tokens["attention_mask"][0],
-#  }
+    if "chosen_sentence_id" in example:
+        out["chosen_sentence_id"] = example["chosen_sentence_id"]
+    if "rejected_sentence_id" in example:
+        out["rejected_sentence_id"] = example["rejected_sentence_id"]
+    return out
 
 
+# --- replace your _build_dataset_split with this version ---
 def _build_dataset_split(
     records: Sequence[Dict[str, object]],
     tokenizer,
     *,
-    max_length: int=4000,
+    max_length: int = 4000,   # forwarded via RewardConfig; not used here directly
     max_characters: int,
 ) -> Optional[Dataset]:
     if not records:
         return None
 
-    dataset = Dataset.from_list(list(records))
+    print(f"[prep] received {len(records)} raw preference records")
+    ds_in = Dataset.from_list(list(records))
+    print(f"[prep] input columns: {ds_in.column_names}")
 
-    def format_example(example: Dict[str, object]) -> Dict[str, List[int]]:
-        return _format_preference_pair(
-            example,
-            tokenizer,
-            max_length=max_length,
-            max_characters=max_characters,
+    def convert_row(example: Dict[str, object]) -> Dict[str, object]:
+        return _format_preference_pair_standard(
+            example, tokenizer, max_characters=max_characters
         )
 
-    tokenized = dataset.map(format_example)
+    ds = ds_in.map(
+        convert_row,
+        desc="[prep] building standard 'chosen'/'rejected' strings",
+    )
 
-    # keep_columns = {
-    #     "chosen_input_ids",
-    #     "chosen_attention_mask",
-    #     "rejected_input_ids",
-    #     "rejected_attention_mask",
-    #     "chosen_sentence_id",
-    #     "rejected_sentence_id",
+    keep_columns = {"chosen", "rejected", "chosen_sentence_id", "rejected_sentence_id"}
+    to_remove = [c for c in ds.column_names if c not in keep_columns]
+    if to_remove:
+        ds = ds.remove_columns(to_remove)
 
-    # }
-    keep_columns={
-        "input_ids_chosen",
-        "attention_mask_chosen",
-        "input_ids_rejected",
-        "attention_mask_rejected",
-        "chosen_sentence_id",
-        "rejected_sentence_id",
-    }
-    columns_to_remove = [column for column in tokenized.column_names if column not in keep_columns]
-    if columns_to_remove:
-        tokenized = tokenized.remove_columns(columns_to_remove)
+    print(f"[prep] final columns: {ds.column_names}")
+    print(f"[prep] dataset size: {ds.num_rows}")
 
-    return tokenized
+    # Show a tiny peek so we know we actually have strings
+    try:
+        ex = ds[0]
+        print("[prep] first row keys:", list(ex.keys()))
+        print("[prep] chosen[:160]:", (ex["chosen"][:160] + "...") if isinstance(ex.get("chosen"), str) else type(ex.get("chosen")))
+        print("[prep] rejected[:160]:", (ex["rejected"][:160] + "...") if isinstance(ex.get("rejected"), str) else type(ex.get("rejected")))
+    except Exception as e:
+        print(f"[prep] sample print failed (non-fatal): {e}")
 
+    return ds
 
 def make_dataset_list(
     results: Sequence[Dict[str, object]],
     *,
     sentences: Sequence[str],
 ) -> List[Dict[str, object]]:
-    """Convert judge outputs into chat-format preference pairs."""
+    """Convert judge outputs into chat-format preference pairs (implicit prompt)."""
 
     dataset_list: List[Dict[str, object]] = []
 
@@ -191,14 +180,12 @@ def make_dataset_list(
             }
         )
 
-
-    # dataset_list (list): preference pairs used by TRL, where each element is
-    #   {
-    #     "chosen_msg": [{"role": "user", "content": "<prompt with positive sentence>"}],
-    #     "rejected_msg": [{"role": "user", "content": "<prompt with negative sentence>"}],
-    #     "chosen_sentence_id": <index of the preferred sentence>,
-    #     "rejected_sentence_id": <index of the less relevant sentence>
-    #   }
+    # TRL RewardTrainer will consume as:
+    # {
+    #   "chosen":   [... conversational messages ...],
+    #   "rejected": [... conversational messages ...],
+    #   (optional metadata)
+    # }
     return dataset_list
 
 
@@ -220,29 +207,36 @@ def train_reward_model(
     wandb_run_name: Optional[str] = None,
     wandb_tags: Optional[Sequence[str]] = None,
 ) -> None:
-    """Train a reward model using TRL's RewardTrainer with LoRA adapters."""
+    """Train a reward model using TRL's RewardTrainer with LoRA adapters (built-in collator & dataloader)."""
 
-    from peft import LoraConfig, TaskType, get_peft_model
     from trl import RewardConfig, RewardTrainer
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name,
-    padding_side="left",
-     add_bos_token=True)
-    if tokenizer.pad_token is None:
+    # --- Tokenizer ---
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer.padding_side = "left"
+    # If pad_token is missing, fall back to eos
+    if tokenizer.pad_token is None and tokenizer.eos_token is not None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    print(f"[tok] pad_token={repr(tokenizer.pad_token)} id={tokenizer.pad_token_id} eos={repr(tokenizer.eos_token)} id={tokenizer.eos_token_id}")
+
+    # --- Load base model in 8-bit & wrap with LoRA ---
     quantization_config = BitsAndBytesConfig(
-    load_in_8bit=True,          # Enable 8-bit quantization     
-)
+        load_in_8bit=True,  # 8-bit weights
+    )
 
-    model = AutoModelForSequenceClassification.from_pretrained(model_name,
-                                                                num_labels=1,
-                                                                quantization_config=quantization_config,
-                                                                device_map="auto" )
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_name,
+        num_labels=1,  # Reward head
+        quantization_config=quantization_config,
+        device_map="auto",
+    )
 
+    # Prepares LayerNorms, gradients, etc. for k-bit finetuning
     model = prepare_model_for_kbit_training(model)
+
     peft_config = LoraConfig(
         task_type=TaskType.SEQ_CLS,
         inference_mode=False,
@@ -255,19 +249,28 @@ def train_reward_model(
             "gate_proj",
             "up_proj",
         ],
-        layers_to_transform=[25, 26, 27],
+        layers_to_transform=[25, 26, 27],  # model-architecture specific
         r=16,
         lora_alpha=16,
         lora_dropout=0.1,
+        # not 100% sure: for AutoModelForSequenceClassification you typically
+        # don't need to explicitly save "score"/classifier head via modules_to_save;
+        # for CausalLM reward heads you often add modules_to_save=["score"].
     )
     model = get_peft_model(model, peft_config)
 
+    # --- Build datasets in conversational 'chosen'/'rejected' format (no tokenization here) ---
     train_dataset = _build_dataset_split(
         dataset_list_train,
         tokenizer,
         max_length=max_length,
         max_characters=max_characters,
     )
+
+    print("[prep] n_rows:", len(train_dataset))
+    print("[prep] columns:", train_dataset.column_names)
+
+
     if train_dataset is None:
         raise ValueError("Training dataset is empty; provide at least one preference pair.")
 
@@ -278,6 +281,7 @@ def train_reward_model(
         max_characters=max_characters,
     )
 
+    # --- W&B ---
     wandb_run = None
     report_to: List[str] = []
     if wandb_project:
@@ -304,54 +308,87 @@ def train_reward_model(
         )
         report_to = ["wandb"]
 
-    evaluation_strategy = "steps" if eval_dataset is not None else "no"
+    # --- Trainer config (use eval_strategy, not the deprecated evaluation_strategy) ---
+    evaluation_strategy = "steps" if (eval_dataset is not None and len(eval_dataset) > 0) else "no"
+
     training_args = RewardConfig(
+        # core
         output_dir=str(output_dir),
         run_name=wandb_run_name,
-        max_length=4000,
+
+        # preprocessing knobs used by RewardTrainer internally
+        max_length=max_length,           # filter out samples exceeding this after tokenization
+        pad_token=tokenizer.pad_token,   # ensure padding is defined
+        eos_token=tokenizer.eos_token,
+        dataset_num_proc=None,           # set >1 to parallelize TRL's preprocessing if desired
+
+        # batches/optim
         per_device_train_batch_size=per_device_train_batch_size,
         per_device_eval_batch_size=per_device_eval_batch_size,
         gradient_accumulation_steps=4,
-        optim="paged_adamw_8bit",   # if bitsandbytes is present
-        # torch_compile=True, 
-        learning_rate=1e-4,              
-        weight_decay=0.05,               # small regularization helps with high LR
-        lr_scheduler_type="cosine",      # good default for high LR
-        # lr_scheduler_kwargs={"num_cycles": 4},
-        warmup_steps=40,           
+        optim="paged_adamw_8bit",        # supported by Transformers TrainingArguments
+        learning_rate=1e-4,
+        weight_decay=0.05,
+        lr_scheduler_type="cosine",
+        warmup_steps=40,
         max_grad_norm=1.0,
+        gradient_checkpointing=True,
+
+        # logging & eval & save
         eval_strategy=evaluation_strategy,
-        eval_steps=evaluation_steps,
-        eval_on_start=bool(eval_dataset),
+        eval_steps=evaluation_steps if evaluation_strategy == "steps" else None,
+        # eval_on_start=bool(eval_dataset),
         save_strategy="steps",
         save_steps=save_steps,
         logging_steps=logging_steps,
         num_train_epochs=num_train_epochs,
         report_to=report_to,
-        remove_unused_columns=False,
+        remove_unused_columns=False,     # keep our meta cols if present
+
+        # RM-specific nicety
+        # center_rewards_coefficient=1e-2,  # recommended in TRL docs for mean-zero rewards
     )
 
-    # collator = DataCollatorForPreference(pad_token_id=tokenizer.pad_token_id)
+    print(f"[trainer] eval_strategy={training_args.eval_strategy} "
+          f"eval_steps={training_args.eval_steps} "
+          f"save_steps={training_args.save_steps} "
+          f"logging_steps={training_args.logging_steps} "
+          f"max_length={training_args.max_length}")
 
-    print("train cols:", train_dataset.column_names)
-
+    # --- RewardTrainer uses its own internal collator & tokenization for preference data ---
+    print("[trainer] initializing RewardTrainer (built-in collator/dataloader)")
+    from trl import RewardTrainer
     trainer = RewardTrainer(
         model=model,
         args=training_args,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
     )
 
+    # quick peek at first processed batch to verify shapes
+    print("[trainer] sanity batch preview (one step, no update)")
+    try:
+        trainer.create_optimizer_and_scheduler(num_training_steps=1)
+        dl = trainer.get_train_dataloader()
+        first = next(iter(dl))
+        # Expect input_ids/attention_mask of concatenated chosen+rejected (2x batch)
+        for k in ["input_ids", "attention_mask"]:
+            if k in first:
+                shape = tuple(first[k].shape)
+                print(f"[preview] {k} shape={shape}")
+    except Exception as e:
+        print(f"[preview] could not preview first batch (non-fatal): {e}")
+
+    print("[train] starting training...")
     trainer.train()
 
-    if eval_dataset is not None:
+    if eval_dataset is not None and len(eval_dataset) > 0:
+        print("[eval] evaluating...")
         trainer.evaluate()
 
     if wandb_project:
-        # Close the W&B run so metrics are flushed.
         import wandb
-
         wandb.finish()
 
 
@@ -389,25 +426,25 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-characters",
         type=int,
-        default=4000,
+        default=8000,
         help="Maximum number of characters kept from each message before tokenization.",
     )
     parser.add_argument(
         "--per-device-train-batch-size",
         type=int,
-        default=4,
+        default=6,
         help="Batch size per device for the training split.",
     )
     parser.add_argument(
         "--per-device-eval-batch-size",
         type=int,
-        default=2,
+        default=4,
         help="Batch size per device for the evaluation split.",
     )
     parser.add_argument(
         "--evaluation-steps",
         type=int,
-        default=20,
+        default=40,
         help="Frequency (in steps) to evaluate the model when a test split is provided.",
     )
     parser.add_argument(
@@ -458,6 +495,16 @@ if __name__ == "__main__":
         with args.dataset_list_test.open() as handle:
             dataset_list_test = json.load(handle)
 
+    from datasets import Dataset
+
+    raw_train = Dataset.from_list(dataset_list_train)
+    print("[raw] n_rows:", len(raw_train))
+    print("[raw] columns:", raw_train.column_names)
+    print("[raw] first row:", raw_train[0])      # direct dict access to first example
+    # If you want just the first 2 as a Dataset object (not a dict of lists):
+    print("[raw] head(2):", raw_train.select(range(2))[:2])
+
+
     train_reward_model(
         dataset_list_train,
         dataset_list_test=dataset_list_test,
@@ -471,7 +518,6 @@ if __name__ == "__main__":
         save_steps=args.save_steps,
         logging_steps=args.logging_steps,
         num_train_epochs=args.num_train_epochs,
-        # Connect with wandb
         wandb_project=args.wandb_project,
         wandb_run_name=args.wandb_run_name,
         wandb_tags=args.wandb_tags,

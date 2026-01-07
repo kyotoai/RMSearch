@@ -33,9 +33,11 @@ def transform_query_data(input_data):
 
 def main():
     # Example usage
-    input_file = "beir_out/scifact/relevance_dict_rerank_exp5.json"  # Change to your input file path
-    output_file = "beir_out/scifact/relevance_dict_rerank_exp5_adj.json"  # Change to your output file path
+    input_file = "/workspace/Prakhar/beir_out/scifact/relevance_dict_rerank_exp8-qwen-step720.json"  # Change to your input file path
+    output_file = "/workspace/Prakhar/beir_out/scifact/relevance_dict_rerank_exp8-qwen-step720_adj.json"  # Change to your output file path
     
+
+
     # Read input data
     with open(input_file, 'r') as f:
         input_data = json.load(f)

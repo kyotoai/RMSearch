@@ -9,7 +9,7 @@ import argparse
 
 Examples:
 
-1. When converting checkpoint to model compatible with rmsearch.utils.vllm_reward.py
+1. When converting checkpoint[trained lora] to model compatible with rmsearch.utils.vllm_reward.py
 ```bash
 python -m rmsearch.evaluation.utils \
   --type checkpoint \

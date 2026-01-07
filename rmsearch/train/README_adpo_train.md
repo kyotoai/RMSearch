@@ -138,7 +138,7 @@ store the top-N matches per query.
 ```bash
 python -m rmsearch.train.get_top_relevant_keys_embed \
   --queries-json ./data/smollm-corpus/filtered_query_recs.json \
-  --keys-csv ./data/smollm-corpus/df_small.csv \
+  --keys-csv ./data/smollm-corpus/df.csv \
   --key-column text \
   --model-name /workspace/e5-mistral7b \
   --tensor-parallel-size 1 \
@@ -317,17 +317,15 @@ python -m rmsearch.train.judge_adpo_dataset \
 python3 - <<'PY'
 from pathlib import Path
 import json
-query_key_set_path = "data/smollm-corpus/adpo_sampled_query_key_set.json"
-output_path = Path("exp2/dataset_list_train.json")
+query_key_set_path = "data/mix2/adpo_sampled_query_key_set.json"
+output_path = Path("exp8/dataset_list_train.json")
 
 with open(query_key_set_path) as f:
   query_key_set = json.load(f)
 
 def _format_prompt(query: str, key: str) -> str:
   return (
-      "Give me relevant score between query and sentence;\n\n"
-      f"Query:{query}\n\n"
-      f"Sentence:```{key}```"
+      f"Give me relevance score between query and key;\n\n<query>{query}</query>\n\n<key>{key}</key>"
   )
 
 dataset_list = []
@@ -385,17 +383,15 @@ PY
 python3 - <<'PY'
 from pathlib import Path
 import json
-query_key_set_path = "data/arguana/adpo_sampled_query_key_set.json"
-output_path = Path("exp2/dataset_list_test.json")
+query_key_set_path = "data/mix2/adpo_sampled_query_key_set.json"
+output_path = Path("exp8/dataset_list_test.json")
 
 with open(query_key_set_path) as f:
   query_key_set = json.load(f)
 
 def _format_prompt(query: str, key: str) -> str:
   return (
-      "Give me relevant score between query and sentence;\n\n"
-      f"Query:{query}\n\n"
-      f"Sentence:```{key}```"
+      f"Give me relevance score between query and key;\n\n<query>{query}</query>\n\n<key>{key}</key>"
   )
 
 dataset_list = []

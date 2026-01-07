@@ -68,7 +68,7 @@ Omit `--n-sample` entirely if you want to materialise the full split.
 
 
 
-## `make_query_recs.py`
+## `make_query_recs.py`.    
 
 Flatten the generated titles, keywords, questions, and irrelevant questions into
 per-query recommendation records while reusing the same vLLM backend.

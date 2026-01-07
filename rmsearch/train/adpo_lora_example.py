@@ -215,7 +215,7 @@ class CustomRewardTrainer(Trainer):
         device = rewards.device
         dtype  = rewards.dtype
 
-        total_loss = 0.0
+        total_loss = rewards.sum() * 0.0 
         # Compute pairwise DPO-style loss per sample, then average across batch
         for b in range(B):
             pairs = dpo_pairs_list[b]  # list[(chosen_idx, rejected_idx)]
@@ -670,7 +670,7 @@ def train_reward_model(
         warmup_steps=40,           
         max_grad_norm=1.0, 
         fp16=True,
-        eval_on_start=bool(eval_dataset),
+        # eval_on_start=bool(eval_dataset),
         save_strategy="steps",
         save_steps=save_steps,
         logging_steps=logging_steps,
@@ -816,19 +816,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--max-length",
         type=int,
-        default=4000,
+        default=1000,
         help="Maximum number of tokens per preference pair after tokenization.",
     )
     parser.add_argument(
         "--max-characters",
         type=int,
-        default=4000,
+        default=2000,
         help="Maximum number of characters kept from each message before tokenization.",
     )
     parser.add_argument(
         "--per-device-train-batch-size",
         type=int,
-        default=2,
+        default=1,
         help="Batch size per device for the training split.",
     )
     parser.add_argument(

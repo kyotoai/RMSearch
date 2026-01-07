@@ -236,7 +236,7 @@ original notebook inputs (`df_small.csv`, `query_dict.json`, and
     }
     ```
 
-## `transform_pair.py`
+## `transform_pair.py` #not needed
 
 ```bash
 python -m rmsearch.evaluation.transform_pair \

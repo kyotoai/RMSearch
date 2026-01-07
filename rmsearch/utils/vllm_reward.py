@@ -1,6 +1,6 @@
-# vllm_model.py
 
-"""sample.py
+
+"""
 import multiprocessing as mp
 mp.set_start_method("spawn", force=True)  # do this ONCE per kernel before using mp
 
@@ -209,8 +209,15 @@ def _worker_main(
                     score_dtype = common_dtype
                     score_local = score.to(dtype=score_dtype, device=score_device)
 
+                    prompt_tokens = sum(len(out.prompt_token_ids) for out in outputs)
+
                     rewards = torch.matmul(score_local, embeds.transpose(0, 1))[0]
-                    result_q.put((job_id, item_idx, worker_id, {"outputs": rewards}))
+                    # result_q.put((job_id, item_idx, worker_id, {"outputs": rewards}))
+                    result_q.put((job_id, item_idx, worker_id, {
+                    "outputs": rewards,
+                    "prompt_tokens": prompt_tokens  # NEW
+                }))
+
                     n_finished_item += 1
                     done += 1
                     # keep original periodic print (unchanged) + heartbeat will also update
@@ -301,7 +308,8 @@ class LLMWorker:
         batch_size: int = 8,
         timeout_s: Optional[float] = None,
         checkpoint_path: Optional[str] = None,
-    ) -> List[str]:
+    ) -> Tuple[torch.Tensor, Dict[str, int]]:
+
         if pooling_params is None:
             pooling_params = PoolingParams()
 
@@ -332,6 +340,7 @@ class LLMWorker:
         to_submit = list(range(pending))  # chunk indices not yet submitted
         rr = 0  # independent round-robin pointer for submission
         chunk_results: Dict[int, Any] = {}
+        total_prompt_tokens = 0
         deadline = time.time() + timeout_s if timeout_s else None
         poll = 0.2  # seconds
 
@@ -396,6 +405,9 @@ class LLMWorker:
 
             # normal batch result
             batch_outputs = payload["outputs"]
+            batch_tokens = payload.get("prompt_tokens", 0)  # NEW
+            total_prompt_tokens += batch_tokens  # NEW
+
             chunk_results[item_idx] = batch_outputs
 
             if checkpoint_path:
@@ -426,7 +438,11 @@ class LLMWorker:
                 outputs[i] = t
 
         outputs = torch.stack(outputs)  # torch.tensor([reward1, reward2, ... ])
-        return outputs  # type: ignore
+        usage = {  # NEW
+        "prompt_tokens": total_prompt_tokens,
+        "total_tokens": total_prompt_tokens,
+        }
+        return outputs, usage  # type: ignore
 
     def close(self, kill: bool = False):
         for q in self.task_queues:
@@ -475,7 +491,7 @@ def search(
     topk: int = 10,
     query_batch_size: int = 128,
     **gen_kwargs,
-) -> List[str]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
 
     # requests = [{"query": "...", "keys": ["k1","k2", ...]}, ...]
     df = pd.DataFrame(requests)
@@ -504,13 +520,19 @@ def search(
     records: List[Dict[str, Any]] = []
     num_rows = len(dataset1)
 
+    total_tokens = 0
+
     for start in range(0, num_rows, query_batch_size):
         end = min(start + query_batch_size, num_rows)
         batch_indices = list(range(start, end))
         formatted_batch = dataset1.select(batch_indices).map(format)
         prompts = formatted_batch["prompt"]
 
-        batch_rewards = model.encode(prompts, **gen_kwargs)
+        # batch_rewards = model.encode(prompts, **gen_kwargs)
+
+        batch_rewards, batch_usage = model.encode(prompts, **gen_kwargs)  # NEW
+        total_tokens += batch_usage["total_tokens"]  # NEW
+
         if isinstance(batch_rewards, torch.Tensor):
             batch_scores = batch_rewards.detach().cpu().numpy()
         else:
@@ -554,4 +576,11 @@ def search(
         .tolist()
     )
 
-    return result
+    usage = {  # NEW
+        "total_tokens": total_tokens,
+        "prompt_tokens": total_tokens,
+        "queries_processed": len(requests),
+    }
+    
+
+    return result, usage

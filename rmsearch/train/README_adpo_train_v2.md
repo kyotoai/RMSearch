@@ -358,7 +358,10 @@ nohup accelerate launch --config_file ./accelerate_config.yaml \
 ```
 
 ## exp2 (most correct dataset)
-nohup accelerate launch --config_file ./accelerate_config.yaml -m rmsearch.train.adpo_lora_example --dataset-list-train ./exp2/dataset_list_train.json --dataset-list-test ./exp2/dataset_list_test.json --model-name /workspace/qwen4b-reward/ --output-dir ./exp2/modelQwenReward/ --wandb-project rmsearch --wandb-run-name exp2-adpo-lora-qwen4b-reward > ./train.log 2>&1
+nohup accelerate launch --config_file ./accelerate_config.yaml -m rmsearch.train.adpo_lora_example --dataset-list-train ./exp2/dataset_list_train.json --dataset-list-test ./exp2/dataset_list_test.json --model-name /workspace/qwen4b-reward/ --output-dir ./exp2/testjuan/modelQwenReward/ --wandb-project rmsearch --wandb-run-name exp2-adpo-lora-qwen4b-reward > ./train.log 2>&1
+
+
+nohup accelerate launch --config_file ./accelerate_config.yaml   -m rmsearch.train.adpo_lora_example   --dataset-list-train ./exp7/dataset_list_train_14.json   --dataset-list-test ./exp7/dataset_list_test_14.json   --model-name /workspace/qwen4b-reward/   --output-dir ./exp2/model7/ --wandb-project rmsearch --wandb-run-name exp2-adpo-lora-qwen4b-reward  > ./train.log 2>&1 &
 
 ## use with disown 
 nohup accelerate launch --config_file ./accelerate_config.yaml \

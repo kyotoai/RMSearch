@@ -31,7 +31,7 @@ logging.basicConfig(
     handlers=[LoggingHandler()],
 )
 
-dataset = "nfcorpus"
+# dataset = "nfcorpus"
 
 #### Download nfcorpus.zip dataset and unzip the dataset
 # url = f"https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/{dataset}.zip"
@@ -90,7 +90,7 @@ except FileNotFoundError:
     qrels = {} # Initialize empty dictionary on failure
 
 # print(f"qrels:{qrels}")
-model_name_or_path = "intfloat/e5-mistral-7b-instruct"
+# model_name_or_path = "intfloat/e5-mistral-7b-instruct"
 # model_name_or_path = "workspace/Prakar/exp2/model1/checkpoint-120"  # local path to finetuned model
 max_length = 512
 pooling = "eos"
@@ -117,7 +117,7 @@ append_eos_token = True
 # emb_results_filepath = "/workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/embeddings_cache/nfcorpus_results.json"
 #emb_results_filepath = "/workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/new_emb_results_adj.json"
 #emb_results_filepath = "/workspace/Mingkwan/RMSearch/rmsearch/evaluation/datasets/nfcorpus/new_rerank_results.json"
-emb_results_filepath = "/workspace/kentarrito/beir_out/scifact/relevance_dict_rerank_exp5_adj.json"
+emb_results_filepath = "/workspace/Prakhar/beir_out/scifact/relevance_dict_rerank_exp8-qwen-step720_adj.json"
 #emb_results_filepath = "/workspace/kentarrito/beir_out/scifact/relevance_dict_embed_adj.json"
 if os.path.exists(emb_results_filepath):
     # 1. LOAD FROM FILE 
@@ -127,37 +127,37 @@ if os.path.exists(emb_results_filepath):
         results = json.load(f)
     query_prompt = "Instruct: Given a question, retrieve relevant documents that best answer the question\nQuery: "
     passage_prompt = ""
-    dense_model = models.HuggingFace(
-        model_path=model_name_or_path,
-        max_length=max_length,
-        append_eos_token=append_eos_token,  # add [EOS] token to the end of the input
-        pooling=pooling,
-        normalize=normalize,
-        prompts={"query": query_prompt, "passage": passage_prompt},
-        attn_implementation="flash_attention_2",
-        torch_dtype="bfloat16",
-    )
+    # dense_model = models.HuggingFace(
+    #     model_path=model_name_or_path,
+    #     max_length=max_length,
+    #     append_eos_token=append_eos_token,  # add [EOS] token to the end of the input
+    #     pooling=pooling,
+    #     normalize=normalize,
+    #     prompts={"query": query_prompt, "passage": passage_prompt},
+    #     attn_implementation="flash_attention_2",
+    #     torch_dtype="bfloat16",
+    # )
 
-    model = DRES(dense_model, batch_size=128)
-    retriever = EvaluateRetrieval(model, score_function="cos_sim")
+    # model = DRES(dense_model, batch_size=128)
+    retriever = EvaluateRetrieval(None, score_function="cos_sim")
     # print(f"results: {results}")
 else:
     # 2. RUN RETRIEVAL 
     query_prompt = "Instruct: Given a question, retrieve relevant documents that best answer the question\nQuery: "
     passage_prompt = ""
-    dense_model = models.HuggingFace(
-        model_path=model_name_or_path,
-        max_length=max_length,
-        append_eos_token=append_eos_token,  # add [EOS] token to the end of the input
-        pooling=pooling,
-        normalize=normalize,
-        prompts={"query": query_prompt, "passage": passage_prompt},
-        attn_implementation="flash_attention_2",
-        torch_dtype="bfloat16",
-    )
+    # dense_model = models.HuggingFace(
+    #     model_path=model_name_or_path,
+    #     max_length=max_length,
+    #     append_eos_token=append_eos_token,  # add [EOS] token to the end of the input
+    #     pooling=pooling,
+    #     normalize=normalize,
+    #     prompts={"query": query_prompt, "passage": passage_prompt},
+    #     attn_implementation="flash_attention_2",
+    #     torch_dtype="bfloat16",
+    # )
 
-    model = DRES(dense_model, batch_size=128)
-    retriever = EvaluateRetrieval(model, score_function="cos_sim")
+    # model = DRES(dense_model, batch_size=128)
+    retriever = EvaluateRetrieval(None, score_function="cos_sim")
 
     print(f"--- No cached results found. Running retrieval... ---")
     start_time = time()

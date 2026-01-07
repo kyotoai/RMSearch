@@ -157,9 +157,8 @@ def _llm_template(tokenizer):
             {
                 "role": "user",
                 "content": (
-                    "Give me relevance score between\n\n"
-                    f"Query:{query}\n\n"
-                    f"Sentence:{key}"
+f"Give me relevance score between query and key;\n\n<query>{query}</query>\n\n<key>{key}</key>"
+                    
                 ),
             }
         ]
